@@ -120,14 +120,14 @@ def shuffle(files):
     for ff in files[1:]:
         with open(ff) as f:
             for i, li in enumerate(f):
-                lines[i].append(li)
+                lines[i].append(li.strip())
     random.shuffle(lines)
     # write
     for ii, ff in enumerate(files):
         path, filename = os.path.split(os.path.realpath(ff))
         with open(filename+'.shuf', 'w') as f:
-            for l in lines[ii]:
-                f.write(l+"\n")
+            for l in lines:
+                f.write(l[ii]+"\n")
     # read
     fds = []
     for ff in files:

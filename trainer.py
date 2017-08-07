@@ -136,6 +136,7 @@ class Trainer(object):
         one_sents = one_updates = 0
         one_timer = utils.Timer()
         while not self._finished():     # epochs
+            utils.printing("", func="info")
             with utils.Timer(name="Iter %s" % self._tp.eidx, print_date=True) as et:
                 n_samples = 0
                 for xs, ys in train_iter:
@@ -147,15 +148,12 @@ class Trainer(object):
                     n_samples += len(xs)
                     # training for one batch
                     if True:
-                        mem = '?'
-                        # p = subprocess.Popen(["cat", "/proc/self/statm"], stdout=subprocess.PIPE)
-                        # rss = [l for l in p.stdout][0].split()
-                        # p = subprocess.Popen("ps -ef -o pid,rss | grep %s" % os.getpid(), shell=True, stdout=subprocess.PIPE)
-                        # rss = [l for l in p.stdout][0].split()
-                        # utils.DEBUG("list is %s" % rss)
-                        # mem = int(rss[1])*4/1024
-                        utils.DEBUG("[%s MB] before fb:%s/%s" % (mem, max([len(i) for i in xs]), max([len(i) for i in ys])))
-                    # loss = 0.
+                        with open("/proc/self/statm") as f:
+                            rss = (f.read().split())        # strange!! readline-nope, read-ok
+                        mem0 = int(rss[1])*4/1024
+                        p = subprocess.Popen("nvidia-smi | grep -E '%s.*MiB'" % os.getpid(), shell=True, stdout=subprocess.PIPE)
+                        mem1 = p.stdout.readlines()[-1].split()[-2]
+                        utils.DEBUG("[%s MB/%s] before fb(%s):%s/%s" % (mem0, mem1, len(xs), max([len(i) for i in xs]), max([len(i) for i in ys])))
                     loss = self._mm.fb(xs, ys, True)
                     self._update()
                     one_updates += 1

@@ -211,8 +211,8 @@ class Attention(Basic):
         val_h = self.iparams["h2e"] * n     # {(n_hidden,), batch_size}
         att_hidden_bef = dy.colwise_add(self.cache_v, val_h)    # {(n_didden, steps), batch_size}
         att_hidden = dy.tanh(att_hidden_bef)
-        if self.drop > 0:
-            att_hidden = dy.dropout(att_hidden, self.drop)
+        # if self.drop > 0:     # save some space
+        #     att_hidden = dy.dropout(att_hidden, self.drop)
         att_e = dy.reshape(self.iparams["v"] * att_hidden, (len(s), ), batch_size=att_hidden.dim()[1])
         att_alpha = dy.softmax(att_e)
         ctx = self.cache_concat * att_alpha      # {(n_s, sent_len), batch_size}

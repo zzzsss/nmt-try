@@ -66,7 +66,7 @@ def fopen(filename, mode='r'):
 class TextIterator:
     """Simple Bitext iterator."""
     def __init__(self, source, target, source_dicts, target_dict, batch_size=None, maxlen=None, use_factor=False,
-                 skip_empty=True, shuffle_each_epoch=False, sort_by_length=True, maxibatch_size=20):
+                 skip_empty=True, shuffle_each_epoch=True, sort_by_length=True, maxibatch_size=20):
         # data
         if shuffle_each_epoch:
             self.source_orig = source
