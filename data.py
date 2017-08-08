@@ -136,6 +136,7 @@ class TextIterator:
             if self.sort_by_length:
                 tlen = numpy.array([len(t) for t in self.target_buffer])
                 tidx = tlen.argsort()
+                tidx = [i for i in reversed(tidx)]
                 _sbuf = [self.source_buffer[i] for i in tidx]
                 _tbuf = [self.target_buffer[i] for i in tidx]
                 self.source_buffer = _sbuf

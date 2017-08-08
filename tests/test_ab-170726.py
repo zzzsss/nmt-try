@@ -1,9 +1,24 @@
 import numpy as np
-import sys, time, random, json
+import sys, time, random, subprocess, os
 import dynet as dy
 
 random.seed(12345)
 np.random.seed(12345)
+
+def get_statm():
+    with open("/proc/self/statm") as f:
+        rss = (f.read().split())        # strange!! readline-nope, read-ok
+        mem0 = str(int(rss[1])*4/1024) + "MiB"
+    try:
+        p = subprocess.Popen("nvidia-smi | grep -E '%s.*MiB'" % os.getpid(), shell=True, stdout=subprocess.PIPE)
+        line = p.stdout.readlines()
+        mem1 = line[-1].split()[-2]
+    except:
+        mem1 = "0MiB"
+    return mem0, mem1
+
+def report_statm(s):
+    printing(str(get_statm())+"at step %s"%s)
 
 class Basic(object):
     def __init__(self, model):
@@ -191,6 +206,7 @@ def batch_run(pss):
     scores = [[dy.scalarInput(0.)] for _ in range(N_BATCH)]
     nexts = [[0] for _ in range(N_BATCH)]   # start symbol
     for _ in range(N_STEP):
+        report_statm(_)
         # prepare
         batch_hiddens = []
         batch_inputs = []
@@ -240,6 +256,7 @@ def nonbatch_run(pss):
     scores = [[dy.scalarInput(0.)] for _ in range(N_BATCH)]
     nexts = [[0] for _ in range(N_BATCH)]   # start symbol
     for _ in range(N_STEP):
+        report_statm(_)
         batch_hiddens = [[] for _ in range(N_BATCH)]
         batch_outputs = [[] for _ in range(N_BATCH)]
         # prepare
@@ -298,9 +315,13 @@ for i in range(N_ITER):
     with Timer(name="Iter %s"%i, print_date=True) as _:
         with Timer(cname="all", quiet=True):
             for _ in range(N_BATCHES_ITER):
+                report_statm(str(_)+"/1")
                 dy.renew_cg()
+                report_statm(str(_)+"/2")
                 gru.ingraph()
+                report_statm(str(_)+"/3")
                 pss = dy.parameter(ss)
+                report_statm(str(_)+"/4")
                 if batched:
                     batch_run(pss)
                 else:

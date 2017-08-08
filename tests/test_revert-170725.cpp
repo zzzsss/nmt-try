@@ -4,6 +4,7 @@
 #include "dynet/expr.h"
 #include "dynet/lstm.h"
 #include <iostream>
+#include <fstream>
 
 int main(int argc, char** argv) {
 	dynet::initialize(argc, argv);

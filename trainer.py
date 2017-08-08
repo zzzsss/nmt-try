@@ -1,5 +1,5 @@
 import dynet as dy
-import json, numpy, os, subprocess
+import json, numpy
 import utils
 
 class TrainingProgress(object):
@@ -41,6 +41,7 @@ class Trainer(object):
     def _set_trainer(self, renew):
         cur_lr = self.opts["lrate"] * (Trainer.ANNEAL_DECAY ** self._tp.anneal_restarts_done)
         if renew:
+            # TODO wait for the renew api
             self.trainer = {"sgd": dy.SimpleSGDTrainer(self._mm.model, self.opts["lrate"]),
                             "momentum": dy.MomentumSGDTrainer(self._mm.model, self.opts["lrate"], self.opts["moment"]),
                             "adam": dy.AdamTrainer(self._mm.model, self.opts["lrate"])
@@ -65,7 +66,7 @@ class Trainer(object):
                             'or remove or modify progress file (%s) to train anyway.')
             # set learning rate
             self._set_trainer(True)
-            # TODO: real reload
+            # TODO: real reload ?
 
     def save(self, basename):
         # save model
@@ -122,6 +123,7 @@ class Trainer(object):
                 if ttp.bad_counter >= self.opts["patience"]:
                     ttp.bad_counter = 0
                     if ttp.anneal_restarts_done < self.opts["anneal_restarts"]:
+                        utils.printing("Patience up, annealing for %s." % self._tp.anneal_restarts_done+1, func="info")
                         if self.opts["anneal_reload_best"]:
                             self.load(Trainer.BEST_PREFIX+self.opts["model"])   # load best
                         self._tp.anneal_restarts_done += 1                      # new tp now maybe
@@ -147,20 +149,16 @@ class Trainer(object):
                         utils.fatal("Mismatch for factors %s != %s" % (self.opts["factors"], len(xs[0][0])))
                     n_samples += len(xs)
                     # training for one batch
-                    if True:
-                        with open("/proc/self/statm") as f:
-                            rss = (f.read().split())        # strange!! readline-nope, read-ok
-                        mem0 = int(rss[1])*4/1024
-                        p = subprocess.Popen("nvidia-smi | grep -E '%s.*MiB'" % os.getpid(), shell=True, stdout=subprocess.PIPE)
-                        mem1 = p.stdout.readlines()[-1].split()[-2]
-                        utils.DEBUG("[%s MB/%s] before fb(%s):%s/%s" % (mem0, mem1, len(xs), max([len(i) for i in xs]), max([len(i) for i in ys])))
                     loss = self._mm.fb(xs, ys, True)
                     self._update()
                     one_updates += 1
                     one_loss += loss
                     one_sents += len(xs)
+                    if self.opts["debug"]:
+                        mem0, mem1 = utils.get_statm()
+                        utils.DEBUG("[%s/%s] after fb(%s):%s/%s" % (mem0, mem1, len(xs), max([len(i) for i in xs]), max([len(i) for i in ys])))
                     # time to validate and save best model ??
-                    if self._tp.uidx % self.opts["validFreq"] == 0:
+                    if self._tp.uidx % self.opts["valid_freq"] == 0:
                         one_time = one_timer.get_time()
                         utils.printing("At this checkpoint, %s(time)/%s(updates)/%s(sents)/%s(loss-per)/%s(time-per)"
                                        % (one_time, one_updates, one_sents, one_loss/one_sents, one_time/one_sents), func="info")
@@ -170,5 +168,6 @@ class Trainer(object):
                         one_timer = utils.Timer()
                         if self._finished():
                             break
-                utils.printing("This iter train for %s within %s." % (n_samples, et.get_time()), func="info")
+                utils.printing("This iter train for %s within %s, speed %s/sec."
+                               % (n_samples, et.get_time(), int((n_samples+0.)/et.get_time())), func="info")
                 self._tp.eidx += 1

@@ -36,6 +36,8 @@ def init():
                          help="embedding layer size (default: %(default)s)")
     network.add_argument('--dec_type', type=str, default="att", choices=["att", "nematus"],
                          help="decoder type (default: %(default)s)")
+    network.add_argument('--att_type', type=str, default="ff", choices=["ff", "biaff"],
+                         help="attention type (default: %(default)s)")
     network.add_argument('--hidden_rec', type=int, default=1000, metavar='INT',
                          help="recurrent hidden layer size (default: %(default)s)")
     network.add_argument('--hidden_att', type=int, default=1000, metavar='INT',
@@ -54,18 +56,16 @@ def init():
                          help="number of input factors (default: %(default)s)")
     network.add_argument('--dim_per_factor', type=int, default=None, nargs='+', metavar='INT',
                          help="list of word vector dimensionalities (one per factor): '--dim_per_factor 250 200 50' for total dimensionality of 500 (default: %(default)s)")
-    network.add_argument('--drop_embedding', type=float, default=0.2, metavar="FLOAT",
-                         help="dropout for input embeddings (0: no dropout) (default: %(default)s)")
     network.add_argument('--drop_hidden', type=float, default=0.2, metavar="FLOAT",
                          help="dropout for hidden layer (0: no dropout) (default: %(default)s)")
+    network.add_argument('--drop_embedding', type=float, default=0.2, metavar="FLOAT",
+                         help="dropout for embeddings (0: no dropout) (default: %(default)s)")
     network.add_argument('--drop_dec', type=float, default=0.2, metavar="FLOAT",
                          help="dropout (idrop) for decoder (0: no dropout) (default: %(default)s)")
     network.add_argument('--drop_enc', type=float, default=0.2, metavar="FLOAT",
                          help="dropout (idrop) for encoder (0: no dropout) (default: %(default)s)")
-    network.add_argument('--gdrop_source', type=float, default=0, metavar="FLOAT",
-                         help="gdrop source words (gdrop) (0: no dropout) (default: %(default)s)")
-    network.add_argument('--gdrop_target', type=float, default=0, metavar="FLOAT",
-                         help="gdrop target words (gdrop) (0: no dropout) (default: %(default)s)")
+    network.add_argument('--gdrop_embedding', type=float, default=0, metavar="FLOAT",
+                         help="gdrop for words (0: no dropout) (default: %(default)s)")
     network.add_argument('--gdrop_dec', type=float, default=0, metavar="FLOAT",
                          help="gdrop for decoder (0: no dropout) (default: %(default)s)")
     network.add_argument('--gdrop_enc', type=float, default=0, metavar="FLOAT",
@@ -77,7 +77,7 @@ def init():
                          help="maximum sequence length (default: %(default)s)")
     training.add_argument('--batch_size', type=int, default=80, metavar='INT',
                          help="minibatch size (default: %(default)s)")
-    training.add_argument('--rand_skip', type=float, default=0.01, metavar='INT',
+    training.add_argument('--rand_skip', type=float, default=0.0001, metavar='INT',
                          help="randomly skip batches for training (default: %(default)s)")
     training.add_argument('--max_epochs', type=int, default=24, metavar='INT',
                          help="maximum number of epochs (default: %(default)s)")
@@ -95,24 +95,36 @@ def init():
 
     # validate
     validation = parser.add_argument_group('validation parameters')
-    validation.add_argument('--validFreq', type=int, default=20000, metavar='INT',
+    validation.add_argument('--valid_freq', type=int, default=20000, metavar='INT',
                          help="validation frequency (default: %(default)s)")
+    training.add_argument('--valid_batch_size', type=int, default=80, metavar='INT',
+                         help="validing minibatch size (default: %(default)s)")
     validation.add_argument('--patience', type=int, default=10, metavar='INT',
                          help="early stopping patience (default: %(default)s)")
     validation.add_argument('--anneal_restarts', type=int, default=0, metavar='INT',
                          help="when patience runs out, restart training INT times with annealed learning rate (default: %(default)s)")
-    validation.add_argument('--anneal_renew_trainer', action='store_true',
-                         help="renew trainer (discard moments or grad info) when anneal")
-    validation.add_argument('--anneal_reload_best', action='store_true',
-                         help="recovery to previous best point (discard some training) when anneal")
+    validation.add_argument('--anneal_no_renew_trainer', action='store_false',  dest='anneal_renew_trainer',
+                         help="don't renew trainer (discard moments or grad info) when anneal")
+    validation.add_argument('--anneal_no_reload_best', action='store_false',  dest='anneal_reload_best',
+                         help="don't recovery to previous best point (discard some training) when anneal")
     validation.add_argument('--anneal_decay', type=float, default=0.5, metavar='FLOAT',
                          help="learning rate decay on each restart (default: %(default)s)")
     validation.add_argument('--validMetric', type=str, default="ll", choices=["ll", "bleu"],
                          help="type of metric for validation (default: %(default)s)")
 
-    # dynet
-    dynet = parser.add_argument_group('dynet')
-    dynet.add_argument("--dynet-mem", type=int, default=5000)
+    # common
+    common = parser.add_argument_group('common')
+    common.add_argument("--dynet-mem", type=str, default="")
+    common.add_argument("--dynet-mem-test", action='store_true')
+    common.add_argument("--dynet-autobatch", type=str, default="")
+    common.add_argument("--debug", action='store_true')
+
+    # decode (for validation or maybe certain training procedure)
+    decode = parser.add_argument_group('decode')
+    decode.add_argument('--beam_size', type=int, default=5,
+                        help="Beam size (default: %(default)s))")
+    decode.add_argument('--normalize', type=float, default=0.0, nargs="?", const=1.0, metavar="ALPHA",
+                        help="Normalize scores by sentence length (with argument, exponentiate lengths by ALPHA)")
 
     args = parser.parse_args()
     return args

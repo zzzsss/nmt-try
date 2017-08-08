@@ -83,7 +83,7 @@ class Linear(Basic):
         self._ingraph(argv)
 
     def __call__(self, input_exp):
-        x = self.iparams["W"]*input_exp+self.iparams["B"]
+        x = dy.affine_transform([self.iparams["B"], self.iparams["W"], input_exp])
         if self.act is not None:
             x = self.act(x)
         if self.drop > 0.:
@@ -178,44 +178,82 @@ class GruNode(Basic):
         return hidden
 
 class Attention(Basic):
-    def __init__(self, model, n_s, n_h, n_hidden):
+    def __init__(self, model, n_s, n_h):
         super(Attention, self).__init__(model)
+        # cache value
+        self.cache_sig = None
+        self.cache_values = {}
+        # info
+        self.n_s, self.n_h = n_s, n_h
+
+    def _refresh(self, **argv):
+        self.cache_sig = None
+        self.cache_values = {}
+        # self.drop = float(argv["hdrop"]) if "hdrop" in argv else 0.
+        self._ingraph(argv)
+
+    def refresh(self, **argv):
+        raise NotImplementedError("No calling refresh from Attention.")
+
+    def __call__(self, *args, **kwargs):
+        raise NotImplementedError("No calling __call__ from Attention.")
+
+    @staticmethod
+    def get_attentioner(s):
+        return {"ff":FfAttention, "biaff":BiaffAttention}[s]
+
+# feed forward for attention --- requiring much memory
+class FfAttention(Attention):
+    def __init__(self, model, n_s, n_h, n_hidden):
+        super(FfAttention, self).__init__(model, n_s, n_h)
         # parameters -- (feed-forward version)
         self.params["s2e"] = self._add_parameters((n_hidden, n_s))
         self.params["h2e"] = self._add_parameters((n_hidden, n_h))
         self.params["v"] = self._add_parameters((1, n_hidden))
-        # cache value
-        self.cache_sig = None
-        self.cache_v = None
-        self.cache_concat = None
 
     def refresh(self, **argv):
-        # additionally clear cache
-        self.cache_concat = None
-        self.cache_sig = None
-        self.cache_v = None     # {(n_hidden, sent_len), batch_size}
-        # refresh (no masks here)
-        self.drop = float(argv["hdrop"]) if "hdrop" in argv else 0.
-        self._ingraph(argv)
+        super(FfAttention, self)._refresh(**argv)
 
     def __call__(self, s, n):
         # s: list(len==steps) of {(n_s,), batch_size}, n: {(n_h,), batch_size}
-        # if True:    # debug
-        #     return dy.average(s)
         sig = str(len(s))+str(s[0])
         if sig != self.cache_sig:
             # calculate for the results of s2e*s
             self.cache_sig = sig
-            self.cache_concat = dy.concatenate_cols(s)
-            self.cache_v = self.iparams["s2e"] * self.cache_concat
+            self.cache_values["s"] = dy.concatenate_cols(s)
+            self.cache_values["v"] = self.iparams["s2e"] * self.cache_values["s"]
         val_h = self.iparams["h2e"] * n     # {(n_hidden,), batch_size}
-        att_hidden_bef = dy.colwise_add(self.cache_v, val_h)    # {(n_didden, steps), batch_size}
+        att_hidden_bef = dy.colwise_add(self.cache_values["v"], val_h)    # {(n_didden, steps), batch_size}
         att_hidden = dy.tanh(att_hidden_bef)
         # if self.drop > 0:     # save some space
         #     att_hidden = dy.dropout(att_hidden, self.drop)
         att_e = dy.reshape(self.iparams["v"] * att_hidden, (len(s), ), batch_size=att_hidden.dim()[1])
         att_alpha = dy.softmax(att_e)
-        ctx = self.cache_concat * att_alpha      # {(n_s, sent_len), batch_size}
+        ctx = self.cache_values["s"] * att_alpha      # {(n_s, sent_len), batch_size}
+        # if True:    # debug (with dev(bs80, h1000): 4186->bef->8057->tanh->10491->dropout->14138, without avg:11033)
+        #     return dy.average(s)
+        return ctx
+
+class BiaffAttention(Attention):
+    def __init__(self, model, n_s, n_h, n_hidden):
+        super(BiaffAttention, self).__init__(model, n_s, n_h)
+        # parameters -- (BiAffine-version e = h*W*s)
+        self.params["W"] = self._add_parameters((n_s, n_h))
+
+    def refresh(self, **argv):
+        super(BiaffAttention, self)._refresh(**argv)
+
+    def __call__(self, s, n):
+        # s: list(len==steps) of {(n_s,), batch_size}, n: {(n_h,), batch_size}
+        sig = str(len(s))+str(s[0])
+        if sig != self.cache_sig:
+            self.cache_sig = sig
+            self.cache_values["s"] = dy.concatenate_cols(s)
+        wn = self.iparams["W"] * n      # {(n_s,), batch_size}
+        wn_t = dy.reshape(wn, (1, self.n_s), batch_size=n.dim()[1])
+        att_e = dy.reshape(wn_t * self.cache_values["s"], (len(s), ), batch_size=n.dim()[1])
+        att_alpha = dy.softmax(att_e)
+        ctx = self.cache_values["s"] * att_alpha
         return ctx
 
 # ================= Blocks ================= #
@@ -261,7 +299,7 @@ class Encoder(object):
 
 # attentional decoder
 class Decoder(object):
-    def __init__(self, model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden):
+    def __init__(self, model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden, att_type):
         self.ntype = GruNode
         self.all_nodes = []
         # gru nodes --- wait for the sub-classes
@@ -270,7 +308,7 @@ class Decoder(object):
         for inod in self.inodes:
             self.all_nodes.append(inod)
         # att node
-        self.anode = Attention(model, dim_src, n_hidden, dim_att_hidden)
+        self.anode = Attention.get_attentioner(att_type)(model, dim_src, n_hidden, dim_att_hidden)
         self.all_nodes.append(self.anode)
         # caches
         self.s = None
@@ -316,8 +354,8 @@ class Decoder(object):
 
 # normal attention decoder
 class AttDecoder(Decoder):
-    def __init__(self, model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden):
-        super(AttDecoder, self).__init__(model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden)
+    def __init__(self, model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden, att_type):
+        super(AttDecoder, self).__init__(model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden, att_type)
         # gru nodes
         self.gnodes = [self.ntype(model, n_input+dim_src, n_hidden)]    # (E(y_{i-1})//c_i, s_{i-1}) => s_i
         for i in range(n_layers-1):
@@ -344,8 +382,8 @@ class AttDecoder(Decoder):
 
 # nematus-style attention decoder, fixed two transitions
 class NematusDecoder(Decoder):
-    def __init__(self, model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden):
-        super(NematusDecoder, self).__init__(model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden)
+    def __init__(self, model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden, att_type):
+        super(NematusDecoder, self).__init__(model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden, att_type)
         # gru nodes
         self.gnodes = [self.ntype(model, n_input, n_hidden)]        # gru1 for the first layer
         for i in range(n_layers-1):
