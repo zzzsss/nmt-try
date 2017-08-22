@@ -4,8 +4,8 @@ _printing_heads = {
     "plain":"-- ", "time":"## ", "io":"== ", "info":"** ",
     "warn":"!! ", "fatal":"KI ", "debug":"DE ", "none":""
 }
-def printing(s, func="plain"):
-    print(_printing_heads[func]+s)
+def printing(s, func="plain", out=sys.stderr):
+    print(_printing_heads[func]+s, file=out)
 
 # tools
 def shuffle(files):
@@ -62,7 +62,7 @@ def get_final_vocab(v, thres):
             d[k] = len(d)
     printing("Build Dictionary: Cut from %s to %s." % (len(v), len(d)-1))
     # special
-    for s in ["<eos>", "<pad>", "<unk>"]:
+    for s in ["<eos>", "<pad>", "<unk>", "<go!!>"]:
         d[s] = len(d)
     printing("Build Dictionary: Finish %s." % (len(d)))
     return d

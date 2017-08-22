@@ -1,20 +1,16 @@
 import args, utils, model, trainer
 from data import Dict, TextIterator
-import os, random, numpy
+import os, random, numpy, sys
 
 random.seed(12345)
 numpy.random.seed(12345)
 # --dynet-seed 12345
 
-# check the validity of the options
-def _check_options(opts):
-    args.check_network(opts)
-
 def main(opts):
     # 0. check options
-    _check_options(opts)
+    args.check_options(opts)
     # 1. obtain dictionaries
-    source_corpus, target_corpus = opts["datasets"]
+    source_corpus, target_corpus = opts["train"]
     source_dicts = []
     target_dict = None
     if not opts["rebuild_dicts"]:
@@ -41,9 +37,9 @@ def main(opts):
             utils.printing("Write dictionaries fail: %s, skip this step." % opts["dicts_final"], func="warn")
     # 2. corpus iterator
     train_iter = TextIterator(source_corpus, target_corpus, source_dicts, target_dict,
-                              batch_size=opts["batch_size"], maxlen=opts["maxlen"], use_factor=(opts["factors"]>1))
-    dev_iter = TextIterator(opts["devs"][0], opts["devs"][1], source_dicts, target_dict,
-                              batch_size=opts["batch_size"], maxlen=opts["maxlen"], use_factor=(opts["factors"]>1),
+                              batch_size=opts["batch_size"], maxlen=opts["max_len"], use_factor=(opts["factors"]>1))
+    dev_iter = TextIterator(opts["dev"][0], opts["dev"][1], source_dicts, target_dict,
+                              batch_size=opts["valid_batch_size"], maxlen=None, use_factor=(opts["factors"]>1),
                               skip_empty=False, shuffle_each_epoch=False, sort_by_length=False)
     # 3. about model & trainer
     mm = model.NMTModel(opts, source_dicts, target_dict)
@@ -55,5 +51,6 @@ def main(opts):
     utils.printing("=== Training ok!! ===", func="info")
 
 if __name__ == '__main__':
-    opts = args.init()
+    utils.printing("cmd: %s" % ' '.join(sys.argv))
+    opts = args.init("train")
     main(vars(opts))

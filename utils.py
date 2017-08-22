@@ -3,12 +3,14 @@ import time, sys, os, subprocess, random, json
 
 # tools
 from tools import shuffle, get_final_vocab, get_origin_vocab
-
-# printing functions
 from tools import printing
 
 def DEBUG(s):
     printing(s, func="debug")
+
+def DEBUG_check(b):
+    if not b:
+        fatal("assert %s failed." % b)
 
 def fatal(s):
     printing(s, func="dead")
@@ -18,7 +20,7 @@ def fatal(s):
 def get_statm():
     with open("/proc/self/statm") as f:
         rss = (f.read().split())        # strange!! readline-nope, read-ok
-        mem0 = str(int(rss[1])*4/1024) + "MiB"
+        mem0 = str(int(rss[1])*4//1024) + "MiB"
     try:
         p = subprocess.Popen("nvidia-smi | grep -E '%s.*MiB'" % os.getpid(), shell=True, stdout=subprocess.PIPE)
         line = p.stdout.readlines()
@@ -122,3 +124,34 @@ class Accu:
             Accu.METHODS[x](Accu.NAMED[x], f)
         else:
             Accu.NAMED[x] = Accu.METHODS[x](Accu.NAMED[x], f)
+
+class OnceRecorder(object):
+    def __init__(self, name):
+        self.name = name
+        self.loss = 0.
+        self.sents = 0
+        self.words = 0
+        self.updates = 0
+        self.timer = Timer()
+
+    def record(self, src, trg, loss, update):
+        self.loss += loss
+        self.sents += len(src)
+        self.words += sum([len(x) for x in src])     # for src
+        self.updates += update
+
+    def reset(self):
+        self.loss = 0.
+        self.sents = 0
+        self.words = 0
+        self.updates = 0
+        self.timer = Timer()
+
+    def report(self):
+        one_time = self.timer.get_time()
+        loss_per_sentence = self.loss / self.sents
+        loss_per_word = self.loss / self.words
+        sent_per_second = float(self.sents) / one_time
+        word_per_second = float(self.words) / one_time
+        printing("Recoder <%s>, %s(time)/%s(updates)/%s(sents)/%s(words)/%s(w-loss)/%s(s-sec)/%s(w-sec)"
+            % (self.name, one_time, self.updates, self.sents, self.words, loss_per_word, sent_per_second, word_per_second), func="info")

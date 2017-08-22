@@ -19,6 +19,10 @@ class Dict:
                         df = utils.get_origin_vocab(f)
             # filtering function
             self.d = utils.get_final_vocab(df, thres)
+        # for debugging
+        self.v = ["" for _ in range(len(self.d))]
+        for k in self.d:
+            self.v[self.d[k]] = k
 
     def get_num_words(self):
         return self.d["<eos>"]      # excluding special tokens
@@ -35,6 +39,10 @@ class Dict:
     def unk(self):
         return self.d["<unk>"]
 
+    @property
+    def start(self):
+        return self.d["<go!!>"]
+
     def write(self, wf):
         with open(wf, 'w') as f:
             f.write(json.dumps(self.d, ensure_ascii=False))
@@ -43,11 +51,16 @@ class Dict:
     @staticmethod
     def read(rf):
         with open(rf) as f:
-            df = json.loads(f)
+            df = json.loads(f.read())
             utils.printing("-- Read Dictionary from %s: Finish %s." % (rf, len(df)), func="io")
             return Dict(d=df)
 
+    def _getw(self, index):
+        # assert type(index) == int
+        return self.v[index]
+
     def __getitem__(self, item):
+        assert type(item) == str
         if item in self.d:
             return self.d[item]
         else:
@@ -55,6 +68,27 @@ class Dict:
 
     def __len__(self):
         return len(self.d)
+
+    # words <=> indexes
+    @staticmethod
+    def w2i(dicts, ss, use_factor):
+        if type(dicts) == list:
+            tmp = []
+            for w in ss:
+                if use_factor:
+                    w = [dicts[i][f] for (i,f) in enumerate(w.split('|'))]
+                else:
+                    w = [dicts[0][w]]
+                tmp.append(w)
+            tmp.append([d.eos for d in dicts] if use_factor else [dicts[0].eos])  # add eos
+        else:
+            tmp = [dicts[w] for w in ss]
+            tmp.append(dicts.eos)
+        return tmp
+
+    @staticmethod
+    def i2w(dicts, ii):
+        return [dicts._getw(i) for i in ii[:-1]]    # no eos
 
 # ======================= (data_iterator from nematus) ===================== #
 
@@ -80,7 +114,7 @@ class TextIterator:
         self.target_dict = target_dict
         # options
         self.batch_size = batch_size
-        self.maxlen = maxlen
+        self.maxlen = maxlen if maxlen is not None else 100000        # ignore sentences above this
         self.skip_empty = skip_empty
         self.use_factor = use_factor
         self.shuffle = shuffle_each_epoch
@@ -108,9 +142,10 @@ class TextIterator:
             self.source.seek(0)
             self.target.seek(0)
 
-    def next(self):
+    def __next__(self):
         source = []
         target = []
+        tokens_src, tokens_trg = [], []
         # fill buffer, if it's empty
         # utils.DEBUG("hh")
         assert len(self.source_buffer) == len(self.target_buffer), 'Buffer size mismatch!'
@@ -149,23 +184,16 @@ class TextIterator:
             # read from source file and map to word index
             try:
                 ss = self.source_buffer.pop()
+                tokens_src.append(ss)
             except IndexError:
                 break
-            tmp = []
-            for w in ss:
-                if self.use_factor:
-                    w = [self.source_dicts[i][f] for (i,f) in enumerate(w.split('|'))]
-                else:
-                    w = [self.source_dicts[0][w]]
-                tmp.append(w)
-            tmp.append([d.eos for d in self.source_dicts] if self.use_factor else [self.source_dicts[0].eos])  # add eos
-            ss = tmp
+            sss = Dict.w2i(self.source_dicts, ss, self.use_factor)
             # read from source file and map to word index
             tt = self.target_buffer.pop()
-            tt = [self.target_dict[w] for w in tt]
-            tt.append(self.target_dict.eos)     # add eos
-            source.append(ss)
-            target.append(tt)
+            tokens_trg.append(tt)
+            ttt = Dict.w2i(self.target_dict, tt, False)
+            source.append(sss)
+            target.append(ttt)
             if len(source) >= self.batch_size or len(target) >= self.batch_size:
                 break
-        return source, target
+        return source, target, tokens_src, tokens_trg
