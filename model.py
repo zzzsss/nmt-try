@@ -79,7 +79,9 @@ class NMTModel(object):
 
     # helper routines #
     def get_embeddings_step(self, tokens, embeds):
-        # tokens: factors-batch or batch
+        # factors-batch([[w1, w2, ...], [p1, p2, ...], ...]) or batch([w1, w2, ...]) or int(w1)
+        if type(tokens) == int:    # int => [int]
+            tokens = [tokens]
         if type(tokens[0]) != list:
             tokens, embeds = [tokens], [embeds]
         outputs = []
@@ -102,10 +104,10 @@ class NMTModel(object):
         return output_score
 
     # main routines #
-    def fb(self, xs, ys, backward):
+    def fb(self, xs, ys, training):
         assert len(xs) == len(ys)
         bsize = len(xs)
-        self.refresh(True, bsize=bsize)      # bsize for gdrop of rec-nodes
+        self.refresh(training, bsize=bsize)      # bsize for gdrop of rec-nodes
         # -- prepare batches
         xx, _ = self.prepare_x(xs, self.opts["fix_len_src"])
         yy, y_lens = self.prepare_y(ys, self.opts["fix_len_trg"])
@@ -119,7 +121,7 @@ class NMTModel(object):
         # -- decoder (steps == len)
         ss = self.dec.start_one(x_ctx)
         ss = self.dec.feed_one(ss, y_embeds[:-1])
-        atts, hiddens = ss.get_results()
+        hiddens, atts = ss.get_results()
         # -- ouptuts
         losses = []
         for ss, at, hi, ye, yt in zip(range(len(yy)), atts, hiddens, y_yes, yy):
@@ -133,9 +135,30 @@ class NMTModel(object):
         loss = dy.esum(losses)
         loss = dy.sum_batches(loss) / bsize
         loss_val = loss.value()
-        if backward:
+        if training:
             loss.backward()
         return loss_val*bsize
+
+    def fb2(self, xs, ys, training):
+        # for debugging, should be the same as fb(training=False)
+        assert len(xs) == len(ys)
+        self.refresh(False)
+        loss = 0.
+        for x, y in zip(xs, ys):
+            ss = None
+            for i in range(len(y)):
+                if i==0:
+                    ye = self.get_start_yembs(1)
+                    ss = self.prepare_enc([x], 1)
+                else:
+                    ye = self.get_embeddings_step(y[i-1], self.embed_trg)
+                    ss = self.dec.feed_one(ss, ye)
+                hi, at = ss.get_results_one()
+                sc = self.get_score(at, hi, ye)
+                prob = dy.softmax(sc)
+                pvalue = prob.value()
+                loss -= np.log(pvalue[y[i]])
+        return loss
 
     # for predciting #
     def prepare_enc(self, xs, expand):

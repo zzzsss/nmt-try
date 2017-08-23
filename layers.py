@@ -368,7 +368,7 @@ class Decoder(object):
         for i in range(self.n_layers):
             cur_init = self.inodes[i](avg)
             inits.append(cur_init)          # +1 for the init state
-        att = self.anode(s, inits)          # start of the attention
+        att = self.anode(s, inits[0])          # start of the attention
         return DecoderState(self, s, self.n_layers, inits, att)
 
     def feed_one(self, ss, inputs):

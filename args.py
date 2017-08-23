@@ -139,8 +139,8 @@ def init(phase):
 
     # decode (for validation or maybe certain training procedure)
     decode = parser.add_argument_group('decode')
-    decode.add_argument('--loop', action='store_true',
-                         help="interactive decoding (read one time from stdin)")
+    decode.add_argument('--decode_type', type=str, default="decode", choices=["decode", "test1", "test2", "loop"],
+                         help="type of testing (decode, test, loop)")
     decode.add_argument('--decode_way', type=str, default="beam", choices=["beam", "sample"],
                          help="decoding method (default: %(default)s)")
     decode.add_argument('--beam_size', type=int, default=5,
@@ -155,6 +155,8 @@ def init(phase):
                          help="batched calculation when decoding")
     decode.add_argument('--eval_metric', type=str, default="bleu", choices=["bleu"],
                          help="type of metric for evaluation (default: %(default)s)")
+    decode.add_argument('--test_batch_size', type=int, default=16, metavar='INT',
+                         help="testing minibatch size (default: %(default)s)")
 
     args = parser.parse_args()
     return args

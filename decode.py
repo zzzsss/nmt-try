@@ -4,7 +4,7 @@ import numpy as np
 import utils, data
 
 def _check_order(l):
-    return (len(l)==0 and l[0]==0) or (l[-1]==l[-2]+1)
+    return (len(l)==1 and l[0]==0) or (len(l)>1 and l[-1]==l[-2]+1)
 
 def decode(diter, mms, target_dict, opts, outf):
     one_recorder = utils.OnceRecorder("DECODE")
@@ -13,7 +13,7 @@ def decode(diter, mms, target_dict, opts, outf):
             rs = search(xs, mms, opts, opts["decode_way"], opts["decode_batched"])
             one_recorder.record(xs, None, 0, 0)
             for r in rs:
-                strs = data.Dict.i2w(target_dict, r)
+                strs = data.Dict.i2w(target_dict, r[0])
                 f.write(" ".join(strs)+"\n")
     one_recorder.report()
 
@@ -38,11 +38,11 @@ def search(xs, models, opts, strategy, batched):
     for s in range(opts["decode_len"]):
         # feed one and get results
         if s == 0:
-            results = pr.start(xs)
+            results = pr.start(xs, st.start_hypo_num())
         else:
             results = pr.feed(nexts, orders)
         # get next steps
-        cands = st.select_nexts(hypos, results)
+        cands = st.select_next(hypos, results)
         new_nexts, new_orders, new_hypos = [[] for _ in range(len(xs))], [[] for _ in range(len(xs))], [[] for _ in range(len(xs))]
         ordering_flag = True
         for i, one_cands in enumerate(cands):
@@ -56,6 +56,7 @@ def search(xs, models, opts, strategy, batched):
                     ordering_flag = _check_order(new_orders[i]) and ordering_flag
                     new_hypos[i].append(this_hypo)
         nexts, orders = new_nexts, (None if ordering_flag else new_orders)
+        hypos = new_hypos
         # test finished ?
         if all([len(fs) >= st.width() for fs in finished]):
             break
@@ -138,7 +139,7 @@ class BatchedProcess(Process):
 
     def _fold_list(self, ss):
         # return list of list of scores (bs, expand, vocab)
-        return ss.reshape((self.bsize, self.expand, -1))
+        return np.asarray(ss).reshape((self.bsize, self.expand, -1))
 
     def _flat_list(self, ll, change):
         r = []
@@ -160,7 +161,7 @@ class BatchedProcess(Process):
                 nexts[i].append(0)
                 orders[i].append(0)
 
-    def start(self, xs):
+    def start(self, xs, start_expand):
         self.bsize = len(xs)
         cur_hiddens = []
         cur_probs = []
@@ -212,10 +213,10 @@ class NonBatchedProcess(Process):
                 r[-1].append(sc)
         return r
 
-    def start(self, xs):
+    def start(self, xs, start_expand):
         self.bsize = len(xs)
-        cur_hiddens = [[[] for _ in range(self.expand)] for _j in xs]
-        cur_probs = [[[] for _ in range(self.expand)] for _j in xs]
+        cur_hiddens = [[[] for _ in range(start_expand)] for _j in xs]
+        cur_probs = [[[] for _ in range(start_expand)] for _j in xs]
         for j, one in enumerate(xs):
             for i, _m in enumerate(self.mms):
                 ss = _m.prepare_enc([one], 1)
@@ -223,7 +224,7 @@ class NonBatchedProcess(Process):
                 ye = _m.get_start_yembs(1)
                 sc = _m.get_score(at, hi, ye)
                 prob = dy.softmax(sc)
-                for z in range(self.expand):
+                for z in range(start_expand):
                     # here, not the 'correct' order again, but since the first states are all the same ...
                     cur_hiddens[j][z].append(ss)
                     cur_probs[j][z].append(prob)
@@ -233,14 +234,16 @@ class NonBatchedProcess(Process):
 
     def feed(self, nexts, orders):
         # orders/nexts => list(batch) of list(expand) of int
-        cur_hiddens = [[] for _ in self.bsize]
-        cur_probs = [[] for _ in self.bsize]
+        cur_hiddens = [[] for _ in range(self.bsize)]
+        cur_probs = [[] for _ in range(self.bsize)]
         if orders is None:
             orders = [[i for i, cur_ne in enumerate(one_ne)] for one_ne in nexts]
-        for j, one_ne, one_or in enumerate(zip(nexts, orders)):
-            cur_hiddens[j].append([])
-            cur_probs[j].append([])
-            for z, cur_ne, cur_or in enumerate(zip(one_ne, one_or)):
+        for j in range(len(nexts)):
+            one_ne, one_or = nexts[j], orders[j]
+            for z in range(len(one_ne)):
+                cur_hiddens[j].append([])
+                cur_probs[j].append([])
+                cur_ne, cur_or = one_ne[z], one_or[z]
                 for i, _m in enumerate(self.mms):
                     ye = _m.get_embeddings_step(cur_ne, _m.embed_trg)
                     this_ss = self.hiddens[j][cur_or][i]
@@ -258,7 +261,7 @@ class SamplingStrategy(object):
     def __init__(self, sample_size):
         self.sample_size = sample_size
 
-    def start_hypo_num(self):
+    def start_hypo_num(self):   # this must be < width
         return self.sample_size
 
     def width(self):
@@ -302,7 +305,8 @@ class BeamStrategy(object):
                 sc = results[i][j]
                 top_ids = np.argpartition(sc, max(-len(sc),-self.beam_size))[-self.beam_size:]
                 for one in top_ids:
-                    candidates.append((Hypo(last_action=one, prev=h, score_one=np.log(sc[one])), one, j))
+                    next_one = int(one)
+                    candidates.append((Hypo(last_action=next_one, prev=h, score_one=np.log(sc[next_one])), next_one, j))
             # sort by candidates
             best_cands = sorted(candidates, key=lambda x: x[0].partial_score, reverse=True)[:self.beam_size]
             cands.append(best_cands)
