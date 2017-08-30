@@ -48,7 +48,7 @@ def init(phase):
     network = parser.add_argument_group('network parameters')
     network.add_argument('--dim_word', type=int, default=512, metavar='INT',
                          help="embedding layer size (default: %(default)s)")
-    network.add_argument('--dec_type', type=str, default="att", choices=["att", "nematus"],
+    network.add_argument('--dec_type', type=str, default="nematus", choices=["att", "nematus"],
                          help="decoder type (default: %(default)s)")
     network.add_argument('--att_type', type=str, default="ff", choices=["ff", "biaff"],
                          help="attention type (default: %(default)s)")
@@ -58,9 +58,9 @@ def init(phase):
                          help="attention hidden layer size (default: %(default)s)")
     network.add_argument('--hidden_out', type=int, default=1000, metavar='INT',
                          help="output hidden layer size (default: %(default)s)")
-    network.add_argument('--thres_src', type=int, default=None, metavar='INT',
+    network.add_argument('--thres_src', type=int, default=2, metavar='INT',
                          help="source vocabulary threshold (default: %(default)s)")
-    network.add_argument('--thres_trg', type=int, default=None, metavar='INT',
+    network.add_argument('--thres_trg', type=int, default=2, metavar='INT',
                          help="target vocabulary threshold (default: %(default)s)")
     network.add_argument('--enc_depth', type=int, default=1, metavar='INT',
                          help="number of encoder layers (default: %(default)s)")
@@ -71,23 +71,23 @@ def init(phase):
     network.add_argument('--dim_per_factor', type=int, default=None, nargs='+', metavar='INT',
                          help="list of word vector dimensionalities (one per factor): '--dim_per_factor 250 200 50' for total dimensionality of 500 (default: %(default)s)")
     network.add_argument('--drop_hidden', type=float, default=0.2, metavar="FLOAT",
-                         help="dropout for hidden layer (0: no dropout) (default: %(default)s)")
+                         help="dropout for hidden layers (0: no dropout) (default: %(default)s)")
     network.add_argument('--drop_embedding', type=float, default=0.2, metavar="FLOAT",
                          help="dropout for embeddings (0: no dropout) (default: %(default)s)")
-    network.add_argument('--drop_dec', type=float, default=0.2, metavar="FLOAT",
+    network.add_argument('--drop_dec', type=float, default=0., metavar="FLOAT",
                          help="dropout (idrop) for decoder (0: no dropout) (default: %(default)s)")
-    network.add_argument('--drop_enc', type=float, default=0.2, metavar="FLOAT",
+    network.add_argument('--drop_enc', type=float, default=0., metavar="FLOAT",
                          help="dropout (idrop) for encoder (0: no dropout) (default: %(default)s)")
-    network.add_argument('--gdrop_embedding', type=float, default=0, metavar="FLOAT",
+    network.add_argument('--gdrop_embedding', type=float, default=0., metavar="FLOAT",
                          help="gdrop for words (0: no dropout) (default: %(default)s)")
-    network.add_argument('--gdrop_dec', type=float, default=0, metavar="FLOAT",
+    network.add_argument('--gdrop_dec', type=float, default=0.2, metavar="FLOAT",
                          help="gdrop for decoder (0: no dropout) (default: %(default)s)")
-    network.add_argument('--gdrop_enc', type=float, default=0, metavar="FLOAT",
+    network.add_argument('--gdrop_enc', type=float, default=0.2, metavar="FLOAT",
                          help="gdrop for encoder (0: no dropout) (default: %(default)s)")
 
     # training progress
     training = parser.add_argument_group('training parameters')
-    training.add_argument('--max_len', type=int, default=100, metavar='INT',
+    training.add_argument('--max_len', type=int, default=80, metavar='INT',
                          help="maximum sequence length (default: %(default)s)")
     training.add_argument('--fix_len_src', type=int, default=-1, metavar='INT',
                          help="fix src sentence len to this (by cutting or padding) (default: %(default)s)")
@@ -95,7 +95,7 @@ def init(phase):
                          help="fix trg sentence len to this (by cutting or padding) (default: %(default)s)")
     training.add_argument('--batch_size', type=int, default=80, metavar='INT',
                          help="minibatch size (default: %(default)s)")
-    training.add_argument('--rand_skip', type=float, default=0.0001, metavar='INT',
+    training.add_argument('--rand_skip', type=float, default=0., metavar='INT',
                          help="randomly skip batches for training (default: %(default)s)")
     training.add_argument('--max_epochs', type=int, default=24, metavar='INT',
                          help="maximum number of epochs (default: %(default)s)")
@@ -117,9 +117,9 @@ def init(phase):
                          help="validation frequency (default: %(default)s)")
     training.add_argument('--valid_batch_size', type=int, default=80, metavar='INT',
                          help="validing minibatch size (default: %(default)s)")
-    validation.add_argument('--patience', type=int, default=10, metavar='INT',
+    validation.add_argument('--patience', type=int, default=5, metavar='INT',
                          help="early stopping patience (default: %(default)s)")
-    validation.add_argument('--anneal_restarts', type=int, default=0, metavar='INT',
+    validation.add_argument('--anneal_restarts', type=int, default=1, metavar='INT',
                          help="when patience runs out, restart training INT times with annealed learning rate (default: %(default)s)")
     validation.add_argument('--anneal_no_renew_trainer', action='store_false',  dest='anneal_renew_trainer',
                          help="don't renew trainer (discard moments or grad info) when anneal")
@@ -135,12 +135,13 @@ def init(phase):
     common.add_argument("--dynet-mem", type=str, default="")
     common.add_argument("--dynet-mem-test", action='store_true')
     common.add_argument("--dynet-autobatch", type=str, default="")
+    common.add_argument("--dynet-seed", type=int, default=12345)    # default will be of no use, need to specify it
     common.add_argument("--debug", action='store_true')
 
     # decode (for validation or maybe certain training procedure)
     decode = parser.add_argument_group('decode')
-    decode.add_argument('--decode_type', type=str, default="decode", choices=["decode", "test1", "test2", "loop"],
-                         help="type of testing (decode, test, loop)")
+    decode.add_argument('--decode_type', '--decode_mode', type=str, default="decode", choices=["decode", "test1", "test2", "loop"],
+                         help="type/mode of testing (decode, test, loop)")
     decode.add_argument('--decode_way', type=str, default="beam", choices=["beam", "sample"],
                          help="decoding method (default: %(default)s)")
     decode.add_argument('--beam_size', type=int, default=5,

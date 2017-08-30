@@ -38,12 +38,13 @@ def main(opts):
                 break
             sss = Dict.w2i(source_dicts, line.split(), (opts["factors"]>1))
             rs = decode.search([sss], mm, opts, opts["decode_way"], opts["decode_batched"])
-            strs = Dict.i2w(target_dict, rs[0][0])
+            best_seq = [one.last_action for one in rs[0][0]]
+            strs = Dict.i2w(target_dict, best_seq)
             utils.printing(" ".join(strs), func="none", out=sys.stdout)
     elif opts["decode_type"].startswith("test"):
-        utils.printing("Testing log likelihood, only using the first model.")
         one_recorder = utils.OnceRecorder("Test-LL")
         ff = {"test1":mm[0].fb, "test2":mm[0].fb2}[opts["decode_type"]]
+        utils.printing("Testing log likelihood, only using the first model; running %s." % str(ff))
         for xs, ys, tk_x, tk_t in test_iter:
             loss = ff(xs, ys, False)
             one_recorder.record(xs, ys, loss, 0)
@@ -52,5 +53,6 @@ def main(opts):
         pass
 
 if __name__ == '__main__':
+    utils.printing("cmd: %s" % ' '.join(sys.argv))
     opts = args.init("test")
     main(vars(opts))

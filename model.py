@@ -121,7 +121,7 @@ class NMTModel(object):
         # -- decoder (steps == len)
         ss = self.dec.start_one(x_ctx)
         ss = self.dec.feed_one(ss, y_embeds[:-1])
-        hiddens, atts = ss.get_results()
+        hiddens, atts, _ = ss.get_results()
         # -- ouptuts
         losses = []
         for ss, at, hi, ye, yt in zip(range(len(yy)), atts, hiddens, y_yes, yy):
@@ -153,7 +153,7 @@ class NMTModel(object):
                 else:
                     ye = self.get_embeddings_step(y[i-1], self.embed_trg)
                     ss = self.dec.feed_one(ss, ye)
-                hi, at = ss.get_results_one()
+                hi, at, atw = ss.get_results_one()
                 sc = self.get_score(at, hi, ye)
                 prob = dy.softmax(sc)
                 pvalue = prob.value()

@@ -107,12 +107,14 @@ class Trainer(object):
         # validate and log in the stats
         ss = ".e%s-u%s" % (self._tp.eidx, self._tp.uidx) if name is None else name
         with utils.Timer(name="Valid %s" % ss, print_date=True):
-            score = self.validator(dev_iter)
-            utils.printing("Validating %s for %s: score is %s." % (self.opts["valid_metric"], ss, score), func="info")
-            # checkpoint - write current & best
+            # checkpoint - write current
             self.save(Trainer.CURR_PREFIX+self.opts["model"])
             if not self.opts["overwrite"]:
                 self.save(self.opts["model"]+ss)
+            # validate
+            score = self.validator(dev_iter)
+            utils.printing("Validating %s for %s: score is %s." % (self.opts["valid_metric"], ss, score), func="info")
+            # write best and update stats
             ttp = self._tp
             ttp.hist_points.append(ss)
             ttp.hist_scores.append(score)

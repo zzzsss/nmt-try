@@ -4,7 +4,7 @@ import numpy as np
 import utils, data
 
 def _check_order(l):
-    return (len(l)==1 and l[0]==0) or (len(l)>1 and l[-1]==l[-2]+1)
+    return (len(l) == 1 and l[0] == 0) or (len(l)>1 and l[-1] == l[-2]+1)
 
 def decode(diter, mms, target_dict, opts, outf):
     one_recorder = utils.OnceRecorder("DECODE")
@@ -13,7 +13,8 @@ def decode(diter, mms, target_dict, opts, outf):
             rs = search(xs, mms, opts, opts["decode_way"], opts["decode_batched"])
             one_recorder.record(xs, None, 0, 0)
             for r in rs:
-                strs = data.Dict.i2w(target_dict, r[0])
+                best_seq = [one.last_action for one in r[0]]
+                strs = data.Dict.i2w(target_dict, best_seq)
                 f.write(" ".join(strs)+"\n")
     one_recorder.report()
 
@@ -64,7 +65,8 @@ def search(xs, models, opts, strategy, batched):
     final_results = pr.feed(nexts, orders)
     for i, hs in enumerate(hypos):
         for j, h in enumerate(hs):
-            finished[i].append(Hypo(last_action=eos_ind, prev=h, score_one=final_results[i][j][eos_ind]))
+            hf = Hypo(last_action=eos_ind, prev=h, score_one=final_results["scores"][i][j][eos_ind], attws=final_results["attws"][i][j])
+            finished[i].append(hf)
     # final check and ordering
     rets = [[f.get_path() for f in sorted(fs, key=lambda x:x.final_score, reverse=True)[:st.width()]] for fs in finished]
     return rets
@@ -84,12 +86,12 @@ class PolyNormer(Normer):
 # hypothesis
 class Hypo(object):
     DefaultNormer = Normer
-    def __init__(self, last_action=None, prev=None, score_one=0., normer=None):
+    def __init__(self, last_action=None, prev=None, score_one=0., normer=None, attws=None):
         self.last_action = last_action    # None for the start symbol
         self.prev = prev
         self.score_one = score_one
         self.score_acc = prev.score_acc+score_one if prev else 0.
-        self.length = prev.length+1 if prev else 0
+        self.length = prev.length+1 if prev is not None else 0
         self.normer = None
         if normer is not None:
             self.normer = normer
@@ -97,6 +99,9 @@ class Hypo(object):
             self.normer = self.prev.normer
         else:
             self.normer = Hypo.DefaultNormer()
+        self.attws = None
+        if attws is not None:
+            self.attws = [float(x) for x in attws]    # attention weights
 
     @property
     def partial_score(self):
@@ -106,12 +111,18 @@ class Hypo(object):
     def final_score(self):
         return self.normer.norm_score(self.score_acc, self.length)
 
-    def get_path(self):
+    def _get(self, which):
+        if which is None:
+            return self
+        else:
+            return getattr(self, which)
+
+    def get_path(self, which=None):
         if self.prev is None:
             return []
         else:
-            l = self.prev.get_path()
-            l.append(self.last_action)
+            l = self.prev.get_path(which)
+            l.append(self._get(which))
             return l
 
 # how the batch of decoding states are represented
@@ -132,6 +143,9 @@ class Process(object):
 
     def feed(self, **argv):
         raise NotImplementedError()
+
+    def _return(self, scores, attws):
+        return {"scores":scores, "attws":attws}
 
 class BatchedProcess(Process):
     def __init__(self, mms, expand):
@@ -161,21 +175,32 @@ class BatchedProcess(Process):
                 nexts[i].append(0)
                 orders[i].append(0)
 
+    def _avg(self, l):
+        if len(l)==1:
+            r = l[0]
+        else:
+            r = dy.average(l)
+        return self._fold_list(r.value())
+
     def start(self, xs, start_expand):
         self.bsize = len(xs)
         cur_hiddens = []
         cur_probs = []
+        cur_attws = []
         for _m in self.mms:
             ss = _m.prepare_enc(xs, self.expand)
-            hi, at = ss.get_results_one()
+            hi, at, atw = ss.get_results_one()
             ye = _m.get_start_yembs(self.all_size)
             sc = _m.get_score(at, hi, ye)
             cur_hiddens.append(ss)
             cur_probs.append(dy.softmax(sc))
+            cur_attws.append(atw)
         self.hiddens = cur_hiddens
         # average scores
-        final_score = cur_probs[0] if (len(cur_probs)==1) else dy.average(cur_probs)
-        return self._fold_list(final_score.value())
+        final_score = self._avg(cur_probs)
+        # average attentions, but currently we don't actually use it
+        avg_attws = self._avg(cur_attws)
+        return self._return(scores=final_score, attws=avg_attws)
 
     def feed(self, nexts, orders):
         # orders/nexts => list(batch) of list(expand) of int
@@ -184,19 +209,23 @@ class BatchedProcess(Process):
         flat_orders = self._flat_list(orders, True) if orders is not None else None
         cur_hiddens = []
         cur_probs = []
+        cur_attws = []
         for i, _m in enumerate(self.mms):
             ye = _m.get_embeddings_step(flat_nexts, _m.embed_trg)
             if flat_orders is not None:     # no change if None (for eg., when sampling)
                 self.hiddens[i].shuffle(flat_orders)
             ss = _m.dec.feed_one(self.hiddens[i], ye)
-            hi, at = ss.get_results_one()
+            hi, at, atw = ss.get_results_one()
             sc = _m.get_score(at, hi, ye)
             cur_hiddens.append(ss)
             cur_probs.append(dy.softmax(sc))
+            cur_attws.append(atw)
         self.hiddens = cur_hiddens
         # average scores
-        final_score = cur_probs[0] if len(cur_probs)==1 else dy.average(cur_probs)
-        return self._fold_list(final_score.value())
+        final_score = self._avg(cur_probs)
+        # average attentions, but currently we don't actually use it
+        avg_attws = self._avg(cur_attws)
+        return self._return(scores=final_score, attws=avg_attws)
 
 class NonBatchedProcess(Process):
     def __init__(self, mms, expand):
@@ -217,10 +246,11 @@ class NonBatchedProcess(Process):
         self.bsize = len(xs)
         cur_hiddens = [[[] for _ in range(start_expand)] for _j in xs]
         cur_probs = [[[] for _ in range(start_expand)] for _j in xs]
+        cur_attws = [[[] for _ in range(start_expand)] for _j in xs]
         for j, one in enumerate(xs):
             for i, _m in enumerate(self.mms):
                 ss = _m.prepare_enc([one], 1)
-                hi, at = ss.get_results_one()
+                hi, at, atw = ss.get_results_one()
                 ye = _m.get_start_yembs(1)
                 sc = _m.get_score(at, hi, ye)
                 prob = dy.softmax(sc)
@@ -228,14 +258,16 @@ class NonBatchedProcess(Process):
                     # here, not the 'correct' order again, but since the first states are all the same ...
                     cur_hiddens[j][z].append(ss)
                     cur_probs[j][z].append(prob)
+                    cur_attws[j][z].append(atw)
         self.hiddens = cur_hiddens
         # average scores
-        return self._avg_probs(cur_probs)
+        return self._return(scores=self._avg_probs(cur_probs), attws=self._avg_probs(cur_attws))
 
     def feed(self, nexts, orders):
         # orders/nexts => list(batch) of list(expand) of int
         cur_hiddens = [[] for _ in range(self.bsize)]
         cur_probs = [[] for _ in range(self.bsize)]
+        cur_attws = [[] for _ in range(self.bsize)]
         if orders is None:
             orders = [[i for i, cur_ne in enumerate(one_ne)] for one_ne in nexts]
         for j in range(len(nexts)):
@@ -243,18 +275,20 @@ class NonBatchedProcess(Process):
             for z in range(len(one_ne)):
                 cur_hiddens[j].append([])
                 cur_probs[j].append([])
+                cur_attws[j].append([])
                 cur_ne, cur_or = one_ne[z], one_or[z]
                 for i, _m in enumerate(self.mms):
                     ye = _m.get_embeddings_step(cur_ne, _m.embed_trg)
                     this_ss = self.hiddens[j][cur_or][i]
                     ss = _m.dec.feed_one(this_ss, ye)
-                    hi, at = ss.get_results_one()
+                    hi, at, atw = ss.get_results_one()
                     sc = _m.get_score(at, hi, ye)
                     cur_hiddens[j][-1].append(ss)
                     cur_probs[j][-1].append(dy.softmax(sc))
+                    cur_attws[j][-1].append(atw)
         self.hiddens = cur_hiddens
         # average scores
-        return self._avg_probs(cur_probs)
+        return self._return(scores=self._avg_probs(cur_probs), attws=self._avg_probs(cur_attws))
 
 # how to select the next actions
 class SamplingStrategy(object):
@@ -278,15 +312,17 @@ class SamplingStrategy(object):
             candidates = []
             for j, h in enumerate(hs):
                 # sample
-                sc = results[i][j]
+                sc = results["scores"][i][j]
+                attws = results["attws"][i][j]
                 nx = self._sample(sc)
-                candidates.append((Hypo(last_action=nx, prev=h, score_one=np.log(sc[nx])), nx, j))
+                candidates.append((Hypo(last_action=nx, prev=h, score_one=np.log(sc[nx]), attws=attws), nx, j))
             cands.append(candidates)
         return cands
 
 class BeamStrategy(object):
-    def __init__(self, beam_size):
+    def __init__(self, beam_size, hypo_expand_size=-1):
         self.beam_size = beam_size
+        self.hypo_expand_size = hypo_expand_size if hypo_expand_size>0 else beam_size
 
     def start_hypo_num(self):
         return 1
@@ -302,11 +338,12 @@ class BeamStrategy(object):
             # generate the next beam --- first filter on this scores
             candidates = []
             for j, h in enumerate(hs):
-                sc = results[i][j]
-                top_ids = np.argpartition(sc, max(-len(sc),-self.beam_size))[-self.beam_size:]
+                sc = results["scores"][i][j]
+                attws = results["attws"][i][j]
+                top_ids = np.argpartition(sc, max(-len(sc),-self.hypo_expand_size))[-self.hypo_expand_size:]
                 for one in top_ids:
                     next_one = int(one)
-                    candidates.append((Hypo(last_action=next_one, prev=h, score_one=np.log(sc[next_one])), next_one, j))
+                    candidates.append((Hypo(last_action=next_one, prev=h, score_one=np.log(sc[next_one]), attws=attws), next_one, j))
             # sort by candidates
             best_cands = sorted(candidates, key=lambda x: x[0].partial_score, reverse=True)[:self.beam_size]
             cands.append(best_cands)

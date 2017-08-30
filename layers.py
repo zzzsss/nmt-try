@@ -8,8 +8,9 @@ import numpy as np
 def gen_masks_input(rate, size, bsize=1):
     def _gen_masks(size, rate):
         # inverted dropout
-        x = np.random.binomial(1, rate, size).astype(np.float)
-        x *= (1.0/rate)
+        r = 1-rate
+        x = np.random.binomial(1, r, size).astype(np.float)
+        x *= (1.0/r)
         return x
     x = _gen_masks((size, bsize), rate)
     return dy.inputTensor(x, True)
@@ -18,12 +19,13 @@ def gen_maks_embed(rate, num):
     # hope this might not be too costy
     # also shared dropping in one minibatch for convenience
     x = set()
+    r = 1-rate
     if type(num) == int:
-        rr = np.random.binomial(1, rate, num)
+        rr = np.random.binomial(1, r, num)
         for i, n in enumerate(rr):
             x.add(i) if n>0 else None
     else:
-        rr = np.random.binomial(1, rate, len(num))
+        rr = np.random.binomial(1, r, len(num))
         for i, n in zip(num, rr):
             x.add(i) if n>0 else None
     return x
@@ -161,7 +163,7 @@ class GruNode(Basic):
         bsize = int(argv["bsize"]) if "bsize" in argv else 1       # if not, the same mask for all elements in batch
         if gdrop > 0:
             self.masks = (gen_masks_input(gdrop, self.n_input, bsize), gen_masks_input(gdrop, self.n_hidden, bsize))
-        # TODO
+        # TODO ?? don't remember what this todo is to do
 
     def __call__(self, input_exp, hidden_exp):
         # two kinds of dropouts
@@ -236,7 +238,7 @@ class FfAttention(Attention):
         ctx = self.cache_values[sig_s] * att_alpha      # {(n_s, sent_len), batch_size}
         # if True:    # debug (with dev(bs80, h1000): 4186->bef->8057->tanh->10491->dropout->14138, without avg:11033)
         #     return dy.average(s)
-        return ctx
+        return ctx, att_alpha
 
 class BiaffAttention(Attention):
     def __init__(self, model, n_s, n_h, n_hidden):
@@ -258,7 +260,7 @@ class BiaffAttention(Attention):
         att_e = dy.reshape(wn_t * self.cache_values[sig_s], (len(s), ), batch_size=bs(n))
         att_alpha = dy.softmax(att_e)
         ctx = self.cache_values[sig_s] * att_alpha
-        return ctx
+        return ctx, att_alpha
 
 # ================= Blocks ================= #
 # stateless encoder
@@ -303,13 +305,14 @@ class Encoder(object):
 
 # -------------
 class DecoderState(object):
-    def __init__(self, dec, s, n_layers, hiddens, att, prev=None):
+    def __init__(self, dec, s, n_layers, hiddens, att, attw, prev=None):
         self.dec = dec
         self.n_layers = n_layers
         # caches
         self.s = s
         self.cache_hiddens = hiddens
         self.cache_att = att
+        self.cache_attw = attw      # attention weights
         self.prev = prev
 
     @property
@@ -319,17 +322,19 @@ class DecoderState(object):
     def shuffle(self, orders):
         self.cache_hiddens = [dy.pick_batch_elems(one, orders) for one in self.cache_hiddens]
         self.cache_att = dy.pick_batch_elems(self.cache_att, orders)
+        self.cache_attw = None      # just clear that
 
+    # !! should not be used after any shuffling
     def get_results(self):
         if self.prev is None:
-            return [self.cache_hiddens[-1]], [self.cache_att]
-        hiddens, atts = self.prev.get_results()
+            return [self.cache_hiddens[-1]], [self.cache_att], [self.cache_attw]
+        hiddens, atts, attws = self.prev.get_results()
         hiddens.append(self.cache_hiddens[-1])  # last layer
         atts.append(self.cache_att)
-        return hiddens, atts
+        return hiddens, atts, attws
 
     def get_results_one(self):
-        return self.cache_hiddens[-1], self.cache_att
+        return self.cache_hiddens[-1], self.cache_att, self.cache_attw
 
 # attentional decoder
 class Decoder(object):
@@ -368,8 +373,8 @@ class Decoder(object):
         for i in range(self.n_layers):
             cur_init = self.inodes[i](avg)
             inits.append(cur_init)          # +1 for the init state
-        att = self.anode(s, inits[0])          # start of the attention
-        return DecoderState(self, s, self.n_layers, inits, att)
+        att, attw = self.anode(s, inits[0])          # start of the attention
+        return DecoderState(self, s, self.n_layers, inits, att, attw)
 
     def feed_one(self, ss, inputs):
         # one or several steps forward, return the last states
@@ -399,7 +404,7 @@ class AttDecoder(Decoder):
 
     def _feed_one(self, ss, one):
         # first layer with attetion
-        att = self.anode(ss.s, ss.cache_hiddens[0])
+        att, attw = self.anode(ss.s, ss.cache_hiddens[0])
         g_input = dy.concatenate([one, att])
         hidd = self.gnodes[0](g_input, ss.cache_hiddens[0])
         this_hiddens = [hidd]
@@ -407,7 +412,7 @@ class AttDecoder(Decoder):
         for i in range(1, self.n_layers):
             ihidd = self.gnodes[i](this_hiddens[i-1], ss.cache_hiddens[i])
             this_hiddens.append(ihidd)
-        return DecoderState(self, ss.s, ss.n_layers, this_hiddens, att, ss)
+        return DecoderState(self, ss.s, ss.n_layers, this_hiddens, att, attw, ss)
 
 # nematus-style attention decoder, fixed two transitions
 class NematusDecoder(Decoder):
@@ -424,11 +429,11 @@ class NematusDecoder(Decoder):
     def _feed_one(self, ss, one):
         # first layer with attetion, gru1 -> att -> gru2
         s1 = self.gnodes[0](one, ss.cache_hiddens[0])
-        att = self.anode(ss.s, s1)
+        att, attw = self.anode(ss.s, s1)
         hidd = self.gnodes[-1](att, s1)
         this_hiddens = [hidd]
         # later layers
         for i in range(1, self.n_layers):
             ihidd = self.gnodes[i](this_hiddens[i-1], ss.cache_hiddens[i])
             this_hiddens.append(ihidd)
-        return DecoderState(self, ss.s, ss.n_layers, this_hiddens, att, ss)
+        return DecoderState(self, ss.s, ss.n_layers, this_hiddens, att, attw, ss)
