@@ -3,8 +3,6 @@ from data import Dict, TextIterator
 import sys
 
 def main(opts):
-    # 0. check options
-    args.check_options(opts)
     # 1. datas
     source_dicts = [Dict.read(f) for f in opts["dicts_final"][:-1]]
     target_dict = Dict.read(opts["dicts_final"][-1])
@@ -55,4 +53,4 @@ def main(opts):
 if __name__ == '__main__':
     utils.printing("cmd: %s" % ' '.join(sys.argv))
     opts = args.init("test")
-    main(vars(opts))
+    main(opts)

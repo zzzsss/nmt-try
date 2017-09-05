@@ -7,8 +7,6 @@ numpy.random.seed(12345)
 # --dynet-seed 12345
 
 def main(opts):
-    # 0. check options
-    args.check_options(opts)
     # 1. obtain dictionaries
     source_corpus, target_corpus = opts["train"]
     source_dicts = []
@@ -53,4 +51,4 @@ def main(opts):
 if __name__ == '__main__':
     utils.printing("cmd: %s" % ' '.join(sys.argv))
     opts = args.init("train")
-    main(vars(opts))
+    main(opts)

@@ -1,4 +1,5 @@
 import argparse
+from utils import Logger
 
 # parse the arguments for main
 def init(phase):
@@ -15,9 +16,9 @@ def init(phase):
                              help="output target corpus for dev (if needed)")
         data.add_argument('--dicts_raw', type=str, metavar='PATH', nargs="+",
                              help="raw dictionaries (one per source factor, plus target vocabulary)")
-        data.add_argument('--dicts_final', type=str, metavar='PATH', nargs="+",
+        data.add_argument('--dicts_final', type=str, default=["src.v", "trg.v"], metavar='PATH', nargs="+",
                              help="final dictionaries (one per source factor, plus target vocabulary), also write dest")
-        data.add_argument('--rebuild_dicts', action='store_true',
+        data.add_argument('--no_rebuild_dicts', action='store_false', dest='rebuild_dicts',
                              help="rebuild dictionaries and write to files")
         data.add_argument('--dicts_thres', type=int, default=50000, metavar='INT',
                              help="cutting threshold (>100) or cutting frequency (<=100) for dicts (default: %(default)s)")
@@ -25,7 +26,7 @@ def init(phase):
         data.add_argument('--model', type=str, default='model', metavar='PATH',
                              help="model file name (default: %(default)s)")
         data.add_argument('--reload', action='store_true',
-                             help="load existing model (if '--model' points to existing model)")
+                             help="load existing model (if '--reload_model_name' points to existing model)")
         data.add_argument('--reload_model_name', type=str, metavar='PATH',
                              help="reload model file name (default: %(default)s)")
         data.add_argument('--no_reload_training_progress', action='store_false',  dest='reload_training_progress',
@@ -37,10 +38,10 @@ def init(phase):
         data.add_argument('--test', type=str, metavar='PATH', nargs=2,
                              help="parallel testing corpus (source and target)")
         data.add_argument('--output', type=str, default='output.txt', metavar='PATH', help="output target corpus")
-        data.add_argument('--gold', type=str, metavar='PATH', help="gold target corpus (for eval)")
-        data.add_argument('--dicts_final', type=str, required=True, metavar='PATH', nargs="+",
+        # data.add_argument('--gold', type=str, metavar='PATH', help="gold target corpus (for eval)") # test[1]
+        data.add_argument('--dicts_final', type=str, default=["src.v", "trg.v"], metavar='PATH', nargs="+",
                           help="final dictionaries (one per source factor, plus target vocabulary), also write dest")
-        data.add_argument('--models', type=str, required=True, metavar='PATH', nargs="*",
+        data.add_argument('--models', type=str, default=["zbest.model"], metavar='PATHs', nargs="*",
                              help="model file names (ensemble if >1)")
     else:
         raise NotImplementedError(phase)
@@ -98,9 +99,9 @@ def init(phase):
                          help="minibatch size (default: %(default)s)")
     training.add_argument('--rand_skip', type=float, default=0., metavar='INT',
                          help="randomly skip batches for training (default: %(default)s)")
-    training.add_argument('--max_epochs', type=int, default=24, metavar='INT',
+    training.add_argument('--max_epochs', type=int, default=100, metavar='INT',
                          help="maximum number of epochs (default: %(default)s)")
-    training.add_argument('--max_updates', type=int, default=10000000, metavar='INT',
+    training.add_argument('--max_updates', type=int, default=1000000, metavar='INT',
                          help="maximum number of updates (minibatches) (default: %(default)s)")
     # -- trainer
     network.add_argument('--trainer_type', type=str, default="adam", choices=["adam", "sgd", "momentum"],
@@ -116,11 +117,11 @@ def init(phase):
     validation = parser.add_argument_group('validation parameters')
     validation.add_argument('--valid_freq', type=int, default=20000, metavar='INT',
                          help="validation frequency (default: %(default)s)")
-    training.add_argument('--valid_batch_size', type=int, default=80, metavar='INT',
+    training.add_argument('--valid_batch_size', type=int, default=32, metavar='INT',
                          help="validing minibatch size (default: %(default)s)")
     validation.add_argument('--patience', type=int, default=5, metavar='INT',
                          help="early stopping patience (default: %(default)s)")
-    validation.add_argument('--anneal_restarts', type=int, default=1, metavar='INT',
+    validation.add_argument('--anneal_restarts', type=int, default=2, metavar='INT',
                          help="when patience runs out, restart training INT times with annealed learning rate (default: %(default)s)")
     validation.add_argument('--anneal_no_renew_trainer', action='store_false',  dest='anneal_renew_trainer',
                          help="don't renew trainer (discard moments or grad info) when anneal")
@@ -139,6 +140,12 @@ def init(phase):
     common.add_argument("--dynet-autobatch", type=str, default="")
     common.add_argument("--dynet-seed", type=int, default=12345)    # default will be of no use, need to specify it
     common.add_argument("--debug", action='store_true')
+    if phase == "train":
+        common.add_argument("--log", type=str, default="z.log")
+    elif phase == "test":
+        common.add_argument("--log", type=str, default="")
+    else:
+        raise NotImplementedError(phase)
 
     # decode (for validation or maybe certain training procedure)
     decode = parser.add_argument_group('decode')
@@ -146,7 +153,7 @@ def init(phase):
                          help="type/mode of testing (decode, test, loop)")
     decode.add_argument('--decode_way', type=str, default="beam", choices=["beam", "sample"],
                          help="decoding method (default: %(default)s)")
-    decode.add_argument('--beam_size', type=int, default=5,
+    decode.add_argument('--beam_size', type=int, default=10,
                         help="Beam size (default: %(default)s))")
     decode.add_argument('--sample_size', type=int, default=5,
                         help="Sample size (default: %(default)s))")
@@ -161,7 +168,14 @@ def init(phase):
     decode.add_argument('--test_batch_size', type=int, default=16, metavar='INT',
                          help="testing minibatch size (default: %(default)s)")
 
-    args = parser.parse_args()
+    a = parser.parse_args()
+
+    # check options and some processing
+    args = vars(a)
+    check_options(args)
+    if args["log"] is not None and len(args["log"]) > 0:    # enable logging
+        Logger.start_log(args["log"])
+
     return args
 
 def check_options(args):

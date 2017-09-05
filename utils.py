@@ -3,7 +3,27 @@ import time, sys, os, subprocess, random, json
 
 # tools
 from tools import shuffle, get_final_vocab, get_origin_vocab, zfopen
-from tools import printing
+from tools import printing as helper_print
+
+# print and log
+class Logger(object):
+    printing_log_file = None
+
+    @staticmethod
+    def start_log(s):
+        Logger.end_log()
+        Logger.printing_log_file = zfopen(s, "w")
+        printing("Start logging at %s" % Logger.printing_log_file)
+
+    @staticmethod
+    def end_log():
+        if Logger.printing_log_file is not None:
+            Logger.printing_log_file.close()
+
+def printing(s, func="plain", out=sys.stderr):
+    helper_print(s, func, out)
+    if Logger.printing_log_file is not None:
+        helper_print(s, func, Logger.printing_log_file)
 
 def DEBUG(s):
     printing(s, func="debug")
@@ -29,7 +49,7 @@ def get_statm():
         mem1 = "0MiB"
     return mem0, mem1
 
-class Timer:
+class Timer(object):
     NAMED = {}
     def __init__(self, name=None, cname=None, print_date=False, quiet=False, info=""):
         self.name = name
@@ -92,7 +112,7 @@ class Timer:
         else:
             Timer.NAMED[x] = 0.
 
-class Accu:
+class Accu(object):
     NAMED = {}
     METHODS = {}
     INITS = {}

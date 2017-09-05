@@ -80,13 +80,13 @@ function bpe
     # learn
     echo "Learning BPE with bpe_operations=${OP_NUM}. This may take a while..."
     cat ${DIR}/train.tok.clean.tc.${SRC} ${DIR}/train.tok.clean.tc.${TRG}| \
-        python ${SUBWORD_DIR}/learn_bpe.py -s ${OP_NUM} > ${DIR}/bpe.${OP_NUM}
+        python3 ${SUBWORD_DIR}/learn_bpe.py -s ${OP_NUM} > ${DIR}/bpe.${OP_NUM}
     # apply
     for lang in ${SRC} ${TRG}; do
         for f in ${DIR}/train.tok.clean.tc.${lang} ${DIR}/dt.*.tok.tc.${lang}; do
             echo "Apply BPE with bpe_operations=${OP_NUM} to $f"
             outfile="${f%.*}.bpe.${lang}"
-            python ${SUBWORD_DIR}/apply_bpe.py -c ${DIR}/bpe.${OP_NUM} < $f > ${outfile}
+            python3 ${SUBWORD_DIR}/apply_bpe.py -c ${DIR}/bpe.${OP_NUM} < $f > ${outfile}
         done
     done
 
@@ -96,23 +96,26 @@ function bpe
 # better practice for join bpe (tc->bpe)
 function bpe-join
 {
-    echo "Bpe with DIR=$1, SRC=$2, TRG=$3, OP_NUM=$4"
+    echo "Bpe with DIR=$1, SRC=$2, TRG=$3, OP_NUM=$4, CUT_FREQ=$5"
     DIR=$1
     SRC=$2
     TRG=$3
     OP_NUM=$4
+    CUT_FREQ=$5
     # learn
     echo "Learning BPE_join with bpe_operations=${OP_NUM}. This may take a while..."
-    python ${SUBWORD_DIR}/learn_joint_bpe_and_vocab.py \
+    python3 ${SUBWORD_DIR}/learn_joint_bpe_and_vocab.py \
         --input ${DIR}/train.tok.clean.tc.${SRC} ${DIR}/train.tok.clean.tc.${TRG} -s ${OP_NUM} -o ${DIR}/bpe.${OP_NUM} \
         --write-vocabulary ${DIR}/bpe-vocab.${SRC} ${DIR}/bpe-vocab.${TRG}
     # apply
     for lang in ${SRC} ${TRG}; do
+        echo "Cut dictonaries for bpe-vocab.${lang}"
+        head -n ${CUT_FREQ} <bpe-vocab.${lang}  >bpe-vocab.cut.${lang}
         for f in ${DIR}/train.tok.clean.tc.${lang} ${DIR}/dt.*.tok.tc.${lang}; do
             echo "Apply BPE with bpe_operations=${OP_NUM} to $f"
             outfile="${f%.*}.bpe.${lang}"
-            python ${SUBWORD_DIR}/apply_bpe.py -c ${DIR}/bpe.${OP_NUM} \
-                --vocabulary ${DIR}/bpe-vocab.${lang} --vocabulary-threshold 50 < $f > ${outfile}
+            python3 ${SUBWORD_DIR}/apply_bpe.py -c ${DIR}/bpe.${OP_NUM} \
+                --vocabulary ${DIR}/bpe-vocab.cut.${lang} < $f > ${outfile}
         done
     done
 
