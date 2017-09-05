@@ -1,4 +1,4 @@
-import time, sys, os, subprocess, random, json
+import time, sys, os, subprocess, random, json, gzip
 
 _printing_heads = {
     "plain":"-- ", "time":"## ", "io":"== ", "info":"** ",
@@ -7,26 +7,33 @@ _printing_heads = {
 def printing(s, func="plain", out=sys.stderr):
     print(_printing_heads[func]+s, file=out)
 
+# an open wrapper
+def zfopen(filename, mode='r'):
+    if filename.endswith('.gz'):
+        return gzip.open(filename, mode, encoding="utf-8")
+    else:
+        return open(filename, mode, encoding="utf-8")
+
 # tools
 def shuffle(files):
-    with open(files[0]) as f:
+    with zfopen(files[0]) as f:
         lines = [[i.strip()] for i in f]
     for ff in files[1:]:
-        with open(ff) as f:
+        with zfopen(ff) as f:
             for i, li in enumerate(f):
                 lines[i].append(li.strip())
     random.shuffle(lines)
     # write
     for ii, ff in enumerate(files):
         path, filename = os.path.split(os.path.realpath(ff))
-        with open(filename+'.shuf', 'w') as f:
+        with zfopen(filename+'.shuf', 'w') as f:
             for l in lines:
                 f.write(l[ii]+"\n")
     # read
     fds = []
     for ff in files:
         path, filename = os.path.split(os.path.realpath(ff))
-        fds.append(open(filename+'.shuf', 'r'))
+        fds.append(zfopen(filename+'.shuf', 'r'))
     return fds
 
 def get_origin_vocab(f):

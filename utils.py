@@ -2,7 +2,7 @@
 import time, sys, os, subprocess, random, json
 
 # tools
-from tools import shuffle, get_final_vocab, get_origin_vocab
+from tools import shuffle, get_final_vocab, get_origin_vocab, zfopen
 from tools import printing
 
 def DEBUG(s):
@@ -18,7 +18,7 @@ def fatal(s):
     sys.exit()
 
 def get_statm():
-    with open("/proc/self/statm") as f:
+    with zfopen("/proc/self/statm") as f:
         rss = (f.read().split())        # strange!! readline-nope, read-ok
         mem0 = str(int(rss[1])*4//1024) + "MiB"
     try:

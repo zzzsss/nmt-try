@@ -40,6 +40,7 @@ POSTFIX_DT="tok.tc"
 
 ########### -- task specific -- ###########
 for lang in ${SRC} ${TRG}; do
+    rm ${CUR_DATA_DIR}/train.final.${lang}
     ln -s ${CUR_DATA_DIR}/train.${POSTFIX_TR}.${lang} ${CUR_DATA_DIR}/train.final.${lang}
     cat ${CUR_DATA_DIR}/dt.*2015*.${POSTFIX_DT}.${lang} > ${CUR_DATA_DIR}/dev.final.${lang}
     cat ${CUR_DATA_DIR}/dt.*{2013,2014}*.${POSTFIX_DT}.${lang} > ${CUR_DATA_DIR}/test.final.${lang}

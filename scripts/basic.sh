@@ -119,11 +119,17 @@ function bpe-join
     # files after bpe: train.tok.clean.tc.bpe.en *.tok.tc.bpe.en
 }
 
-# restore the original one
-# preparing for $LANG, $INPUT, $OUTPUT
+# restore the original one -- the sed will also work for non-bpe assuming @@-uffix is unseen
+# preparing for $LANG, and io
 function postprocess
 {
     sed -r 's/(@@ )|(@@ ?$)//g' | \
     perl ${MOSES_DIR}/scripts/recaser/detruecase.perl | \
     perl ${MOSES_DIR}/scripts/tokenizer/detokenizer.perl -l $1
+}
+# no detokenizer version of postprocess
+function postprocess0
+{
+    sed -r 's/(@@ )|(@@ ?$)//g' | \
+    perl ${MOSES_DIR}/scripts/recaser/detruecase.perl
 }

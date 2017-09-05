@@ -1,6 +1,6 @@
 # some routines for preparing data and dictionaries
 
-import json, gzip, numpy
+import json, numpy
 import utils
 
 class Dict:
@@ -15,7 +15,7 @@ class Dict:
                 df = json.loads(vname)
             else:
                 with utils.Timer(name="Dictionary", info="read vocabs from corpus"):
-                    with open(fname) as f:
+                    with utils.zfopen(fname) as f:
                         df = utils.get_origin_vocab(f)
             # filtering function
             self.d = utils.get_final_vocab(df, thres)
@@ -44,13 +44,13 @@ class Dict:
         return self.d["<go!!>"]
 
     def write(self, wf):
-        with open(wf, 'w') as f:
+        with utils.zfopen(wf, 'w') as f:
             f.write(json.dumps(self.d, ensure_ascii=False))
             utils.printing("-- Write Dictionary to %s: Finish %s." % (wf, len(self.d)), func="io")
 
     @staticmethod
     def read(rf):
-        with open(rf) as f:
+        with utils.zfopen(rf) as f:
             df = json.loads(f.read())
             utils.printing("-- Read Dictionary from %s: Finish %s." % (rf, len(df)), func="io")
             return Dict(d=df)
@@ -92,11 +92,6 @@ class Dict:
 
 # ======================= (data_iterator from nematus) ===================== #
 
-def fopen(filename, mode='r'):
-    if filename.endswith('.gz'):
-        return gzip.open(filename, mode)
-    return open(filename, mode)
-
 class TextIterator:
     """Simple Bitext iterator."""
     def __init__(self, source, target, source_dicts, target_dict, batch_size=None, maxlen=None, use_factor=False,
@@ -108,8 +103,8 @@ class TextIterator:
             with utils.Timer(name="Shuffle", info="shuffle the bilingual corpus"):
                 self.source, self.target = utils.shuffle([self.source_orig, self.target_orig])
         else:
-            self.source = fopen(source, 'r')
-            self.target = fopen(target, 'r')
+            self.source = utils.zfopen(source, 'r')
+            self.target = utils.zfopen(target, 'r')
         self.source_dicts = source_dicts
         self.target_dict = target_dict
         # options

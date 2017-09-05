@@ -37,6 +37,7 @@ def init(phase):
         data.add_argument('--test', type=str, metavar='PATH', nargs=2,
                              help="parallel testing corpus (source and target)")
         data.add_argument('--output', type=str, default='output.txt', metavar='PATH', help="output target corpus")
+        data.add_argument('--gold', type=str, metavar='PATH', help="gold target corpus (for eval)")
         data.add_argument('--dicts_final', type=str, required=True, metavar='PATH', nargs="+",
                           help="final dictionaries (one per source factor, plus target vocabulary), also write dest")
         data.add_argument('--models', type=str, required=True, metavar='PATH', nargs="*",
@@ -133,6 +134,7 @@ def init(phase):
     # common
     common = parser.add_argument_group('common')
     common.add_argument("--dynet-mem", type=str, default="")
+    common.add_argument("--dynet-devices", type=str, default="")
     common.add_argument("--dynet-mem-test", action='store_true')
     common.add_argument("--dynet-autobatch", type=str, default="")
     common.add_argument("--dynet-seed", type=int, default=12345)    # default will be of no use, need to specify it

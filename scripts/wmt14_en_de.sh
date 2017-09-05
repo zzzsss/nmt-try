@@ -49,6 +49,7 @@ time bpe-join "${CUR_DATA_DIR}" "${SRC}" "${TRG}" 90000
 
 ########### -- task specific -- ###########
 for lang in ${SRC} ${TRG}; do
+    rm ${CUR_DATA_DIR}/train.final.${lang}
     ln -s ${CUR_DATA_DIR}/train.tok.clean.tc.bpe.${lang} ${CUR_DATA_DIR}/train.final.${lang}
     cat ${CUR_DATA_DIR}/dt.newstest201{2,3}.tok.tc.bpe.${lang} > ${CUR_DATA_DIR}/dev.final.${lang}
     cat ${CUR_DATA_DIR}/dt.newstest2014.tok.tc.bpe.${lang} > ${CUR_DATA_DIR}/test.final.${lang}

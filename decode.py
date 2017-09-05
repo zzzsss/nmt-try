@@ -8,7 +8,7 @@ def _check_order(l):
 
 def decode(diter, mms, target_dict, opts, outf):
     one_recorder = utils.OnceRecorder("DECODE")
-    with open(outf, "w") as f:
+    with utils.zfopen(outf, "w") as f:
         for xs, _1, _2, _3 in diter:
             rs = search(xs, mms, opts, opts["decode_way"], opts["decode_batched"])
             one_recorder.record(xs, None, 0, 0)
