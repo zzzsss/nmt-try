@@ -118,12 +118,30 @@ class TextIterator:
         self.target_buffer = []
         self.k = batch_size * maxibatch_size
         #self.end_of_data = False
+        self.num_batches = None
+        # indexes by sorting by length
+        self.len_sort_indexes = []
+
+    def restore_sort_by_length(self, s):
+        # restore the ordering in-place, #todo: may increase forever
+        if self.shuffle or not self.sort_by_length:
+            return
+        cur_start = 0
+        for tidx in self.len_sort_indexes:
+            new_s = [None for _ in len(tidx)]
+            for i, idx in enumerate(tidx):
+                new_s[idx] = s[cur_start+i]
+            s[cur_start:cur_start+len(tidx)] = new_s
+            cur_start += len(tidx)
+        assert cur_start == len(s), "Wrong length of results"
 
     def __iter__(self):
         return self
 
     def __len__(self):
-        return sum([1 for _ in self])
+        if self.num_batches is None:
+            self.num_batches = sum([1 for _ in self])
+        return self.num_batches
 
     def reset(self):
         if self.shuffle:
@@ -171,6 +189,8 @@ class TextIterator:
                 _tbuf = [self.target_buffer[i] for i in tidx]
                 self.source_buffer = _sbuf
                 self.target_buffer = _tbuf
+                if not self.shuffle:    # no meaning who shuffling (training) #TODO: bad dependencies
+                    self.len_sort_indexes.append(tidx)
             else:
                 self.source_buffer.reverse()
                 self.target_buffer.reverse()

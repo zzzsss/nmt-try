@@ -110,7 +110,7 @@ function bpe-join
     # apply
     for lang in ${SRC} ${TRG}; do
         echo "Cut dictonaries for bpe-vocab.${lang}"
-        head -n ${CUT_FREQ} <bpe-vocab.${lang}  >bpe-vocab.cut.${lang}
+        head -n ${CUT_FREQ} <${DIR}/bpe-vocab.${lang}  >${DIR}/bpe-vocab.cut.${lang}
         for f in ${DIR}/train.tok.clean.tc.${lang} ${DIR}/dt.*.tok.tc.${lang}; do
             echo "Apply BPE with bpe_operations=${OP_NUM} to $f"
             outfile="${f%.*}.bpe.${lang}"

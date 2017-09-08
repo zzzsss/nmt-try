@@ -35,13 +35,13 @@ def init(phase):
                              help="don't write all models to same file")
     elif phase == "test":
         # data, dictionary, model
-        data.add_argument('--test', type=str, metavar='PATH', nargs=2,
+        data.add_argument('--test', '-t', type=str, metavar='PATH', nargs=2,
                              help="parallel testing corpus (source and target)")
-        data.add_argument('--output', type=str, default='output.txt', metavar='PATH', help="output target corpus")
+        data.add_argument('--output', '-o', type=str, default='output.txt', metavar='PATH', help="output target corpus")
         # data.add_argument('--gold', type=str, metavar='PATH', help="gold target corpus (for eval)") # test[1]
-        data.add_argument('--dicts_final', type=str, default=["src.v", "trg.v"], metavar='PATH', nargs="+",
+        data.add_argument('--dicts_final', '-d', type=str, default=["src.v", "trg.v"], metavar='PATH', nargs="+",
                           help="final dictionaries (one per source factor, plus target vocabulary), also write dest")
-        data.add_argument('--models', type=str, default=["zbest.model"], metavar='PATHs', nargs="*",
+        data.add_argument('--models', '-m', type=str, default=["zbest.model"], metavar='PATHs', nargs="*",
                              help="model file names (ensemble if >1)")
     else:
         raise NotImplementedError(phase)
@@ -60,10 +60,10 @@ def init(phase):
                          help="attention hidden layer size (default: %(default)s)")
     network.add_argument('--hidden_out', type=int, default=1000, metavar='INT',
                          help="output hidden layer size (default: %(default)s)")
-    network.add_argument('--thres_src', type=int, default=2, metavar='INT',
-                         help="source vocabulary threshold (default: %(default)s)")
-    network.add_argument('--thres_trg', type=int, default=2, metavar='INT',
-                         help="target vocabulary threshold (default: %(default)s)")
+    # network.add_argument('--thres_src', type=int, default=2, metavar='INT',
+    #                      help="source vocabulary threshold (default: %(default)s)")
+    # network.add_argument('--thres_trg', type=int, default=2, metavar='INT',
+    #                      help="target vocabulary threshold (default: %(default)s)")
     network.add_argument('--enc_depth', type=int, default=1, metavar='INT',
                          help="number of encoder layers (default: %(default)s)")
     network.add_argument('--dec_depth', type=int, default=1, metavar='INT',         # only the first is with att
@@ -115,11 +115,11 @@ def init(phase):
 
     # validate
     validation = parser.add_argument_group('validation parameters')
-    validation.add_argument('--valid_freq', type=int, default=20000, metavar='INT',
+    validation.add_argument('--valid_freq', type=int, default=10000, metavar='INT',
                          help="validation frequency (default: %(default)s)")
     training.add_argument('--valid_batch_size', type=int, default=32, metavar='INT',
                          help="validing minibatch size (default: %(default)s)")
-    validation.add_argument('--patience', type=int, default=5, metavar='INT',
+    validation.add_argument('--patience', type=int, default=10, metavar='INT',
                          help="early stopping patience (default: %(default)s)")
     validation.add_argument('--anneal_restarts', type=int, default=2, metavar='INT',
                          help="when patience runs out, restart training INT times with annealed learning rate (default: %(default)s)")
@@ -131,6 +131,8 @@ def init(phase):
                          help="learning rate decay on each restart (default: %(default)s)")
     validation.add_argument('--valid_metric', type=str, default="ll", choices=["ll", "bleu"],
                          help="type of metric for validation (default: %(default)s)")
+    validation.add_argument('--validate_epoch', action='store_true',
+                             help="validate at the end of each epoch")
 
     # common
     common = parser.add_argument_group('common')
@@ -140,12 +142,15 @@ def init(phase):
     common.add_argument("--dynet-autobatch", type=str, default="")
     common.add_argument("--dynet-seed", type=int, default=12345)    # default will be of no use, need to specify it
     common.add_argument("--debug", action='store_true')
+    common.add_argument("--verbose", "-v", action='store_true')
     if phase == "train":
-        common.add_argument("--log", type=str, default="z.log")
+        common.add_argument("--log", type=str, default=Logger.MAGIC_CODE, help="logger for the process")
     elif phase == "test":
-        common.add_argument("--log", type=str, default="")
+        common.add_argument("--log", type=str, default=Logger.MAGIC_CODE, help="logger for the process")
     else:
         raise NotImplementedError(phase)
+    common.add_argument('--report_freq', type=int, default=24, metavar='INT',
+                         help="report frequency (only when verbose) (default: %(default)s)")
 
     # decode (for validation or maybe certain training procedure)
     decode = parser.add_argument_group('decode')
@@ -153,11 +158,11 @@ def init(phase):
                          help="type/mode of testing (decode, test, loop)")
     decode.add_argument('--decode_way', type=str, default="beam", choices=["beam", "sample"],
                          help="decoding method (default: %(default)s)")
-    decode.add_argument('--beam_size', type=int, default=10,
+    decode.add_argument('--beam_size', '-k', type=int, default=10,
                         help="Beam size (default: %(default)s))")
     decode.add_argument('--sample_size', type=int, default=5,
                         help="Sample size (default: %(default)s))")
-    decode.add_argument('--normalize', type=float, default=0.0, metavar="ALPHA",
+    decode.add_argument('--normalize', '-n', type=float, default=0.0, metavar="ALPHA",
                         help="Normalize scores by sentence length (exponentiate lengths by ALPHA, neg means nope)")
     decode.add_argument('--decode_len', type=int, default=100, metavar='INT',
                          help="maximum decoding sequence length (default: %(default)s)")

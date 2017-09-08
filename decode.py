@@ -8,14 +8,24 @@ def _check_order(l):
 
 def decode(diter, mms, target_dict, opts, outf):
     one_recorder = utils.OnceRecorder("DECODE")
+    num_batches = len(diter)
+    cur_batches = 0.
+    # decoding them all
+    results = []
+    for xs, _1, _2, _3 in diter:
+        if opts["verbose"] and cur_batches % opts["report_freq"] == 0:
+            utils.printing("Decoding process: %.2f%%" % (cur_batches/num_batches*100))
+        cur_batches += 1
+        rs = search(xs, mms, opts, opts["decode_way"], opts["decode_batched"])
+        results += rs
+        one_recorder.record(xs, None, 0, 0)
+    # restore from sorting by length
+    diter.restore_sort_by_length(results)
     with utils.zfopen(outf, "w") as f:
-        for xs, _1, _2, _3 in diter:
-            rs = search(xs, mms, opts, opts["decode_way"], opts["decode_batched"])
-            one_recorder.record(xs, None, 0, 0)
-            for r in rs:
-                best_seq = [one.last_action for one in r[0]]
-                strs = data.Dict.i2w(target_dict, best_seq)
-                f.write(" ".join(strs)+"\n")
+        for r in results:
+            best_seq = [one.last_action for one in r[0]]
+            strs = data.Dict.i2w(target_dict, best_seq)
+            f.write(" ".join(strs)+"\n")
     one_recorder.report()
 
 # the main searching routine

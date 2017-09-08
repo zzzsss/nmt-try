@@ -20,6 +20,7 @@ class TrainingProgress(object):
         self.estop = False
         self.hist_points = []
         self.hist_scores = []            # the bigger the better
+        self.hist_train_loss = []
         self.best_scores = -12345678
         self.best_point = -1
 
@@ -103,9 +104,11 @@ class Trainer(object):
         s = eval.evaluate(self.opts["output"], self.opts["dev"][1], self.opts["eval_metric"])
         raise s
 
-    def _validate(self, dev_iter, name=None):
+    def _validate(self, dev_iter, name=None, training_recorder=None):
         # validate and log in the stats
         ss = ".e%s-u%s" % (self._tp.eidx, self._tp.uidx) if name is None else name
+        if training_recorder is not None:
+            self._tp.hist_train_loss.append(training_recorder.get("loss_per_word"))
         with utils.Timer(name="Valid %s" % ss, print_date=True):
             # checkpoint - write current
             self.save(Trainer.CURR_PREFIX+self.opts["model"])
@@ -126,6 +129,7 @@ class Trainer(object):
             else:
                 # anneal and early update
                 ttp.bad_counter += 1
+                utils.printing("Patience minus 1, now bad counter is %s." % ttp.bad_counter, func="info")
                 if ttp.bad_counter >= self.opts["patience"]:
                     ttp.bad_counter = 0
                     if ttp.anneal_restarts_done < self.opts["anneal_restarts"]:
@@ -160,12 +164,16 @@ class Trainer(object):
                         mem0, mem1 = utils.get_statm()
                         utils.DEBUG("[%s/%s] after fb(%s):%s/%s" % (mem0, mem1, len(xs), max([len(i) for i in xs]), max([len(i) for i in ys])))
                     # time to validate and save best model ??
-                    if self._tp.uidx % self.opts["valid_freq"] == 0:
+                    if self._tp.uidx % self.opts["valid_freq"] == 0:    # update when _update
                         one_recorder.report()
-                        self._validate(dev_iter)
+                        self._validate(dev_iter, training_recorder=one_recorder)
                         one_recorder.reset()
                         if self._finished():
                             break
+                    elif self.opts["verbose"] and self._tp.uidx % self.opts["report_freq"] == 0:
+                        one_recorder.report("Training process: ")
                 iter_recorder.report()
-                self._validate(dev_iter, name=".e%s"%self._tp.eidx)
+                if self.opts["validate_epoch"]:
+                    # here, also record one_recorder, might not be accurate
+                    self._validate(dev_iter, name=".e%s"%self._tp.eidx, training_recorder=one_recorder)
                 self._tp.eidx += 1

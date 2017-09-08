@@ -11,7 +11,7 @@ def main(opts):
     if opts["decode_type"] != "loop":
         test_iter = TextIterator(opts["test"][0], opts["test"][1], source_dicts, target_dict,
                               batch_size=opts["test_batch_size"], maxlen=None, use_factor=(opts["factors"]>1),
-                              skip_empty=False, shuffle_each_epoch=False, sort_by_length=False)
+                              skip_empty=False, shuffle_each_epoch=False, sort_by_length=True)
     # 2. model
     mm = []
     for mn in opts["models"]:
@@ -51,6 +51,6 @@ def main(opts):
         pass
 
 if __name__ == '__main__':
-    utils.printing("cmd: %s" % ' '.join(sys.argv))
+    utils.init_print()
     opts = args.init("test")
     main(opts)
