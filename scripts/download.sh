@@ -2,12 +2,12 @@
 
 # download all the files needed
 
-set -e
-set -v
 
+set -e
 RUNNING_DIR="$( cd "$( dirname ${BASH_SOURCE[0]}  )" && pwd )"
 source ${RUNNING_DIR}/basic.sh
 shopt -s expand_aliases
+set -v
 
 # some libs needed
 # -- moses

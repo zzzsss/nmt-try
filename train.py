@@ -34,11 +34,12 @@ def main(opts):
         except:
             utils.printing("Write dictionaries fail: %s, skip this step." % opts["dicts_final"], func="warn")
     # 2. corpus iterator
-    train_iter = TextIterator(source_corpus, target_corpus, source_dicts, target_dict,
+    train_iter = TextIterator(source_corpus, target_corpus, source_dicts, target_dict, sort_type="times",
                               batch_size=opts["batch_size"], maxlen=opts["max_len"], use_factor=(opts["factors"]>1))
+    # special restoring for test/dev-iter, #todo setting maxibatcg_size
     dev_iter = TextIterator(opts["dev"][0], opts["dev"][1], source_dicts, target_dict,
                               batch_size=opts["valid_batch_size"], maxlen=None, use_factor=(opts["factors"]>1),
-                              skip_empty=False, shuffle_each_epoch=False, sort_by_length=True)  # special restoring for it
+                              skip_empty=False, shuffle_each_epoch=False, sort_type="src", maxibatch_size=20) #todo
     # 3. about model & trainer
     mm = model.NMTModel(opts, source_dicts, target_dict)
     tt = trainer.Trainer(opts, mm)  # trainer + training_progress
@@ -49,6 +50,6 @@ def main(opts):
     utils.printing("=== Training ok!! ===", func="info")
 
 if __name__ == '__main__':
-    utils.init_print()
     opts = args.init("train")
+    utils.init_print()
     main(opts)

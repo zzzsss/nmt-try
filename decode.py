@@ -57,6 +57,10 @@ def search(xs, models, opts, strategy, batched):
         new_nexts, new_orders, new_hypos = [[] for _ in range(len(xs))], [[] for _ in range(len(xs))], [[] for _ in range(len(xs))]
         ordering_flag = True
         for i, one_cands in enumerate(cands):
+            # todo(warn): decrease beam size here
+            if len(finished[i]) >= st.width():
+                continue
+            one_cands = one_cands[:st.width()-len(finished[i])]
             for j, cc in enumerate(one_cands):
                 this_hypo, this_action, prev_index = cc
                 if this_action == eos_ind:
@@ -74,11 +78,16 @@ def search(xs, models, opts, strategy, batched):
     # force eos
     final_results = pr.feed(nexts, orders)
     for i, hs in enumerate(hypos):
-        for j, h in enumerate(hs):
-            hf = Hypo(last_action=eos_ind, prev=h, score_one=final_results["scores"][i][j][eos_ind], attws=final_results["attws"][i][j])
-            finished[i].append(hf)
+        last_finishes = [Hypo(last_action=eos_ind, prev=h, score_one=final_results["scores"][i][j][eos_ind], attws=final_results["attws"][i][j])
+                            for j, h in enumerate(hs)]
+        last_finishes = Hypo.sort_hypos(last_finishes)
+        if len(finished[i]) < st.width():
+            finished[i] += last_finishes[:(st.width()-len(finished[i]))]
     # final check and ordering
-    rets = [[f.get_path() for f in sorted(fs, key=lambda x:x.final_score, reverse=True)[:st.width()]] for fs in finished]
+    rets = [[f.get_path() for f in Hypo.sort_hypos(fs)[:st.width()]] for fs in finished]
+    # some usage printing
+    if opts["verbose"]:
+        utils.printing("Usage-info: %s" % pr.get_stat())
     return rets
 
 # length normer
@@ -135,6 +144,10 @@ class Hypo(object):
             l.append(self._get(which))
             return l
 
+    @staticmethod
+    def sort_hypos(ls):
+        return sorted(ls, key=lambda x:x.final_score, reverse=True)
+
 # how the batch of decoding states are represented
 class Process(object):
     def __init__(self, mms, expand):
@@ -143,6 +156,7 @@ class Process(object):
         self.bsize = -1
         # list(mms) of ss
         self.hiddens = None
+        self.stat = {"l":0, "r":0}  # l=len, r=real
 
     @property
     def all_size(self):
@@ -156,6 +170,13 @@ class Process(object):
 
     def _return(self, scores, attws):
         return {"scores":scores, "attws":attws}
+
+    def get_stat(self):
+        self.stat["b"] = self.bsize
+        self.stat["w"] = self.expand
+        self.stat["all"] = self.all_size * self.stat["l"]
+        self.stat["perc"] = (self.stat["r"]+0.)/self.stat["all"]
+        return self.stat
 
 class BatchedProcess(Process):
     def __init__(self, mms, expand):
@@ -171,19 +192,24 @@ class BatchedProcess(Process):
         for l in ll:
             utils.DEBUG_check(len(l) == self.expand)
             r += [base+one for one in l]
-            base += len(l)
-        utils.DEBUG_check(base == self.all_size)
+            if change:
+                base += len(l)
+        # if change:
+        #     utils.DEBUG_check(base == self.all_size)
         return r
 
     def _pad_list(self, nexts, orders):
         # Warning, in-place appending
-        utils.DEBUG_check(len(nexts) == len(orders))
+        if orders is not None:
+            utils.DEBUG_check(len(nexts) == len(orders))
         utils.DEBUG_check(len(nexts) == self.bsize)
         for i in range(self.bsize):
-            utils.DEBUG_check(len(nexts[i]) == len(orders[i]))
+            if orders is not None:
+                utils.DEBUG_check(len(nexts[i]) == len(orders[i]))
             for _ in range(len(nexts[i]), self.expand):
                 nexts[i].append(0)
-                orders[i].append(0)
+                if orders is not None:
+                    orders[i].append(0)
 
     def _avg(self, l):
         if len(l)==1:
@@ -194,6 +220,9 @@ class BatchedProcess(Process):
 
     def start(self, xs, start_expand):
         self.bsize = len(xs)
+        # todo, bad-dependency
+        self.stat["l"] += 1
+        self.stat["r"] += self.all_size
         cur_hiddens = []
         cur_probs = []
         cur_attws = []
@@ -213,6 +242,9 @@ class BatchedProcess(Process):
         return self._return(scores=final_score, attws=avg_attws)
 
     def feed(self, nexts, orders):
+        # todo, bad-dependency
+        self.stat["l"] += 1
+        self.stat["r"] += sum([len(i) for i in nexts])
         # orders/nexts => list(batch) of list(expand) of int
         self._pad_list(nexts, orders)
         flat_nexts = self._flat_list(nexts, False)
@@ -254,6 +286,9 @@ class NonBatchedProcess(Process):
 
     def start(self, xs, start_expand):
         self.bsize = len(xs)
+        # todo, bad-dependency
+        self.stat["l"] += 1
+        self.stat["r"] += self.all_size
         cur_hiddens = [[[] for _ in range(start_expand)] for _j in xs]
         cur_probs = [[[] for _ in range(start_expand)] for _j in xs]
         cur_attws = [[[] for _ in range(start_expand)] for _j in xs]
@@ -274,6 +309,9 @@ class NonBatchedProcess(Process):
         return self._return(scores=self._avg_probs(cur_probs), attws=self._avg_probs(cur_attws))
 
     def feed(self, nexts, orders):
+        # todo, bad-dependency
+        self.stat["l"] += 1
+        self.stat["r"] += sum([len(i) for i in nexts])
         # orders/nexts => list(batch) of list(expand) of int
         cur_hiddens = [[] for _ in range(self.bsize)]
         cur_probs = [[] for _ in range(self.bsize)]

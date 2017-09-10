@@ -35,7 +35,7 @@ def init(phase):
                              help="don't write all models to same file")
     elif phase == "test":
         # data, dictionary, model
-        data.add_argument('--test', '-t', type=str, metavar='PATH', nargs=2,
+        data.add_argument('--test', '-t', type=str, required=True, metavar='PATH', nargs=2,
                              help="parallel testing corpus (source and target)")
         data.add_argument('--output', '-o', type=str, default='output.txt', metavar='PATH', help="output target corpus")
         # data.add_argument('--gold', type=str, metavar='PATH', help="gold target corpus (for eval)") # test[1]
@@ -43,6 +43,8 @@ def init(phase):
                           help="final dictionaries (one per source factor, plus target vocabulary), also write dest")
         data.add_argument('--models', '-m', type=str, default=["zbest.model"], metavar='PATHs', nargs="*",
                              help="model file names (ensemble if >1)")
+    elif phase == "eval":
+        data.add_argument('--files', '-t', type=str, required=True, metavar='PATH', nargs=2, help="output and gold files")
     else:
         raise NotImplementedError(phase)
 
@@ -138,18 +140,20 @@ def init(phase):
     common = parser.add_argument_group('common')
     common.add_argument("--dynet-mem", type=str, default="")
     common.add_argument("--dynet-devices", type=str, default="")
-    common.add_argument("--dynet-mem-test", action='store_true')
+    # common.add_argument("--dynet-mem-test", action='store_true')
     common.add_argument("--dynet-autobatch", type=str, default="")
     common.add_argument("--dynet-seed", type=int, default=12345)    # default will be of no use, need to specify it
-    common.add_argument("--debug", action='store_true')
+    # common.add_argument("--debug", action='store_true')
     common.add_argument("--verbose", "-v", action='store_true')
     if phase == "train":
         common.add_argument("--log", type=str, default=Logger.MAGIC_CODE, help="logger for the process")
     elif phase == "test":
         common.add_argument("--log", type=str, default=Logger.MAGIC_CODE, help="logger for the process")
+    elif phase == "eval":
+        common.add_argument("--log", type=str, default="", help="logger for the process")
     else:
         raise NotImplementedError(phase)
-    common.add_argument('--report_freq', type=int, default=24, metavar='INT',
+    common.add_argument('--report_freq', type=int, default=1, metavar='INT',
                          help="report frequency (only when verbose) (default: %(default)s)")
 
     # decode (for validation or maybe certain training procedure)
@@ -164,13 +168,13 @@ def init(phase):
                         help="Sample size (default: %(default)s))")
     decode.add_argument('--normalize', '-n', type=float, default=0.0, metavar="ALPHA",
                         help="Normalize scores by sentence length (exponentiate lengths by ALPHA, neg means nope)")
-    decode.add_argument('--decode_len', type=int, default=100, metavar='INT',
+    decode.add_argument('--decode_len', type=int, default=80, metavar='INT',
                          help="maximum decoding sequence length (default: %(default)s)")
     decode.add_argument('--decode_batched', action='store_true',
                          help="batched calculation when decoding")
     decode.add_argument('--eval_metric', type=str, default="bleu", choices=["bleu"],
                          help="type of metric for evaluation (default: %(default)s)")
-    decode.add_argument('--test_batch_size', type=int, default=16, metavar='INT',
+    decode.add_argument('--test_batch_size', type=int, default=1, metavar='INT',
                          help="testing minibatch size (default: %(default)s)")
 
     a = parser.parse_args()

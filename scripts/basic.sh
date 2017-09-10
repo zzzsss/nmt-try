@@ -2,8 +2,8 @@
 
 # set up the basic directory
 
-set -e
-set -v
+#set -e
+#set -v
 shopt -s expand_aliases
 
 # some settings
@@ -15,7 +15,7 @@ DATA_DIR="${HOME_DIR}/data"
 MOSES_DIR="${HOME_DIR}/mosesdecoder"
 SUBWORD_DIR="${HOME_DIR}/subword-nmt"
 NEMATUS_DIR="${HOME_DIR}/nematus"
-echo "choosing current dir" $HOME_DIR "as the home-dir for the mt-basic."
+echo "choosing current dir" $HOME_DIR "as the home-dir for the mt-basic." 1>&2
 DATA2_DIR="${HOME_DIR}/data2"   # WIT3
 
 # tools from moses
@@ -24,6 +24,7 @@ alias tokenize="perl ${MOSES_DIR}/scripts/tokenizer/tokenizer.perl"
 alias clean-corpus="perl ${MOSES_DIR}/scripts/training/clean-corpus-n.perl"
 alias train-truecaser="perl ${MOSES_DIR}/scripts/recaser/train-truecaser.perl"
 alias truecaser="perl ${MOSES_DIR}/scripts/recaser/truecase.perl"
+alias multi-bleu="perl ${MOSES_DIR}/scripts/generic/multi-bleu.perl"
 
 # prepare-data <DIR> <SRC> <TRG>; at lease for en-fr en-de
 # preparing for $DIR/(train/dev/test).(${SRC}/${TRG})

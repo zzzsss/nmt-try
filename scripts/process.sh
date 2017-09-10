@@ -5,8 +5,6 @@
 # special ARGS and VARS: $1=script, $BPE_OP=num-bpe(has its default)
 
 set -e
-set -v
-
 RUNNING_DIR="$( cd "$( dirname ${BASH_SOURCE[0]}  )" && pwd )"
 INCLU=$1
 if [ ! -r $INCLU ]
@@ -18,9 +16,9 @@ INCLU=${RUNNING_DIR}/$1.sh
 else
 echo "Error, haven't find shell to run: $1"
 fi
-
 source $INCLU
 shopt -s expand_aliases
+set -v
 
 time pstep1-train
 

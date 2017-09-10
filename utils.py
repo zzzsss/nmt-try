@@ -40,7 +40,7 @@ def DEBUG_check(b):
         fatal("assert %s failed." % b)
 
 def fatal(s):
-    printing(s, func="dead")
+    printing(s, func="fatal")
     printing("================= FATAL, exit =================", func="none")
     sys.exit()
 
