@@ -42,7 +42,8 @@ def DEBUG_check(b):
 def fatal(s):
     printing(s, func="fatal")
     printing("================= FATAL, exit =================", func="none")
-    sys.exit()
+    # sys.exit()
+    raise s
 
 def get_statm():
     with zfopen("/proc/self/statm") as f:

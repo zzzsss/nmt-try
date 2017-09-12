@@ -14,7 +14,9 @@ class TrainingProgress(object):
 
     def __init__(self):
         self.bad_counter = 0
+        self.bad_points = []
         self.anneal_restarts_done = 0
+        self.anneal_restarts_points = []
         self.uidx = 0                   # update
         self.eidx = 0                   # epoch
         self.estop = False
@@ -129,9 +131,11 @@ class Trainer(object):
             else:
                 # anneal and early update
                 ttp.bad_counter += 1
+                ttp.bad_points.append(ss)
                 utils.printing("Patience minus 1, now bad counter is %s." % ttp.bad_counter, func="info")
                 if ttp.bad_counter >= self.opts["patience"]:
                     ttp.bad_counter = 0
+                    ttp.anneal_restarts_points.append(ss)
                     if ttp.anneal_restarts_done < self.opts["anneal_restarts"]:
                         utils.printing("Patience up, annealing for %s." % (self._tp.anneal_restarts_done+1), func="info")
                         if self.opts["anneal_reload_best"]:
@@ -160,9 +164,9 @@ class Trainer(object):
                     self._update()
                     one_recorder.record(xs, ys, loss, 1)
                     iter_recorder.record(xs, ys, loss, 1)
-                    if self.opts["verbose"]:
-                        mem0, mem1 = utils.get_statm()
-                        utils.DEBUG("[%s/%s] after fb(%s):%s/%s" % (mem0, mem1, len(xs), max([len(i) for i in xs]), max([len(i) for i in ys])))
+                    # if self.opts["verbose"]:
+                    #     mem0, mem1 = utils.get_statm()
+                    #     utils.DEBUG("[%s/%s] after fb(%s):%s/%s" % (mem0, mem1, len(xs), max([len(i) for i in xs]), max([len(i) for i in ys])))
                     # time to validate and save best model ??
                     if self._tp.uidx % self.opts["valid_freq"] == 0:    # update when _update
                         one_recorder.report()

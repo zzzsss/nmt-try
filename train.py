@@ -38,8 +38,8 @@ def main(opts):
                               batch_size=opts["batch_size"], maxlen=opts["max_len"], use_factor=(opts["factors"]>1))
     # special restoring for test/dev-iter, #todo setting maxibatcg_size
     dev_iter = TextIterator(opts["dev"][0], opts["dev"][1], source_dicts, target_dict,
-                              batch_size=opts["valid_batch_size"], maxlen=None, use_factor=(opts["factors"]>1),
-                              skip_empty=False, shuffle_each_epoch=False, sort_type="src", maxibatch_size=20) #todo
+                              batch_size=opts["valid_batch_size"], maxlen=opts["max_len"], use_factor=(opts["factors"]>1),
+                              skip_empty=False, shuffle_each_epoch=False, sort_type="src", maxibatch_size=20)
     # 3. about model & trainer
     mm = model.NMTModel(opts, source_dicts, target_dict)
     tt = trainer.Trainer(opts, mm)  # trainer + training_progress

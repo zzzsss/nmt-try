@@ -20,7 +20,7 @@ def init(phase):
                              help="final dictionaries (one per source factor, plus target vocabulary), also write dest")
         data.add_argument('--no_rebuild_dicts', action='store_false', dest='rebuild_dicts',
                              help="rebuild dictionaries and write to files")
-        data.add_argument('--dicts_thres', type=int, default=50000, metavar='INT',
+        data.add_argument('--dicts_thres', type=int, default=-1, metavar='INT',
                              help="cutting threshold (>100) or cutting frequency (<=100) for dicts (default: %(default)s)")
         # -- about model -- save and load
         data.add_argument('--model', type=str, default='model', metavar='PATH',
@@ -54,13 +54,19 @@ def init(phase):
                          help="embedding layer size (default: %(default)s)")
     network.add_argument('--dec_type', type=str, default="nematus", choices=["att", "nematus"],
                          help="decoder type (default: %(default)s)")
-    network.add_argument('--att_type', type=str, default="ff", choices=["ff", "biaff"],
+    network.add_argument('--att_type', type=str, default="ff", choices=["ff", "biaff", "dummy"],
                          help="attention type (default: %(default)s)")
+    network.add_argument('--rnn_type', type=str, default="gru", choices=["gru", "lstm", "dummy"],
+                         help="recurrent node type (default: %(default)s)")
     network.add_argument('--hidden_rec', type=int, default=1000, metavar='INT',
-                         help="recurrent hidden layer size (default: %(default)s)")
+                         help="recurrent hidden layer (default for dec&&enc) (default: %(default)s)")
+    network.add_argument('--hidden_dec', type=int, metavar='INT',
+                         help="decoder hidden layer size (default: hidden_rec")
+    network.add_argument('--hidden_enc', type=int, metavar='INT',
+                         help="encoder hidden layer size <BiRNN thus x2> (default: hidden_rec")
     network.add_argument('--hidden_att', type=int, default=1000, metavar='INT',
                          help="attention hidden layer size (default: %(default)s)")
-    network.add_argument('--hidden_out', type=int, default=1000, metavar='INT',
+    network.add_argument('--hidden_out', type=int, default=500, metavar='INT',
                          help="output hidden layer size (default: %(default)s)")
     # network.add_argument('--thres_src', type=int, default=2, metavar='INT',
     #                      help="source vocabulary threshold (default: %(default)s)")
@@ -154,7 +160,7 @@ def init(phase):
     else:
         raise NotImplementedError(phase)
     common.add_argument('--report_freq', type=int, default=1, metavar='INT',
-                         help="report frequency (only when verbose) (default: %(default)s)")
+                         help="report frequency (number of batches / only when verbose) (default: %(default)s)")
 
     # decode (for validation or maybe certain training procedure)
     decode = parser.add_argument_group('decode')
@@ -172,6 +178,8 @@ def init(phase):
                          help="maximum decoding sequence length (default: %(default)s)")
     decode.add_argument('--decode_batched', action='store_true',
                          help="batched calculation when decoding")
+    decode.add_argument('--decode_batched_no_padding', action='store_true',
+                         help="no padding (more memory moves) for batched calculation when decoding")
     decode.add_argument('--eval_metric', type=str, default="bleu", choices=["bleu"],
                          help="type of metric for evaluation (default: %(default)s)")
     decode.add_argument('--test_batch_size', type=int, default=1, metavar='INT',
@@ -198,3 +206,6 @@ def check_options(args):
         assert args["dim_per_factor"][0] == args["dim_word"]    # do we need this
     if args["dim_per_factor"] is None:
         args["dim_per_factor"] = [args["dim_word"]]
+    for n in ["hidden_dec", "hidden_enc"]:
+        if args[n] is None:
+            args[n] = args["hidden_rec"]
