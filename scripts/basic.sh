@@ -2,8 +2,8 @@
 
 # set up the basic directory
 
-set -e
-set -v
+#set -e
+#set -v
 shopt -s expand_aliases
 
 # some settings
@@ -15,7 +15,7 @@ DATA_DIR="${HOME_DIR}/data"
 MOSES_DIR="${HOME_DIR}/mosesdecoder"
 SUBWORD_DIR="${HOME_DIR}/subword-nmt"
 NEMATUS_DIR="${HOME_DIR}/nematus"
-echo "choosing current dir" $HOME_DIR "as the home-dir for the mt-basic."
+echo "choosing current dir" $HOME_DIR "as the home-dir for the mt-basic." 1>&2
 DATA2_DIR="${HOME_DIR}/data2"   # WIT3
 
 # tools from moses
@@ -24,6 +24,7 @@ alias tokenize="perl ${MOSES_DIR}/scripts/tokenizer/tokenizer.perl"
 alias clean-corpus="perl ${MOSES_DIR}/scripts/training/clean-corpus-n.perl"
 alias train-truecaser="perl ${MOSES_DIR}/scripts/recaser/train-truecaser.perl"
 alias truecaser="perl ${MOSES_DIR}/scripts/recaser/truecase.perl"
+alias multi-bleu="perl ${MOSES_DIR}/scripts/generic/multi-bleu.perl"
 
 # prepare-data <DIR> <SRC> <TRG>; at lease for en-fr en-de
 # preparing for $DIR/(train/dev/test).(${SRC}/${TRG})
@@ -80,13 +81,13 @@ function bpe
     # learn
     echo "Learning BPE with bpe_operations=${OP_NUM}. This may take a while..."
     cat ${DIR}/train.tok.clean.tc.${SRC} ${DIR}/train.tok.clean.tc.${TRG}| \
-        python ${SUBWORD_DIR}/learn_bpe.py -s ${OP_NUM} > ${DIR}/bpe.${OP_NUM}
+        python3 ${SUBWORD_DIR}/learn_bpe.py -s ${OP_NUM} > ${DIR}/bpe.${OP_NUM}
     # apply
     for lang in ${SRC} ${TRG}; do
         for f in ${DIR}/train.tok.clean.tc.${lang} ${DIR}/dt.*.tok.tc.${lang}; do
             echo "Apply BPE with bpe_operations=${OP_NUM} to $f"
             outfile="${f%.*}.bpe.${lang}"
-            python ${SUBWORD_DIR}/apply_bpe.py -c ${DIR}/bpe.${OP_NUM} < $f > ${outfile}
+            python3 ${SUBWORD_DIR}/apply_bpe.py -c ${DIR}/bpe.${OP_NUM} < $f > ${outfile}
         done
     done
 
@@ -96,23 +97,26 @@ function bpe
 # better practice for join bpe (tc->bpe)
 function bpe-join
 {
-    echo "Bpe with DIR=$1, SRC=$2, TRG=$3, OP_NUM=$4"
+    echo "Bpe with DIR=$1, SRC=$2, TRG=$3, OP_NUM=$4, CUT_FREQ=$5"
     DIR=$1
     SRC=$2
     TRG=$3
     OP_NUM=$4
+    CUT_FREQ=$5
     # learn
     echo "Learning BPE_join with bpe_operations=${OP_NUM}. This may take a while..."
-    python ${SUBWORD_DIR}/learn_joint_bpe_and_vocab.py \
+    python3 ${SUBWORD_DIR}/learn_joint_bpe_and_vocab.py \
         --input ${DIR}/train.tok.clean.tc.${SRC} ${DIR}/train.tok.clean.tc.${TRG} -s ${OP_NUM} -o ${DIR}/bpe.${OP_NUM} \
         --write-vocabulary ${DIR}/bpe-vocab.${SRC} ${DIR}/bpe-vocab.${TRG}
     # apply
     for lang in ${SRC} ${TRG}; do
+        echo "Cut dictonaries for bpe-vocab.${lang}"
+        head -n ${CUT_FREQ} <${DIR}/bpe-vocab.${lang}  >${DIR}/bpe-vocab.cut.${lang}
         for f in ${DIR}/train.tok.clean.tc.${lang} ${DIR}/dt.*.tok.tc.${lang}; do
             echo "Apply BPE with bpe_operations=${OP_NUM} to $f"
             outfile="${f%.*}.bpe.${lang}"
-            python ${SUBWORD_DIR}/apply_bpe.py -c ${DIR}/bpe.${OP_NUM} \
-                --vocabulary ${DIR}/bpe-vocab.${lang} --vocabulary-threshold 50 < $f > ${outfile}
+            python3 ${SUBWORD_DIR}/apply_bpe.py -c ${DIR}/bpe.${OP_NUM} \
+                --vocabulary ${DIR}/bpe-vocab.cut.${lang} < $f > ${outfile}
         done
     done
 

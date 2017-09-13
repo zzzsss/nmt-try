@@ -14,10 +14,10 @@ class NMTModel(object):
         self.embeds_src = [Embedding(self.model, len(t), i, dropout_wordceil=t.get_num_words()) for t, i in zip(source_dicts, opts["dim_per_factor"])]
         self.embed_trg = Embedding(self.model, len(target_dict), opts["dim_word"], dropout_wordceil=target_dict.get_num_words())
         # enc-dec
-        self.enc = Encoder(self.model, sum(opts["dim_per_factor"]), opts["hidden_rec"], opts["enc_depth"])
-        self.dec = {"att": AttDecoder, "nematus": NematusDecoder}[opts["dec_type"]](self.model, opts["dim_word"], opts["hidden_rec"], opts["dec_depth"], 2*opts["hidden_rec"], opts["hidden_att"], opts["att_type"])
+        self.enc = Encoder(self.model, sum(opts["dim_per_factor"]), opts["hidden_enc"], opts["enc_depth"], opts["rnn_type"])
+        self.dec = {"att": AttDecoder, "nematus": NematusDecoder}[opts["dec_type"]](self.model, opts["dim_word"], opts["hidden_dec"], opts["dec_depth"], 2*opts["hidden_enc"], opts["hidden_att"], opts["att_type"], opts["rnn_type"])
         # deep output
-        self.outputs = [Linear(self.model, 3*opts["hidden_rec"]+opts["dim_word"], opts["hidden_out"]),
+        self.outputs = [Linear(self.model, 2*opts["hidden_enc"]+opts["hidden_dec"]+opts["dim_word"], opts["hidden_out"]),
                        Linear(self.model, opts["hidden_out"], len(target_dict), act="linear")]  # no softmax here
         utils.printing("End of creating Model.")
 

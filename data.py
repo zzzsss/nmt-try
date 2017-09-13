@@ -45,7 +45,7 @@ class Dict:
 
     def write(self, wf):
         with utils.zfopen(wf, 'w') as f:
-            f.write(json.dumps(self.d, ensure_ascii=False))
+            f.write(json.dumps(self.d, ensure_ascii=False, indent=2))
             utils.printing("-- Write Dictionary to %s: Finish %s." % (wf, len(self.d)), func="io")
 
     @staticmethod
@@ -95,7 +95,7 @@ class Dict:
 class TextIterator:
     """Simple Bitext iterator."""
     def __init__(self, source, target, source_dicts, target_dict, batch_size=None, maxlen=None, use_factor=False,
-                 skip_empty=True, shuffle_each_epoch=True, sort_by_length=True, maxibatch_size=20):
+                 skip_empty=True, shuffle_each_epoch=True, sort_type="non", maxibatch_size=20):
         # data
         if shuffle_each_epoch:
             self.source_orig = source
@@ -113,17 +113,53 @@ class TextIterator:
         self.skip_empty = skip_empty
         self.use_factor = use_factor
         self.shuffle = shuffle_each_epoch
-        self.sort_by_length = sort_by_length
+        self.sort_type = sort_type
         self.source_buffer = []
         self.target_buffer = []
         self.k = batch_size * maxibatch_size
         #self.end_of_data = False
+        self.num_batches = None
+        # indexes by sorting by length
+        self.len_sort_indexes_cache = []
+        self.len_sort_indexes = []
+
+    # information about sort-by-lengths
+    SBL_TYPES = {
+        "src": [True, lambda s,t:s],
+        "trg": [True, lambda s,t:t],
+        "plus": [True, lambda s,t:s+t],
+        "times": [True, lambda s,t:s*t],
+        "non": [False, None]
+    }
+    def SBL_need_sort(self):
+        return TextIterator.SBL_TYPES[self.sort_type][0]
+    def SBL_sort_buffer_index(self):
+        ff = TextIterator.SBL_TYPES[self.sort_type][1]
+        tlen = numpy.array([ff(len(s), len(t)) for s,t in zip(self.source_buffer, self.target_buffer)])
+        tidx = tlen.argsort()
+        tidx = [i for i in reversed(tidx)]
+        return tidx
+
+    def restore_sort_by_length(self, s):
+        # restore the ordering in-place
+        if self.shuffle or not self.SBL_need_sort():
+            return
+        cur_start = 0
+        for tidx in self.len_sort_indexes:
+            new_s = [None for _ in range(len(tidx))]
+            for i, idx in enumerate(reversed(tidx)):
+                new_s[idx] = s[cur_start+i]
+            s[cur_start:cur_start+len(tidx)] = new_s
+            cur_start += len(tidx)
+        assert cur_start == len(s), "Wrong length of results"
 
     def __iter__(self):
         return self
 
     def __len__(self):
-        return sum([1 for _ in self])
+        if self.num_batches is None:
+            self.num_batches = sum([1 for _ in self])
+        return self.num_batches
 
     def reset(self):
         if self.shuffle:
@@ -136,6 +172,9 @@ class TextIterator:
         else:
             self.source.seek(0)
             self.target.seek(0)
+        # sorted_indexes
+        self.len_sort_indexes = self.len_sort_indexes_cache
+        self.len_sort_indexes_cache = []
 
     def __next__(self):
         source = []
@@ -163,14 +202,14 @@ class TextIterator:
                 self.reset()
                 raise StopIteration
             # sort by target buffer
-            if self.sort_by_length:
-                tlen = numpy.array([len(t) for t in self.target_buffer])
-                tidx = tlen.argsort()
-                tidx = [i for i in reversed(tidx)]
+            if self.SBL_need_sort():
+                tidx = self.SBL_sort_buffer_index()
                 _sbuf = [self.source_buffer[i] for i in tidx]
                 _tbuf = [self.target_buffer[i] for i in tidx]
                 self.source_buffer = _sbuf
                 self.target_buffer = _tbuf
+                if not self.shuffle:    # no meaning who shuffling (training) #TODO: bad dependencies
+                    self.len_sort_indexes_cache.append(tidx)
             else:
                 self.source_buffer.reverse()
                 self.target_buffer.reverse()

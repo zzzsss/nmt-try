@@ -3,17 +3,16 @@ from data import Dict, TextIterator
 import sys
 
 def main(opts):
-    # 0. check options
-    args.check_options(opts)
     # 1. datas
     source_dicts = [Dict.read(f) for f in opts["dicts_final"][:-1]]
     target_dict = Dict.read(opts["dicts_final"][-1])
     # -- here no need for test[1], but for convenience ...
     test_iter = []
     if opts["decode_type"] != "loop":
+        # special restoring for test/dev-iter (here big maxibatch-size)
         test_iter = TextIterator(opts["test"][0], opts["test"][1], source_dicts, target_dict,
                               batch_size=opts["test_batch_size"], maxlen=None, use_factor=(opts["factors"]>1),
-                              skip_empty=False, shuffle_each_epoch=False, sort_by_length=False)
+                              skip_empty=False, shuffle_each_epoch=False, sort_type="src", maxibatch_size=5000)
     # 2. model
     mm = []
     for mn in opts["models"]:
@@ -53,6 +52,6 @@ def main(opts):
         pass
 
 if __name__ == '__main__':
-    utils.printing("cmd: %s" % ' '.join(sys.argv))
     opts = args.init("test")
-    main(vars(opts))
+    utils.init_print()
+    main(opts)

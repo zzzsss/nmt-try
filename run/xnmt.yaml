@@ -1,0 +1,56 @@
+defaults:
+  experiment:
+    model_file: ./<EXP>.mod
+    hyp_file: ./<EXP>.hyp
+    out_file: ./<EXP>.out
+    err_file: ./<EXP>.err
+    run_for_epochs: 10
+    eval_metrics: bleu
+  train:
+    dropout: 0.2
+    batch_size: 64
+    dev_every: 800000
+    default_layer_dim: 1000
+    restart_trainer: True
+    trainer: Adam
+    learning_rate: 0.0001
+    lr_decay: 0.5
+    dev_metrics: bleu
+    training_corpus: !BilingualTrainingCorpus
+      train_src: ../en_de_data/train.final.en
+      train_trg: ../en_de_data/train.final.de
+      dev_src: ../en_de_data/dev.final.en
+      dev_trg: ../en_de_data/dev.final.de
+    corpus_parser: !BilingualCorpusParser
+      src_reader: !PlainTextReader {}
+      trg_reader: !PlainTextReader {}
+      max_src_len: 50
+      max_trg_len: 50
+    model: !DefaultTranslator
+      src_embedder: !SimpleWordEmbedder
+        emb_dim: 512
+      encoder: !LSTMEncoder
+        layers: 1
+        hidden_dim: 1000
+      attender: !StandardAttender
+        hidden_dim: 1000
+        state_dim: 1000
+        input_dim: 1000
+      trg_embedder: !SimpleWordEmbedder
+        emb_dim: 512
+      decoder: !MlpSoftmaxDecoder
+        layers: 1
+        mlp_hidden_dim: 500
+        #bridge: !NoBridge {}
+        bridge: !CopyBridge {}
+  decode:
+    src_file: ../en_de_data/test.final.de
+    post_process: join-bpe
+    beam: 3
+    #len_norm_type: !PolynomialNormalization # not sure what bug
+    #  apply_during_search: True
+    #  m: 1.0
+  evaluate:
+    ref_file: ../en_de_data/test.final.de.restore
+
+run:

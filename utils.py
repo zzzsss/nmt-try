@@ -1,9 +1,36 @@
 # some useful functions
-import time, sys, os, subprocess, random, json
+import time, sys, os, subprocess, random, json, platform
 
 # tools
 from tools import shuffle, get_final_vocab, get_origin_vocab, zfopen
-from tools import printing
+from tools import printing as helper_print
+
+# print and log
+class Logger(object):
+    MAGIC_CODE = "sth_magic_that_cannot_be_conflicted"
+    printing_log_file = None
+
+    @staticmethod
+    def start_log(s):
+        Logger.end_log()
+        if s == Logger.MAGIC_CODE:
+            s = "%s-%s.log" % (platform.uname().node, '-'.join(time.ctime().split()[-2:]))
+        Logger.printing_log_file = zfopen(s, "w")
+        printing("Start logging at %s" % Logger.printing_log_file)
+
+    @staticmethod
+    def end_log():
+        if Logger.printing_log_file is not None:
+            Logger.printing_log_file.close()
+
+def printing(s, func="plain", out=sys.stderr):
+    helper_print(s, func, out)
+    if Logger.printing_log_file is not None:
+        helper_print(s, func, Logger.printing_log_file)
+
+def init_print():
+    printing("*cmd: %s" % ' '.join(sys.argv))
+    printing("*platform: %s" % ' '.join(platform.uname()))
 
 def DEBUG(s):
     printing(s, func="debug")
@@ -13,9 +40,10 @@ def DEBUG_check(b):
         fatal("assert %s failed." % b)
 
 def fatal(s):
-    printing(s, func="dead")
+    printing(s, func="fatal")
     printing("================= FATAL, exit =================", func="none")
-    sys.exit()
+    # sys.exit()
+    raise s
 
 def get_statm():
     with zfopen("/proc/self/statm") as f:
@@ -29,8 +57,18 @@ def get_statm():
         mem1 = "0MiB"
     return mem0, mem1
 
-class Timer:
+class Timer(object):
     NAMED = {}
+    START = 0.
+
+    @staticmethod
+    def init():
+        Timer.START = time.time()
+
+    @staticmethod
+    def systime():
+        return time.time()-Timer.START
+
     def __init__(self, name=None, cname=None, print_date=False, quiet=False, info=""):
         self.name = name
         self.cname = cname
@@ -39,11 +77,11 @@ class Timer:
         self.info = info
         self.accu = 0.   # accumulated time
         self.paused = False
-        self.start = time.time()
+        self.start = Timer.systime()
 
     def pause(self):
         if not self.paused:
-            cur = time.time()
+            cur = Timer.systime()
             self.accu += cur - self.start
             self.start = cur
             self.paused = True
@@ -52,7 +90,7 @@ class Timer:
         if not self.paused:
             printing("Timer should be paused to be resumed.", func="warn")
         else:
-            self.start = time.time()
+            self.start = Timer.systime()
             self.paused = False
 
     def get_time(self):
@@ -69,13 +107,13 @@ class Timer:
 
     def __enter__(self):
         cur_date = time.ctime() if self.print_date and not self.quiet else ""
-        printing("Start timer %s: %s at %s. (%s)" % (self.name, self.info, time.time(), cur_date), func="time") if not self.quiet else None
+        printing("Start timer %s: %s at %.3f. (%s)" % (self.name, self.info, Timer.systime(), cur_date), func="time") if not self.quiet else None
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.end()
         cur_date = time.ctime() if self.print_date and not self.quiet else ""
-        printing("End timer %s at %s, the period is %s seconds. (%s)" % (self.name, time.time(), self.accu, cur_date), func="time") if not self.quiet else None
+        printing("End timer %s at %.3f, the period is %.3f seconds. (%s)" % (self.name, Timer.systime(), self.accu, cur_date), func="time") if not self.quiet else None
         return False
 
     @staticmethod
@@ -92,7 +130,7 @@ class Timer:
         else:
             Timer.NAMED[x] = 0.
 
-class Accu:
+class Accu(object):
     NAMED = {}
     METHODS = {}
     INITS = {}
@@ -129,8 +167,8 @@ class OnceRecorder(object):
     def __init__(self, name):
         self.name = name
         self.loss = 0.
-        self.sents = 0
-        self.words = 0
+        self.sents = 1e-6
+        self.words = 1e-6
         self.updates = 0
         self.timer = Timer()
 
@@ -142,16 +180,19 @@ class OnceRecorder(object):
 
     def reset(self):
         self.loss = 0.
-        self.sents = 0
-        self.words = 0
+        self.sents = 1e-6
+        self.words = 1e-6
         self.updates = 0
         self.timer = Timer()
 
-    def report(self):
+    def get(self, k):
+        return {"loss_per_word":self.loss / self.words}[k]
+
+    # const, only reporting, could be called many times
+    def report(self, head=""):
         one_time = self.timer.get_time()
         loss_per_sentence = self.loss / self.sents
         loss_per_word = self.loss / self.words
         sent_per_second = float(self.sents) / one_time
         word_per_second = float(self.words) / one_time
-        printing("Recoder <%s>, %s(time)/%s(updates)/%s(sents)/%s(words)/%s(w-loss)/%s(s-sec)/%s(w-sec)"
-            % (self.name, one_time, self.updates, self.sents, self.words, loss_per_word, sent_per_second, word_per_second), func="info")
+        printing(head + "Recoder <%s>, %.3f(time)/%s(updates)/%.3f(sents)/%.3f(words)/%.3f(sl-loss)/%.3f(w-loss)/%.3f(s-sec)/%.3f(w-sec)" % (self.name, one_time, self.updates, self.sents, self.words, loss_per_sentence, loss_per_word, sent_per_second, word_per_second), func="info")
