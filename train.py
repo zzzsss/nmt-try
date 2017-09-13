@@ -34,8 +34,9 @@ def main(opts):
         except:
             utils.printing("Write dictionaries fail: %s, skip this step." % opts["dicts_final"], func="warn")
     # 2. corpus iterator
-    train_iter = TextIterator(source_corpus, target_corpus, source_dicts, target_dict, sort_type="times",
-                              batch_size=opts["batch_size"], maxlen=opts["max_len"], use_factor=(opts["factors"]>1))
+    train_iter = TextIterator(source_corpus, target_corpus, source_dicts, target_dict, sort_type="trg",
+                              batch_size=opts["batch_size"], maxlen=opts["max_len"], use_factor=(opts["factors"]>1),
+                              shuffle_each_epoch=opts["shuffle_training_data"])
     # special restoring for test/dev-iter, #todo setting maxibatcg_size
     dev_iter = TextIterator(opts["dev"][0], opts["dev"][1], source_dicts, target_dict,
                               batch_size=opts["valid_batch_size"], maxlen=opts["max_len"], use_factor=(opts["factors"]>1),

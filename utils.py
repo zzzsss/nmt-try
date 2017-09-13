@@ -59,6 +59,16 @@ def get_statm():
 
 class Timer(object):
     NAMED = {}
+    START = 0.
+
+    @staticmethod
+    def init():
+        Timer.START = time.time()
+
+    @staticmethod
+    def systime():
+        return time.time()-Timer.START
+
     def __init__(self, name=None, cname=None, print_date=False, quiet=False, info=""):
         self.name = name
         self.cname = cname
@@ -67,11 +77,11 @@ class Timer(object):
         self.info = info
         self.accu = 0.   # accumulated time
         self.paused = False
-        self.start = time.time()
+        self.start = Timer.systime()
 
     def pause(self):
         if not self.paused:
-            cur = time.time()
+            cur = Timer.systime()
             self.accu += cur - self.start
             self.start = cur
             self.paused = True
@@ -80,7 +90,7 @@ class Timer(object):
         if not self.paused:
             printing("Timer should be paused to be resumed.", func="warn")
         else:
-            self.start = time.time()
+            self.start = Timer.systime()
             self.paused = False
 
     def get_time(self):
@@ -97,13 +107,13 @@ class Timer(object):
 
     def __enter__(self):
         cur_date = time.ctime() if self.print_date and not self.quiet else ""
-        printing("Start timer %s: %s at %s. (%s)" % (self.name, self.info, time.time(), cur_date), func="time") if not self.quiet else None
+        printing("Start timer %s: %s at %.3f. (%s)" % (self.name, self.info, Timer.systime(), cur_date), func="time") if not self.quiet else None
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.end()
         cur_date = time.ctime() if self.print_date and not self.quiet else ""
-        printing("End timer %s at %s, the period is %s seconds. (%s)" % (self.name, time.time(), self.accu, cur_date), func="time") if not self.quiet else None
+        printing("End timer %s at %.3f, the period is %.3f seconds. (%s)" % (self.name, Timer.systime(), self.accu, cur_date), func="time") if not self.quiet else None
         return False
 
     @staticmethod
@@ -185,4 +195,4 @@ class OnceRecorder(object):
         loss_per_word = self.loss / self.words
         sent_per_second = float(self.sents) / one_time
         word_per_second = float(self.words) / one_time
-        printing(head + "Recoder <%s>, %s(time)/%s(updates)/%s(sents)/%s(words)/%s(sl-loss)/%s(w-loss)/%s(s-sec)/%s(w-sec)" % (self.name, one_time, self.updates, self.sents, self.words, loss_per_sentence, loss_per_word, sent_per_second, word_per_second), func="info")
+        printing(head + "Recoder <%s>, %.3f(time)/%s(updates)/%.3f(sents)/%.3f(words)/%.3f(sl-loss)/%.3f(w-loss)/%.3f(s-sec)/%.3f(w-sec)" % (self.name, one_time, self.updates, self.sents, self.words, loss_per_sentence, loss_per_word, sent_per_second, word_per_second), func="info")

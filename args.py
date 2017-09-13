@@ -1,5 +1,5 @@
 import argparse
-from utils import Logger
+from utils import Logger, Timer
 
 # parse the arguments for main
 def init(phase):
@@ -97,6 +97,8 @@ def init(phase):
 
     # training progress
     training = parser.add_argument_group('training parameters')
+    training.add_argument('--no_shuffle_training_data', action='store_false', dest='shuffle_training_data',
+                             help="don't shuffle training data before each epoch")
     training.add_argument('--max_len', type=int, default=80, metavar='INT',
                          help="maximum sequence length (default: %(default)s)")
     training.add_argument('--fix_len_src', type=int, default=-1, metavar='INT',
@@ -178,7 +180,7 @@ def init(phase):
                          help="maximum decoding sequence length (default: %(default)s)")
     decode.add_argument('--decode_batched', action='store_true',
                          help="batched calculation when decoding")
-    decode.add_argument('--decode_batched_no_padding', action='store_true',
+    decode.add_argument('--no_decode_batched_padding', action='store_false', dest="decode_batched_padding",
                          help="no padding (more memory moves) for batched calculation when decoding")
     decode.add_argument('--eval_metric', type=str, default="bleu", choices=["bleu"],
                          help="type of metric for evaluation (default: %(default)s)")
@@ -190,8 +192,11 @@ def init(phase):
     # check options and some processing
     args = vars(a)
     check_options(args)
+    # init logger
     if args["log"] is not None and len(args["log"]) > 0:    # enable logging
         Logger.start_log(args["log"])
+    # init timer
+    Timer.init()
 
     return args
 

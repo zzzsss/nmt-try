@@ -156,11 +156,12 @@ class RnnNode(Basic):
         # TODO ?? don't remember what this todo is to do
 
     def __call__(self, input_exp, hidden_exp):
+        # todo(warn) return a {}
         raise NotImplementedError()
 
     @staticmethod
     def get_rnode(s):  #todo: lstm
-        return {"gru":GruNode, "lstm":None, "dummy":DmRnnNode}[s]
+        return {"gru":GruNode, "lstm":LstmNode, "dummy":DmRnnNode}[s]
 
 class DmRnnNode(RnnNode):
     def __init__(self, model, n_input, n_hidden):
@@ -185,21 +186,44 @@ class GruNode(RnnNode):
 
     def __call__(self, input_exp, hidden_exp):
         # two kinds of dropouts
+        hh = hidden_exp["H"]
         if self.masks[0] is not None:
             input_exp = dy.cmult(self.masks[0], input_exp)
         if self.masks[1] is not None:
-            hidden_exp = dy.cmult(self.masks[1], hidden_exp)
+            hh = dy.cmult(self.masks[1], hh)
         if self.drop > 0.:
             input_exp = dy.dropout(input_exp, self.drop)
-        rt = dy.affine_transform([self.iparams["br"], self.iparams["x2r"], input_exp, self.iparams["h2r"], hidden_exp])
+        rt = dy.affine_transform([self.iparams["br"], self.iparams["x2r"], input_exp, self.iparams["h2r"], hh])
         rt = dy.logistic(rt)
-        zt = dy.affine_transform([self.iparams["bz"], self.iparams["x2z"], input_exp, self.iparams["h2z"], hidden_exp])
+        zt = dy.affine_transform([self.iparams["bz"], self.iparams["x2z"], input_exp, self.iparams["h2z"], hh])
         zt = dy.logistic(zt)
-        h_reset = dy.cmult(rt, hidden_exp)
+        h_reset = dy.cmult(rt, hh)
         ht = dy.affine_transform([self.iparams["bh"], self.iparams["x2h"], input_exp, self.iparams["h2h"], h_reset])
         ht = dy.tanh(ht)
-        hidden = dy.cmult(zt, hidden_exp) + dy.cmult((1. - zt), ht)
-        return hidden
+        hidden = dy.cmult(zt, hh) + dy.cmult((1. - zt), ht)
+        return {"H": hidden}
+
+class LstmNode(RnnNode):
+    def __init__(self, model, n_input, n_hidden):
+        super(LstmNode, self).__init__(model, n_input, n_hidden)
+        # paramters
+        self.params["xw"] = self._add_parameters((n_hidden*4, n_input))
+        self.params["hw"] = self._add_parameters((n_hidden*4, n_hidden))
+        self.params["b"] = self._add_parameters((n_hidden*4,))
+
+    def __call__(self, input_exp, hidden_exp):
+        # two kinds of dropouts
+        hh = hidden_exp["H"]
+        if self.masks[0] is not None:
+            input_exp = dy.cmult(self.masks[0], input_exp)
+        if self.masks[1] is not None:
+            hh = dy.cmult(self.masks[1], hh)
+        if self.drop > 0.:
+            input_exp = dy.dropout(input_exp, self.drop)
+        gates_t = dy.vanilla_lstm_gates(input_exp, hh, self.iparams["xw"], self.iparams["hw"], self.iparams["b"])
+        c_t = dy.vanilla_lstm_c(hidden_exp["C"], gates_t)
+        h_t = dy.vanilla_lstm_h(c_t, gates_t)
+        return {"H": h_t, "C": c_t}
 
 class Attention(Basic):
     def __init__(self, model, n_s, n_h):
@@ -299,9 +323,9 @@ class BiaffAttention(Attention):
 # ================= Blocks ================= #
 # stateless encoder
 class Encoder(object):
-    def __init__(self, model, n_input, n_hidden, n_layers):
+    def __init__(self, model, n_input, n_hidden, n_layers, rnn_type):
         # [[f,b], ...]
-        self.ntype = GruNode
+        self.ntype = RnnNode.get_rnode(rnn_type)
         self.nodes = [[self.ntype(model, n_input, n_hidden), self.ntype(model, n_input, n_hidden)]]
         for i in range(n_layers-1):
             self.nodes.append([self.ntype(model, n_hidden, n_hidden), self.ntype(model, n_hidden, n_hidden)])
@@ -321,16 +345,16 @@ class Encoder(object):
         for i, nn in zip(range(self.n_layers), self.nodes):
             init_hidden = dy.zeroes((self.n_hidden,), batch_size=b_size)
             tmp_f = []      # forward
-            tmp_f_prev = init_hidden
+            tmp_f_prev = {"H":init_hidden, "C":init_hidden}
             for e in outputs[-1]:
                 one_output = nn[0](e, tmp_f_prev)
-                tmp_f.append(one_output)
+                tmp_f.append(one_output["H"])
                 tmp_f_prev = one_output
             tmp_b = []      # forward
-            tmp_b_prev = init_hidden
+            tmp_b_prev = {"H":init_hidden, "C":init_hidden}
             for e in reversed(outputs[-1]):
                 one_output = nn[1](e, tmp_b_prev)
-                tmp_b.append(one_output)
+                tmp_b.append(one_output["H"])
                 tmp_b_prev = one_output
             # concat
             ctx = [dy.concatenate([f,b]) for f,b in zip(tmp_f, reversed(tmp_b))]
@@ -344,7 +368,7 @@ class DecoderState(object):
         self.n_layers = n_layers
         # caches
         self.s = s
-        self.cache_hiddens = hiddens
+        self.cache_hiddens = hiddens    # hiddens now should be a dictionary {H:..., C:...,}
         self.cache_att = att
         self.cache_attw = attw      # attention weights
         self.prev = prev
@@ -352,13 +376,20 @@ class DecoderState(object):
 
     @property
     def bsize(self):
-        return bs(self.cache_hiddens[-1])
+        return bs(self.cache_hiddens[-1]["H"])
+
+    @property
+    def cache_hidden(self):
+        # last layer hidden one
+        return self.cache_hiddens[-1]["H"]
 
     # todo(warn) this one is quite dangerous, use carefully !!
     # basically it handles the reranging of state-hiddens and attention-hiddens
     def rerange_cache(self, orders, att_orders):
         if orders is not None:
-            self.cache_hiddens = [dy.pick_batch_elems(one, orders) for one in self.cache_hiddens]
+            for hk in self.cache_hiddens:
+                for k in hk:
+                    hk[k] = dy.pick_batch_elems(hk[k], orders)
             self.cache_att = dy.pick_batch_elems(self.cache_att, orders)
             self.cache_attw = None      # just clear that
             if att_orders is not None:
@@ -367,14 +398,14 @@ class DecoderState(object):
     # !! should not be used after any shuffling
     def get_results(self):
         if self.prev is None:
-            return [self.cache_hiddens[-1]], [self.cache_att], [self.cache_attw]
+            return [self.cache_hidden], [self.cache_att], [self.cache_attw]
         hiddens, atts, attws = self.prev.get_results()
-        hiddens.append(self.cache_hiddens[-1])  # last layer
+        hiddens.append(self.cache_hidden)
         atts.append(self.cache_att)
         return hiddens, atts, attws
 
     def get_results_one(self):
-        return self.cache_hiddens[-1], self.cache_att, self.cache_attw
+        return self.cache_hidden, self.cache_att, self.cache_attw
 
 # attentional decoder
 class Decoder(object):
@@ -412,8 +443,9 @@ class Decoder(object):
             s = [dy.pick_batch_elems(one, indices) for one in s]
         for i in range(self.n_layers):
             cur_init = self.inodes[i](avg)
-            inits.append(cur_init)          # +1 for the init state
-        att, attw = self.anode(s, inits[0])          # start of the attention
+            # +1 for the init state
+            inits.append({"H": cur_init, "C": dy.zeroes((self.n_hidden,), batch_size=bs(cur_init))})
+        att, attw = self.anode(s, inits[0]["H"])          # start of the attention
         return DecoderState(self, s, self.n_layers, inits, att, attw, attender=self.anode)
 
     def feed_one(self, ss, inputs):
@@ -444,13 +476,13 @@ class AttDecoder(Decoder):
 
     def _feed_one(self, ss, one):
         # first layer with attetion
-        att, attw = self.anode(ss.s, ss.cache_hiddens[0])
+        att, attw = self.anode(ss.s, ss.cache_hiddens[0]["H"])
         g_input = dy.concatenate([one, att])
         hidd = self.gnodes[0](g_input, ss.cache_hiddens[0])
         this_hiddens = [hidd]
         # later layers
         for i in range(1, self.n_layers):
-            ihidd = self.gnodes[i](this_hiddens[i-1], ss.cache_hiddens[i])
+            ihidd = self.gnodes[i](this_hiddens[i-1]["H"], ss.cache_hiddens[i])
             this_hiddens.append(ihidd)
         return DecoderState(self, ss.s, ss.n_layers, this_hiddens, att, attw, prev=ss)
 
@@ -469,11 +501,11 @@ class NematusDecoder(Decoder):
     def _feed_one(self, ss, one):
         # first layer with attetion, gru1 -> att -> gru2
         s1 = self.gnodes[0](one, ss.cache_hiddens[0])
-        att, attw = self.anode(ss.s, s1)
+        att, attw = self.anode(ss.s, s1["H"])
         hidd = self.gnodes[-1](att, s1)
         this_hiddens = [hidd]
         # later layers
         for i in range(1, self.n_layers):
-            ihidd = self.gnodes[i](this_hiddens[i-1], ss.cache_hiddens[i])
+            ihidd = self.gnodes[i](this_hiddens[i-1]["H"], ss.cache_hiddens[i])
             this_hiddens.append(ihidd)
         return DecoderState(self, ss.s, ss.n_layers, this_hiddens, att, attw, prev=ss)

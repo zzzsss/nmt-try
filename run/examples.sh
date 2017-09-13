@@ -27,6 +27,8 @@ CUDA_VISIBLE_DEVICES=${GPUID} PYTHONPATH=../Theano THEANO_FLAGS=FAST_RUN,floatX=
 ZMT=.. bash ../znmt/scripts/restore.sh <output.txt | perl ../znmt/scripts/multi-bleu.perl -lc ${DATADIR}/test.final.${TRG}.restore
 
 # xnmt
-PYTHONPATH=${DY_ZROOT}/gbuild/python:../xnmt/ python3 ../xnmt/xnmt/xnmt_run_experiments.py standard.yaml --dynet-devices GPU:${GPUID}
+PYTHONPATH=${DY_ZROOT}/gbuild/python:../xnmt/ python3 ../xnmt/xnmt/xnmt_run_experiments.py _run.yaml --dynet-devices GPU:${GPUID}
 
-perl ../znmt/scripts/multi-bleu.perl -lc ${DATADIR}/test.final.${TRG}.restore < run.hyp
+PYTHONPATH=${DY_ZROOT}/gbuild/python:../xnmt/ python3 ../xnmt/xnmt/xnmt_decode.py --beam 10 --max_len 80 --post_process join-bpe --dynet-devices GPU:${GPUID} --model_file ./run.mod --len_norm_type PolynomialNormalization ${DATADIR}/test.final.${SRC} output.txt
+
+ZMT=.. bash ../znmt/scripts/restore.sh <output.txt | perl ../znmt/scripts/multi-bleu.perl -lc ${DATADIR}/test.final.${TRG}.restore

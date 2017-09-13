@@ -46,8 +46,10 @@ defaults:
   decode:
     src_file: ../en_de_data/test.final.de
     post_process: join-bpe
-    beam: 10
-    len_norm_type: !PolynomialNormalization {}
+    beam: 3
+    #len_norm_type: !PolynomialNormalization # not sure what bug
+    #  apply_during_search: True
+    #  m: 1.0
   evaluate:
     ref_file: ../en_de_data/test.final.de.restore
 

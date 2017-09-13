@@ -39,7 +39,7 @@ def search(xs, models, opts, strategy, batched):
     # prepare
     st = {"beam":BeamStrategy(opts["beam_size"]), "sample":SamplingStrategy(opts["sample_size"])}[strategy]
     if batched:
-        pr = BatchedProcess(models, st.width(), False)
+        pr = BatchedProcess(models, st.width(), opts["decode_batched_padding"])
     else:
         pr = NonBatchedProcess(models, st.width())
     normer = Normer() if opts["normalize"] <= 0 else PolyNormer(opts["normalize"])
@@ -197,6 +197,7 @@ class BatchedProcess(Process):
             base = 0
             for s in self.cur_sizes:
                 ret.append(sc[base:base+s])
+                base += s
             return ret
 
     def _flat_list(self, ll, sizes, check=False, check_rerange=False):
@@ -210,7 +211,7 @@ class BatchedProcess(Process):
                 new_index = base + one
                 flag = flag and one == i
                 if check:
-                    utils.DEBUG_check(new_index < s)
+                    utils.DEBUG_check(one < s)
                 r.append(new_index)
             base += s
         if check_rerange and flag:
@@ -294,7 +295,8 @@ class BatchedProcess(Process):
         # average attentions, but currently we don't actually use it
         avg_attws = self._avg(cur_attws)
         # prev sizes
-        self.prev_sizes = self.cur_sizes
+        if not self.padding:
+            self.prev_sizes = self.cur_sizes
         return self._return(scores=final_score, attws=avg_attws)
 
 class NonBatchedProcess(Process):
