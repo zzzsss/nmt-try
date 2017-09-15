@@ -37,10 +37,10 @@ def main(opts):
     train_iter = TextIterator(source_corpus, target_corpus, source_dicts, target_dict, sort_type="trg",
                               batch_size=opts["batch_size"], maxlen=opts["max_len"], use_factor=(opts["factors"]>1),
                               shuffle_each_epoch=opts["shuffle_training_data"])
-    # special restoring for test/dev-iter, #todo setting maxibatcg_size
+    # special restoring for test/dev-iter
     dev_iter = TextIterator(opts["dev"][0], opts["dev"][1], source_dicts, target_dict,
-                              batch_size=opts["valid_batch_size"], maxlen=opts["max_len"], use_factor=(opts["factors"]>1),
-                              skip_empty=False, shuffle_each_epoch=False, sort_type="src", maxibatch_size=20)
+                              batch_size=opts["valid_batch_width"], maxlen=None, use_factor=(opts["factors"]>1),
+                              skip_empty=False, shuffle_each_epoch=False, sort_type="src", is_dt=True, onelen=50)
     # 3. about model & trainer
     mm = model.NMTModel(opts, source_dicts, target_dict)
     tt = trainer.Trainer(opts, mm)  # trainer + training_progress

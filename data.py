@@ -95,7 +95,7 @@ class Dict:
 class TextIterator:
     """Simple Bitext iterator."""
     def __init__(self, source, target, source_dicts, target_dict, batch_size=None, maxlen=None, use_factor=False,
-                 skip_empty=True, shuffle_each_epoch=True, sort_type="non", maxibatch_size=20):
+                 skip_empty=True, is_dt=False, shuffle_each_epoch=True, sort_type="non", maxibatch_size=20, onelen=80):
         # data
         if shuffle_each_epoch:
             self.source_orig = source
@@ -109,19 +109,24 @@ class TextIterator:
         self.target_dict = target_dict
         # options
         self.batch_size = batch_size
+        self.init_batch_size = batch_size
         self.maxlen = maxlen if maxlen is not None else 100000        # ignore sentences above this
+        self.onelen = onelen    # single batch out if >= onelen
         self.skip_empty = skip_empty
         self.use_factor = use_factor
         self.shuffle = shuffle_each_epoch
         self.sort_type = sort_type
         self.source_buffer = []
         self.target_buffer = []
-        self.k = batch_size * maxibatch_size
-        #self.end_of_data = False
-        self.num_batches = None
-        # indexes by sorting by length
-        self.len_sort_indexes_cache = []
+        self.maxibatch_size = maxibatch_size
+        self.is_dt = is_dt      # is dev/test ? => sort all if sorting and special treating for long sentences
         self.len_sort_indexes = []
+        self.long_back = None
+        self.num_sents = None
+
+    @property
+    def k(self):
+        return self.batch_size * self.maxibatch_size
 
     # information about sort-by-lengths
     SBL_TYPES = {
@@ -138,28 +143,37 @@ class TextIterator:
         tlen = numpy.array([ff(len(s), len(t)) for s,t in zip(self.source_buffer, self.target_buffer)])
         tidx = tlen.argsort()
         tidx = [i for i in reversed(tidx)]
-        return tidx
+        return tidx     # tidx is huge=>small, but reading is popping from the back
 
     def restore_sort_by_length(self, s):
         # restore the ordering in-place
-        if self.shuffle or not self.SBL_need_sort():
+        assert len(s) == len(self.len_sort_indexes)     # no discarding of 0 and long sentences
+        assert not self.shuffle
+        if not self.SBL_need_sort():
             return
-        cur_start = 0
-        for tidx in self.len_sort_indexes:
-            new_s = [None for _ in range(len(tidx))]
-            for i, idx in enumerate(reversed(tidx)):
-                new_s[idx] = s[cur_start+i]
-            s[cur_start:cur_start+len(tidx)] = new_s
-            cur_start += len(tidx)
-        assert cur_start == len(s), "Wrong length of results"
+        r = [None for _ in self.len_sort_indexes]
+        for ind, sent in zip(reversed(self.len_sort_indexes), s):
+            r[ind] = sent
+        return r
 
     def __iter__(self):
         return self
 
     def __len__(self):
-        if self.num_batches is None:
-            self.num_batches = sum([1 for _ in self])
-        return self.num_batches
+        # return num of sentences
+        if self.num_sents is None:
+            self.num_sents = 0
+            for i in self:
+                self.num_sents += len([x for x in i][0])
+        return self.num_sents
+
+    # only at the ending status
+    def bsize(self, bs=None):
+        if bs is None:
+            return self.batch_size
+        else:
+            self.batch_size = int(bs)
+            return self.batch_size
 
     def reset(self):
         if self.shuffle:
@@ -172,14 +186,9 @@ class TextIterator:
         else:
             self.source.seek(0)
             self.target.seek(0)
-        # sorted_indexes
-        self.len_sort_indexes = self.len_sort_indexes_cache
-        self.len_sort_indexes_cache = []
 
     def __next__(self):
-        source = []
-        target = []
-        tokens_src, tokens_trg = [], []
+        source, target, tokens_src, tokens_trg = [], [], [], []
         # fill buffer, if it's empty
         # utils.DEBUG("hh")
         assert len(self.source_buffer) == len(self.target_buffer), 'Buffer size mismatch!'
@@ -194,11 +203,10 @@ class TextIterator:
                     continue
                 self.source_buffer.append(ss)
                 self.target_buffer.append(tt)
-                if len(self.source_buffer) == self.k:                   # full
+                if not self.is_dt and len(self.source_buffer) == self.k:                   # full
                     break
             # utils.DEBUG("here")
             if len(self.source_buffer) == 0 or len(self.target_buffer) == 0:
-                #self.end_of_data = False
                 self.reset()
                 raise StopIteration
             # sort by target buffer
@@ -208,13 +216,18 @@ class TextIterator:
                 _tbuf = [self.target_buffer[i] for i in tidx]
                 self.source_buffer = _sbuf
                 self.target_buffer = _tbuf
-                if not self.shuffle:    # no meaning who shuffling (training) #TODO: bad dependencies
-                    self.len_sort_indexes_cache.append(tidx)
+                if self.is_dt:
+                    self.len_sort_indexes = tidx
             else:
                 self.source_buffer.reverse()
                 self.target_buffer.reverse()
         # actual work here
         while True:
+            # from backs
+            if self.long_back is not None:
+                tmp = self.long_back
+                self.long_back = None
+                return tmp
             # read from source file and map to word index
             try:
                 ss = self.source_buffer.pop()
@@ -228,6 +241,16 @@ class TextIterator:
             ttt = Dict.w2i(self.target_dict, tt, False)
             source.append(sss)
             target.append(ttt)
+            # special treating with long sentences (mainly for dev and test)
+            if len(ss) > self.onelen or len(tt) > self.onelen:
+                self.long_back = tuple([x.pop()] for x in (source, target, tokens_src, tokens_trg))
+                if len(source) == 0:
+                    continue
+                else:
+                    break
             if len(source) >= self.batch_size or len(target) >= self.batch_size:
                 break
-        return source, target, tokens_src, tokens_trg
+        if len(source) == 0:
+            self.reset()
+            raise StopIteration
+        return (source, target, tokens_src, tokens_trg)

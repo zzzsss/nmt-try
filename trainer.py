@@ -38,7 +38,6 @@ class Trainer(object):
         self._tp = TrainingProgress()
         self._mm = model
         self.trainer = None
-        self.validator = {"ll":self._validate_ll, "bleu":self._validate_bleu}[self.opts["valid_metric"]]
         self._set_trainer(True)
 
     def _set_trainer(self, renew):
@@ -102,9 +101,21 @@ class Trainer(object):
 
     def _validate_bleu(self, dev_iter):
         # bleu score
-        decode.decode(dev_iter, self._mm, self._mm.target_dict, self.opts, self.opts["dev-output"])
-        s = eval.evaluate(self.opts["output"], self.opts["dev"][1], self.opts["eval_metric"])
-        raise s
+        # todo(warn) especially reset batch-sizes (for beam-search which is used most)
+        dev_iter.bsize(self.opts["valid_batch_width"]/self.opts["beam_size"])
+        decode.decode(dev_iter, self._mm, self._mm.target_dict, self.opts, self.opts["dev_output"])
+        # no restore specifies for the dev set
+        s = eval.evaluate(self.opts["dev_output"], self.opts["dev"][1], self.opts["eval_metric"], True)
+        dev_iter.bsize(self.opts["valid_batch_width"])
+        return s
+
+    # validate for all the metrics
+    def _validate_them(self, dev_iter, metrics):
+        validators = {"ll": self._validate_ll, "bleu": self._validate_bleu}
+        r = []
+        for m in metrics:
+            r.append(validators[m](dev_iter))
+        return r
 
     def _validate(self, dev_iter, name=None, training_recorder=None):
         # validate and log in the stats
@@ -117,15 +128,15 @@ class Trainer(object):
             if not self.opts["overwrite"]:
                 self.save(self.opts["model"]+ss)
             # validate
-            score = self.validator(dev_iter)
-            utils.printing("Validating %s for %s: score is %s." % (self.opts["valid_metric"], ss, score), func="info")
+            score = self._validate_them(dev_iter, self.opts["valid_metrics"])
+            utils.printing("Validating %s for %s: score is %s." % (self.opts["valid_metrics"], ss, score), func="info")
             # write best and update stats
             ttp = self._tp
             ttp.hist_points.append(ss)
             ttp.hist_scores.append(score)
-            if score > ttp.best_scores:
+            if score[0] > ttp.best_scores:  # todo(warn) checking the first one as best model
                 ttp.bad_counter = 0     # reset
-                ttp.best_scores = score
+                ttp.best_scores = score[0]
                 ttp.best_point = len(ttp.hist_scores)-1
                 self.save(Trainer.BEST_PREFIX+self.opts["model"])
             else:
@@ -164,9 +175,9 @@ class Trainer(object):
                     self._update()
                     one_recorder.record(xs, ys, loss, 1)
                     iter_recorder.record(xs, ys, loss, 1)
-                    # if self.opts["verbose"]:
-                    #     mem0, mem1 = utils.get_statm()
-                    #     utils.DEBUG("[%s/%s] after fb(%s):%s/%s" % (mem0, mem1, len(xs), max([len(i) for i in xs]), max([len(i) for i in ys])))
+                    if self.opts["debug"]:
+                        mem0, mem1 = utils.get_statm()
+                        utils.DEBUG("[%s/%s] after fb(%s):%s/%s" % (mem0, mem1, len(xs), max([len(i) for i in xs]), max([len(i) for i in ys])))
                     # time to validate and save best model ??
                     if self._tp.uidx % self.opts["valid_freq"] == 0:    # update when _update
                         one_recorder.report()

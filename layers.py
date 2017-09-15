@@ -51,6 +51,11 @@ class Basic(object):
         ingraph = bool(argv["ingraph"]) if "ingraph" in argv else True
         if ingraph:
             for k in self.params:
+                # todo: dynet changes API
+                # if update:
+                #     self.iparams[k] = dy.parameter(self.params[k])
+                # else:
+                #     self.iparams[k] = dy.const_parameter(self.params[k])
                 self.iparams[k] = dy.parameter(self.params[k], update)
             self.update = update
 

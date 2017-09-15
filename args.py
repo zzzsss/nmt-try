@@ -12,7 +12,7 @@ def init(phase):
                              help="parallel training corpus (source and target)")
         data.add_argument('--dev', type=str, required=True, metavar='PATH', nargs=2,
                              help="parallel dev corpus (source and target)")
-        data.add_argument('--dev-output', type=str, default="dev-output.txt",
+        data.add_argument('--dev_output', type=str, default="dev-output.txt",
                              help="output target corpus for dev (if needed)")
         data.add_argument('--dicts_raw', type=str, metavar='PATH', nargs="+",
                              help="raw dictionaries (one per source factor, plus target vocabulary)")
@@ -127,9 +127,9 @@ def init(phase):
     validation = parser.add_argument_group('validation parameters')
     validation.add_argument('--valid_freq', type=int, default=10000, metavar='INT',
                          help="validation frequency (default: %(default)s)")
-    training.add_argument('--valid_batch_size', type=int, default=32, metavar='INT',
-                         help="validing minibatch size (default: %(default)s)")
-    validation.add_argument('--patience', type=int, default=10, metavar='INT',
+    training.add_argument('--valid_batch_width', type=int, default=80, metavar='INT',
+                         help="validating minibatch-size * beam-size (default: %(default)s)")
+    validation.add_argument('--patience', type=int, default=5, metavar='INT',
                          help="early stopping patience (default: %(default)s)")
     validation.add_argument('--anneal_restarts', type=int, default=2, metavar='INT',
                          help="when patience runs out, restart training INT times with annealed learning rate (default: %(default)s)")
@@ -139,8 +139,8 @@ def init(phase):
                          help="don't recovery to previous best point (discard some training) when anneal")
     validation.add_argument('--anneal_decay', type=float, default=0.5, metavar='FLOAT',
                          help="learning rate decay on each restart (default: %(default)s)")
-    validation.add_argument('--valid_metric', type=str, default="ll", choices=["ll", "bleu"],
-                         help="type of metric for validation (default: %(default)s)")
+    validation.add_argument('--valid_metrics', type=str, default="ll,bleu",
+                         help="type of metric for validation (separated by ',') (default: %(default)s)")
     validation.add_argument('--validate_epoch', action='store_true',
                              help="validate at the end of each epoch")
 
@@ -151,7 +151,7 @@ def init(phase):
     # common.add_argument("--dynet-mem-test", action='store_true')
     common.add_argument("--dynet-autobatch", type=str, default="")
     common.add_argument("--dynet-seed", type=int, default=12345)    # default will be of no use, need to specify it
-    # common.add_argument("--debug", action='store_true')
+    common.add_argument("--debug", action='store_true')
     common.add_argument("--verbose", "-v", action='store_true')
     if phase == "train":
         common.add_argument("--log", type=str, default=Logger.MAGIC_CODE, help="logger for the process")
@@ -172,20 +172,20 @@ def init(phase):
                          help="decoding method (default: %(default)s)")
     decode.add_argument('--beam_size', '-k', type=int, default=10,
                         help="Beam size (default: %(default)s))")
-    decode.add_argument('--sample_size', type=int, default=5,
+    decode.add_argument('--sample_size', type=int, default=10,
                         help="Sample size (default: %(default)s))")
-    decode.add_argument('--normalize', '-n', type=float, default=0.0, metavar="ALPHA",
+    decode.add_argument('--normalize', '-n', type=float, default=1.0, metavar="ALPHA",
                         help="Normalize scores by sentence length (exponentiate lengths by ALPHA, neg means nope)")
     decode.add_argument('--decode_len', type=int, default=80, metavar='INT',
                          help="maximum decoding sequence length (default: %(default)s)")
-    decode.add_argument('--decode_batched', action='store_true',
-                         help="batched calculation when decoding")
-    decode.add_argument('--no_decode_batched_padding', action='store_false', dest="decode_batched_padding",
-                         help="no padding (more memory moves) for batched calculation when decoding")
+    decode.add_argument('--no_decode_batched', action='store_false', dest="decode_batched",
+                         help="no batched calculation when decoding")
+    decode.add_argument('--decode_batched_padding', action='store_true',
+                         help="Enable padding (more memory moves) for batched calculation when decoding")
     decode.add_argument('--eval_metric', type=str, default="bleu", choices=["bleu"],
                          help="type of metric for evaluation (default: %(default)s)")
-    decode.add_argument('--test_batch_size', type=int, default=1, metavar='INT',
-                         help="testing minibatch size (default: %(default)s)")
+    decode.add_argument('--test_batch_size', type=int, default=8, metavar='INT',
+                         help="testing minibatch-size(default: %(default)s)")
 
     a = parser.parse_args()
 
@@ -214,3 +214,8 @@ def check_options(args):
     for n in ["hidden_dec", "hidden_enc"]:
         if args[n] is None:
             args[n] = args["hidden_rec"]
+    # validation
+    VALID_OPTIONS = ["ll", "bleu"]
+    s = args["valid_metrics"].split(",")
+    assert all([one in VALID_OPTIONS for one in s])
+    args["valid_metrics"] = s

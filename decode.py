@@ -8,19 +8,22 @@ def _check_order(l):
 
 def decode(diter, mms, target_dict, opts, outf):
     one_recorder = utils.OnceRecorder("DECODE")
-    num_batches = len(diter)
-    cur_batches = 0.
+    num_sents = len(diter)
+    cur_sents = 0.
+    bsize = diter.bsize()
     # decoding them all
     results = []
+    prev_point = 0
     for xs, _1, _2, _3 in diter:
-        if opts["verbose"] and cur_batches % opts["report_freq"] == 0:
-            utils.printing("Decoding process: %.2f%%" % (cur_batches/num_batches*100))
-        cur_batches += 1
+        if opts["verbose"] and (cur_sents - prev_point) > (opts["report_freq"]*bsize):
+            utils.printing("Decoding process: %.2f%%" % (cur_sents/num_sents*100))
+            prev_point = cur_sents
+        cur_sents += len(xs)
         rs = search(xs, mms, opts, opts["decode_way"], opts["decode_batched"])
         results += rs
         one_recorder.record(xs, None, 0, 0)
     # restore from sorting by length
-    diter.restore_sort_by_length(results)
+    results = diter.restore_sort_by_length(results)
     with utils.zfopen(outf, "w") as f:
         for r in results:
             best_seq = [one.last_action for one in r[0]]
@@ -87,7 +90,7 @@ def search(xs, models, opts, strategy, batched):
     # final check and ordering
     rets = [[f.get_path() for f in Hypo.sort_hypos(fs)[:st.width()]] for fs in finished]
     # some usage printing
-    if opts["verbose"]:
+    if opts["debug"]:
         utils.printing("Usage-info: %s" % pr.get_stat())
     return rets
 
