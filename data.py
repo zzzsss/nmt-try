@@ -241,8 +241,8 @@ class TextIterator:
             ttt = Dict.w2i(self.target_dict, tt, False)
             source.append(sss)
             target.append(ttt)
-            # special treating with long sentences (mainly for dev and test)
-            if len(ss) > self.onelen or len(tt) > self.onelen:
+            # special treating with long sentences (mainly for dev and test, thus only check src)
+            if len(ss) > self.onelen:
                 self.long_back = tuple([x.pop()] for x in (source, target, tokens_src, tokens_trg))
                 if len(source) == 0:
                     continue

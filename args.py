@@ -174,10 +174,14 @@ def init(phase):
                         help="Beam size (default: %(default)s))")
     decode.add_argument('--sample_size', type=int, default=10,
                         help="Sample size (default: %(default)s))")
-    decode.add_argument('--normalize', '-n', type=float, default=1.0, metavar="ALPHA",
+    decode.add_argument('--normalize', '-n', type=float, default=0.0, metavar="ALPHA",
                         help="Normalize scores by sentence length (exponentiate lengths by ALPHA, neg means nope)")
+    decode.add_argument('--normalize_during_search', action='store_true',
+                        help="Normalizing for partial scores during searches")
     decode.add_argument('--decode_len', type=int, default=80, metavar='INT',
                          help="maximum decoding sequence length (default: %(default)s)")
+    decode.add_argument('--decode_ratio', type=float, default=10.,
+                         help="maximum decoding sequence length ratio compared with src (default: %(default)s)")
     decode.add_argument('--no_decode_batched', action='store_false', dest="decode_batched",
                          help="no batched calculation when decoding")
     decode.add_argument('--decode_batched_padding', action='store_true',

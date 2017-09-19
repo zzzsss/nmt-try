@@ -15,7 +15,7 @@ def _eval_bleu(output, gold, process_gold):
         gold_res = "temp.somekindofhelpless.gold.restore"
         os.system("ZMT=%s bash %s < %s > %s" % (zmt_name, restore_name, gold, gold_res))
         gold = gold_res
-    p = subprocess.Popen("ZMT=%s bash %s < %s | perl %s -lc %s" % (zmt_name, restore_name, output, script_name, gold), shell=True, stdout=subprocess.PIPE)
+    p = subprocess.Popen("ZMT=%s bash %s < %s | perl %s %s" % (zmt_name, restore_name, output, script_name, gold), shell=True, stdout=subprocess.PIPE)
     line = p.stdout.readlines()
     utils.printing(str(line), func="info")
     b = float(line[-1].split()[2][:-1])

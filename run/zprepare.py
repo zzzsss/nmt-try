@@ -24,14 +24,15 @@ def init():
         "--max_epochs": 100,
         "--max_updates": 500000,
         "--max_len": 50,
-        "--batch_size": 80,
-        "--valid_batch_width": 80,
+        "--batch_size": 64,
+        "--valid_batch_width": 32,
         "--report_freq": 1000,
-        "--normalize": 1.0,
-        "--dev_beam_size": 4,
+        "--normalize": 0.0,
+        "--dev_beam_size": 1,
         "--valid_freq": 10000,
         "--patience": 5,
-        "--anneal_restarts": 2
+        "--anneal_restarts": 2,
+        "--test_beam_size": 5
     }
     for k in dicts:
         p.add_argument(k, type=type(dicts[k]), default=dicts[k])
@@ -111,3 +112,4 @@ if __name__ == "__main__":
 # python3 ../znmt/run/zprepare.py --valid_freq 100 -d ../en_ja_test -t znmt -p ?
 # the run
 # python3 ../znmt/run/zprepare.py -d ../data2/en-fr/ -t znmt -p ?
+# python3 ../../znmt/run/zpreapre.py --zmt ../.. -d ../data2/en-fr/ -t znmt -p ?
