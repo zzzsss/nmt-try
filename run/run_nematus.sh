@@ -9,6 +9,6 @@ CUDA_VISIBLE_DEVICES=${gpuid} PYTHONPATH=${zmt}/Theano THEANO_FLAGS=mode=FAST_RU
 
 #PYTHONPATH=${zmt}/Theano python2.7 ${zmt}/nematus/nematus/translate.py -i ${datadir}/test.final.${src} -o output.txt -k 10 -n -m ${rundir}/model.npz -v
 
-CUDA_VISIBLE_DEVICES=${gpuid} PYTHONPATH=${zmt}/Theano THEANO_FLAGS=mode=FAST_RUN,floatX=float32,device=${_nematus_device} python2.7 ${zmt}/nematus/nematus/translate.py -i ${datadir}/test.final.${src} -o ${output} -k ${test_beam_size} -n -m ${rundir}/model.npz.dev.npz
+CUDA_VISIBLE_DEVICES=${gpuid} PYTHONPATH=${zmt}/Theano THEANO_FLAGS=mode=FAST_RUN,floatX=float32,device=${_nematus_device} python2.7 ${zmt}/nematus/nematus/translate.py -i ${datadir}/test.final.${src} -o ${output} -k ${test_beam_size} -n ${normalize} -m ${rundir}/model.npz.dev.npz
 
 ZMT=${zmt} bash ${zmt}/znmt/scripts/restore.sh <${output} | perl ${zmt}/znmt/scripts/multi-bleu.perl ${datadir}/test.final.${trg}.restore

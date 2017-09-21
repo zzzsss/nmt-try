@@ -17,7 +17,7 @@ def _eval_bleu(output, gold, process_gold):
         gold = gold_res
     p = subprocess.Popen("ZMT=%s bash %s < %s | perl %s %s" % (zmt_name, restore_name, output, script_name, gold), shell=True, stdout=subprocess.PIPE)
     line = p.stdout.readlines()
-    utils.printing(str(line), func="info")
+    utils.printing(str(line), func="score")
     b = float(line[-1].split()[2][:-1])
     return b
 

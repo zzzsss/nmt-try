@@ -63,22 +63,36 @@ class Basic(object):
         # argvs include: hdrop=0., idrop=0., gdrop=0., update=True, ingraph=True
         raise NotImplementedError("No calling refresh from Basic.")
 
-    def _add_parameters(self, shape, lookup=False):
+    def _add_parameters(self, shape, lookup=False, init="default"):
         def ortho_weight(ndim):
             W = np.random.randn(ndim, ndim)
             u, s, v = np.linalg.svd(W)
             return u.astype(np.float)
+        def get_init(shape, init):
+            # shape is a tuple of dims
+            assert init in ["default", "const", "glorot", "ortho", "gaussian"], "Unknown init method %s" % init
+            if len(shape) == 1:     # set bias to 0
+                return dy.ConstInitializer(0.)
+            elif len(shape) == 2:
+                if init == "default" or init == "glorot":
+                    return dy.GlorotInitializer()
+                elif init == "gaussian":
+                    return dy.NormalInitializer(var=0.01*0.01)
+                elif init == "ortho":
+                    assert shape[0]%shape[1] == 0, "Bad shape %s for ortho_init" % shape
+                    num = shape[0] // shape[1]
+                    arr = ortho_weight(shape[1]) if num == 1 else\
+                          np.concatenate([ortho_weight(shape[1]) for _ in range(num)])
+                    return dy.NumpyInitializer(arr)
+            else:
+                raise NotImplementedError("Currently only support parameter dim <= 2.")
         if lookup:
             return self.model.add_lookup_parameters(shape)  # also default Glorot
         # shape is a tuple of dims
         if len(shape) == 1:     # set bias to 0
             return self.model.add_parameters(shape, init=dy.ConstInitializer(0.))
         else:
-            if len(shape)==2 and shape[0]==shape[1]:    # not exact criterion for rec-param, but might be ok
-                arr = ortho_weight(shape[0])
-                return self.model.add_parameters(shape, init=dy.NumpyInitializer(arr))
-            else:
-                return self.model.add_parameters(shape, init=dy.GlorotInitializer())
+            return self.model.add_parameters(shape, init=get_init(shape, init))
 
 # linear layer with selectable activation functions
 class Linear(Basic):
@@ -160,7 +174,7 @@ class RnnNode(Basic):
             self.masks = (gen_masks_input(gdrop, self.n_input, bsize), gen_masks_input(gdrop, self.n_hidden, bsize))
         # TODO ?? don't remember what this todo is to do
 
-    def __call__(self, input_exp, hidden_exp):
+    def __call__(self, input_exp, hidden_exp, mask=None):
         # todo(warn) return a {}
         raise NotImplementedError()
 
@@ -172,7 +186,7 @@ class DmRnnNode(RnnNode):
     def __init__(self, model, n_input, n_hidden):
         super(DmRnnNode, self).__init__(model, n_input, n_hidden)
 
-    def __call__(self, input_exp, hidden_exp):
+    def __call__(self, input_exp, hidden_exp, mask=None):
         return hidden_exp
 
 class GruNode(RnnNode):
@@ -180,16 +194,16 @@ class GruNode(RnnNode):
         super(GruNode, self).__init__(model, n_input, n_hidden)
         # paramters
         self.params["x2r"] = self._add_parameters((n_hidden, n_input))
-        self.params["h2r"] = self._add_parameters((n_hidden, n_hidden))
+        self.params["h2r"] = self._add_parameters((n_hidden, n_hidden), init="ortho")
         self.params["br"] = self._add_parameters((n_hidden,))
         self.params["x2z"] = self._add_parameters((n_hidden, n_input))
-        self.params["h2z"] = self._add_parameters((n_hidden, n_hidden))
+        self.params["h2z"] = self._add_parameters((n_hidden, n_hidden), init="ortho")
         self.params["bz"] = self._add_parameters((n_hidden,))
         self.params["x2h"] = self._add_parameters((n_hidden, n_input))
-        self.params["h2h"] = self._add_parameters((n_hidden, n_hidden))
+        self.params["h2h"] = self._add_parameters((n_hidden, n_hidden), init="ortho")
         self.params["bh"] = self._add_parameters((n_hidden,))
 
-    def __call__(self, input_exp, hidden_exp):
+    def __call__(self, input_exp, hidden_exp, mask=None):
         # two kinds of dropouts
         hh = hidden_exp["H"]
         if self.masks[0] is not None:
@@ -206,6 +220,12 @@ class GruNode(RnnNode):
         ht = dy.affine_transform([self.iparams["bh"], self.iparams["x2h"], input_exp, self.iparams["h2h"], h_reset])
         ht = dy.tanh(ht)
         hidden = dy.cmult(zt, hh) + dy.cmult((1. - zt), ht)
+        # mask: if 0 then pass through
+        if mask is not None:
+            mask_array = np.asarray(mask).reshape((1, -1))
+            m1 = dy.inputTensor(mask_array, True)           # 1.0 for real words
+            m0 = dy.inputTensor(1.0 - mask_array, True)     # 1.0 for padding words (mask=0)
+            hidden = hidden * m1 + hidden_exp["H"] * m0
         return {"H": hidden}
 
 class LstmNode(RnnNode):
@@ -213,10 +233,10 @@ class LstmNode(RnnNode):
         super(LstmNode, self).__init__(model, n_input, n_hidden)
         # paramters
         self.params["xw"] = self._add_parameters((n_hidden*4, n_input))
-        self.params["hw"] = self._add_parameters((n_hidden*4, n_hidden))
+        self.params["hw"] = self._add_parameters((n_hidden*4, n_hidden), init="ortho")
         self.params["b"] = self._add_parameters((n_hidden*4,))
 
-    def __call__(self, input_exp, hidden_exp):
+    def __call__(self, input_exp, hidden_exp, mask=None):
         # two kinds of dropouts
         hh = hidden_exp["H"]
         if self.masks[0] is not None:
@@ -226,9 +246,16 @@ class LstmNode(RnnNode):
         if self.drop > 0.:
             input_exp = dy.dropout(input_exp, self.drop)
         gates_t = dy.vanilla_lstm_gates(input_exp, hh, self.iparams["xw"], self.iparams["hw"], self.iparams["b"])
-        c_t = dy.vanilla_lstm_c(hidden_exp["C"], gates_t)
-        h_t = dy.vanilla_lstm_h(c_t, gates_t)
-        return {"H": h_t, "C": c_t}
+        cc = dy.vanilla_lstm_c(hidden_exp["C"], gates_t)
+        hidden = dy.vanilla_lstm_h(cc, gates_t)
+        # mask: if 0 then pass through
+        if mask is not None:
+            mask_array = np.asarray(mask).reshape((1, -1))
+            m1 = dy.inputTensor(mask_array, True)           # 1.0 for real words
+            m0 = dy.inputTensor(1.0 - mask_array, True)     # 1.0 for padding words (mask=0)
+            hidden = hidden * m1 + hidden_exp["H"] * m0
+            cc = cc * m1 + hidden_exp["C"] * m0
+        return {"H": hidden, "C": cc}
 
 class Attention(Basic):
     def __init__(self, model, n_s, n_h):
@@ -343,7 +370,8 @@ class Encoder(object):
             nn[0].refresh(**argv)
             nn[1].refresh(**argv)
 
-    def __call__(self, embeds):
+    def __call__(self, embeds, masks):
+        # todo(warn), only put masks here in enc
         # embeds: list(step) of {(n_emb, ), batch_size}, using padding for batches
         b_size = bs(embeds[0])
         outputs = [embeds]
@@ -351,14 +379,14 @@ class Encoder(object):
             init_hidden = dy.zeroes((self.n_hidden,), batch_size=b_size)
             tmp_f = []      # forward
             tmp_f_prev = {"H":init_hidden, "C":init_hidden}
-            for e in outputs[-1]:
-                one_output = nn[0](e, tmp_f_prev)
+            for e, m in zip(outputs[-1], masks):
+                one_output = nn[0](e, tmp_f_prev, m)
                 tmp_f.append(one_output["H"])
                 tmp_f_prev = one_output
             tmp_b = []      # forward
             tmp_b_prev = {"H":init_hidden, "C":init_hidden}
-            for e in reversed(outputs[-1]):
-                one_output = nn[1](e, tmp_b_prev)
+            for e, m in zip(reversed(outputs[-1]), reversed(masks)):
+                one_output = nn[1](e, tmp_b_prev, m)
                 tmp_b.append(one_output["H"])
                 tmp_b_prev = one_output
             # concat

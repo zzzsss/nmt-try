@@ -129,7 +129,7 @@ class Trainer(object):
                 self.save(self.opts["model"]+ss)
             # validate
             score = self._validate_them(dev_iter, self.opts["valid_metrics"])
-            utils.printing("Validating %s for %s: score is %s." % (self.opts["valid_metrics"], ss, score), func="info")
+            utils.printing("Validating %s for %s: score is %s." % (self.opts["valid_metrics"], ss, score), func="score")
             # write best and update stats
             ttp = self._tp
             ttp.hist_points.append(ss)

@@ -99,6 +99,8 @@ def init(phase):
     training = parser.add_argument_group('training parameters')
     training.add_argument('--no_shuffle_training_data', action='store_false', dest='shuffle_training_data',
                              help="don't shuffle training data before each epoch")
+    network.add_argument('--training_sort_type', type=str, default="trg", choices=["src", "trg", "src-trg", "trg-src"],
+                         help="training data's sort type (default: %(default)s)")
     training.add_argument('--max_len', type=int, default=80, metavar='INT',
                          help="maximum sequence length (default: %(default)s)")
     training.add_argument('--fix_len_src', type=int, default=-1, metavar='INT',

@@ -1,7 +1,7 @@
 import time, sys, os, subprocess, random, json, gzip
 
 _printing_heads = {
-    "plain":"-- ", "time":"## ", "io":"== ", "info":"** ",
+    "plain":"-- ", "time":"## ", "io":"== ", "info":"** ", "score":"%% ",
     "warn":"!! ", "fatal":"KI ", "debug":"DE ", "none":""
 }
 def printing(s, func="plain", out=sys.stderr):

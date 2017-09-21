@@ -119,6 +119,7 @@ class TextIterator:
         self.source_buffer = []
         self.target_buffer = []
         self.maxibatch_size = maxibatch_size
+        # self.sort_ksize = sort_ksize
         self.is_dt = is_dt      # is dev/test ? => sort all if sorting and special treating for long sentences
         self.len_sort_indexes = []
         self.long_back = None
@@ -126,10 +127,18 @@ class TextIterator:
 
     @property
     def k(self):
+        # return self.sort_ksize
         return self.batch_size * self.maxibatch_size
 
     # information about sort-by-lengths
+    @staticmethod
+    def _SBL_combine(a, b):
+        MAXLEN = 1000   # this should enough
+        UNIT = 4
+        return MAXLEN * (a//UNIT) + b
     SBL_TYPES = {
+        "src-trg": [True, lambda s,t: TextIterator._SBL_combine(s,t)],
+        "trg-src": [True, lambda s,t: TextIterator._SBL_combine(t,s)],
         "src": [True, lambda s,t:s],
         "trg": [True, lambda s,t:t],
         "plus": [True, lambda s,t:s+t],
@@ -192,7 +201,7 @@ class TextIterator:
         # fill buffer, if it's empty
         # utils.DEBUG("hh")
         assert len(self.source_buffer) == len(self.target_buffer), 'Buffer size mismatch!'
-        if len(self.source_buffer) == 0:
+        if len(self.source_buffer) == 0 or len(self.source_buffer) < self.batch_size:
             for ss in self.source:
                 # utils.DEBUG(ss)
                 ss = ss.split()
