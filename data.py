@@ -201,7 +201,7 @@ class TextIterator:
         # fill buffer, if it's empty
         # utils.DEBUG("hh")
         assert len(self.source_buffer) == len(self.target_buffer), 'Buffer size mismatch!'
-        if len(self.source_buffer) == 0 or len(self.source_buffer) < self.batch_size:
+        if len(self.source_buffer) == 0:
             for ss in self.source:
                 # utils.DEBUG(ss)
                 ss = ss.split()
