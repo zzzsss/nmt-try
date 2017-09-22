@@ -15,7 +15,7 @@ DATA_DIR="${HOME_DIR}/data"
 MOSES_DIR="${HOME_DIR}/mosesdecoder"
 SUBWORD_DIR="${HOME_DIR}/subword-nmt"
 NEMATUS_DIR="${HOME_DIR}/nematus"
-echo "choosing current dir" $HOME_DIR "as the home-dir for the mt-basic." 1>&2
+#echo "choosing current dir" $HOME_DIR "as the home-dir for the mt-basic." 1>&2
 DATA2_DIR="${HOME_DIR}/data2"   # WIT3
 
 # tools from moses

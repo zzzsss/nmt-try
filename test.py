@@ -12,7 +12,7 @@ def main(opts):
         # special restoring for test/dev-iter (here big maxibatch-size)
         test_iter = TextIterator(opts["test"][0], opts["test"][1], source_dicts, target_dict,
                               batch_size=opts["test_batch_size"], maxlen=None, use_factor=(opts["factors"]>1),
-                              skip_empty=False, shuffle_each_epoch=False, sort_type="src", maxibatch_size=5000)
+                              skip_empty=False, shuffle_each_epoch=False, sort_type="src", is_dt=True, onelen=50)
     # 2. model
     mm = []
     for mn in opts["models"]:

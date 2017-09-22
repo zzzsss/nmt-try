@@ -8,19 +8,22 @@ def _check_order(l):
 
 def decode(diter, mms, target_dict, opts, outf):
     one_recorder = utils.OnceRecorder("DECODE")
-    num_batches = len(diter)
-    cur_batches = 0.
+    num_sents = len(diter)
+    cur_sents = 0.
+    bsize = diter.bsize()
     # decoding them all
     results = []
+    prev_point = 0
     for xs, _1, _2, _3 in diter:
-        if opts["verbose"] and cur_batches % opts["report_freq"] == 0:
-            utils.printing("Decoding process: %.2f%%" % (cur_batches/num_batches*100))
-        cur_batches += 1
+        if opts["verbose"] and (cur_sents - prev_point) >= (opts["report_freq"]*bsize):
+            utils.printing("Decoding process: %.2f%%" % (cur_sents/num_sents*100))
+            prev_point = cur_sents
+        cur_sents += len(xs)
         rs = search(xs, mms, opts, opts["decode_way"], opts["decode_batched"])
         results += rs
         one_recorder.record(xs, None, 0, 0)
     # restore from sorting by length
-    diter.restore_sort_by_length(results)
+    results = diter.restore_sort_by_length(results)
     with utils.zfopen(outf, "w") as f:
         for r in results:
             best_seq = [one.last_action for one in r[0]]
@@ -42,13 +45,14 @@ def search(xs, models, opts, strategy, batched):
         pr = BatchedProcess(models, st.width(), opts["decode_batched_padding"])
     else:
         pr = NonBatchedProcess(models, st.width())
-    normer = Normer() if opts["normalize"] <= 0 else PolyNormer(opts["normalize"])
+    normer = Normer() if (opts["normalize"] <= 0) else PolyNormer(opts["normalize"], opts["normalize_during_search"])
     hypos = [[Hypo(normer=normer) for _z in range(st.start_hypo_num())] for _ in range(len(xs))]
     finished = [[] for _ in range(len(xs))]
     # for max-steps
     nexts, orders = None, None
     eos_ind = models[0].target_dict.eos
-    for s in range(opts["decode_len"]):
+    maxlen = min(opts["decode_len"], max([len(one)*opts["decode_ratio"] for one in xs]))
+    for s in range(int(maxlen)):
         # feed one and get results
         if s == 0:
             results = pr.start(xs, st.start_hypo_num())
@@ -87,7 +91,7 @@ def search(xs, models, opts, strategy, batched):
     # final check and ordering
     rets = [[f.get_path() for f in Hypo.sort_hypos(fs)[:st.width()]] for fs in finished]
     # some usage printing
-    if opts["verbose"]:
+    if opts["debug"]:
         utils.printing("Usage-info: %s" % pr.get_stat())
     return rets
 
@@ -96,12 +100,22 @@ class Normer(object):
     def norm_score(self, s, l):
         return s
 
+    def norm_score_partial(self, s, l):
+        return s
+
 class PolyNormer(Normer):
-    def __init__(self, alpha):
+    def __init__(self, alpha, normalize_during_search):
         self.alpha = alpha
+        self.normalize_during_search = normalize_during_search
 
     def norm_score(self, s, l):
         return s/pow(l, self.alpha)
+
+    def norm_score_partial(self, s, l):
+        if self.normalize_during_search:
+            return self.norm_score(s, l)
+        else:
+            return s
 
 # hypothesis
 class Hypo(object):
@@ -125,7 +139,7 @@ class Hypo(object):
 
     @property
     def partial_score(self):
-        return self.normer.norm_score(self.score_acc, self.length)
+        return self.normer.norm_score_partial(self.score_acc, self.length)
 
     @property
     def final_score(self):

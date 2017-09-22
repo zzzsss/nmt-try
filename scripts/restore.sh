@@ -7,6 +7,6 @@
 RUNNING_DIR="$( cd "$( dirname ${BASH_SOURCE[0]}  )" && pwd )"
 source ${RUNNING_DIR}/basic.sh
 shopt -s expand_aliases
-set -v
+#set -v
 
 postprocess0

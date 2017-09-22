@@ -14,7 +14,7 @@ class Logger(object):
     def start_log(s):
         Logger.end_log()
         if s == Logger.MAGIC_CODE:
-            s = "%s-%s.log" % (platform.uname().node, '-'.join(time.ctime().split()[-2:]))
+            s = "%s-%s.log" % (platform.uname().node, '-'.join(time.ctime().split()[-4:]))
         Logger.printing_log_file = zfopen(s, "w")
         printing("Start logging at %s" % Logger.printing_log_file)
 
