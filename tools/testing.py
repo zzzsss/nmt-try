@@ -12,3 +12,4 @@ if __name__=="__main__":
     print ("os.getcwd()=%s" % os.getcwd())
     print ("sys.path[0]=%s" % sys.path[0])
     print ("sys.argv[0]=%s" % sys.argv[0])
+

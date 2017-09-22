@@ -58,7 +58,7 @@ class NMTModel(object):
             for b in range(bsize):
                 if x[-1][f][b] not in [eos, padding]:
                     x[-1][f][b] = eos
-        return x, lens
+        return x, [[(1. if len(one)>s else 0.) for one in xs] for s in range(steps)]
 
     def prepare_y(self, ys, fix_len):
         bsize, steps = len(ys), max([len(i) for i in ys])
@@ -75,7 +75,7 @@ class NMTModel(object):
         for b in range(bsize):
             if y[-1][b] not in [eos, padding]:
                 y[-1][b] = eos
-        return y, lens
+        return y, [[(1. if len(one)>s else 0.) for one in ys] for s in range(steps)]
 
     # helper routines #
     def get_embeddings_step(self, tokens, embeds):
@@ -109,15 +109,15 @@ class NMTModel(object):
         bsize = len(xs)
         self.refresh(training, bsize=bsize)      # bsize for gdrop of rec-nodes
         # -- prepare batches
-        xx, _ = self.prepare_x(xs, self.opts["fix_len_src"])
-        yy, y_lens = self.prepare_y(ys, self.opts["fix_len_trg"])
+        xx, xm = self.prepare_x(xs, self.opts["fix_len_src"])
+        yy, ym = self.prepare_y(ys, self.opts["fix_len_trg"])
         # -- embeddings
         x_embeds = self.get_embeddings(xx, self.embeds_src)
         y_embeds = self.get_embeddings(yy, self.embed_trg)
         # --- shift y_embeddings (ignore the last one which must be eos)
         y_yes = [self.get_start_yembs(bsize)] + y_embeds[:-1]
         # -- encoder
-        x_ctx = self.enc(x_embeds)
+        x_ctx = self.enc(x_embeds, xm)
         # -- decoder (steps == len)
         ss = self.dec.start_one(x_ctx)
         ss = self.dec.feed_one(ss, y_embeds[:-1])
@@ -127,7 +127,7 @@ class NMTModel(object):
         for ss, at, hi, ye, yt in zip(range(len(yy)), atts, hiddens, y_yes, yy):
             output_score = self.get_score(at, hi, ye)
             one_loss = dy.pickneglogsoftmax_batch(output_score, yt)
-            mask_expr = dy.inputVector([(1. if ss<y_lens[i] else 0.) for i in range(bsize)])
+            mask_expr = dy.inputVector(ym[ss])
             mask_expr = dy.reshape(mask_expr, (1, ), bsize)
             one_loss = one_loss * mask_expr
             losses.append(one_loss)
@@ -164,9 +164,9 @@ class NMTModel(object):
     def prepare_enc(self, xs, expand):
         # -- encode & start-decode: return list of DecoderState
         mm = self
-        xx = mm.prepare_x(xs, -1)[0]
+        xx, xm = mm.prepare_x(xs, -1)
         x_embed = mm.get_embeddings(xx, mm.embeds_src)
-        x_ctx = mm.enc(x_embed)
+        x_ctx = mm.enc(x_embed, xm)
         ss = mm.dec.start_one(x_ctx, expand)
         return ss
 

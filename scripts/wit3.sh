@@ -57,8 +57,8 @@ function pstep5-concat
 for lang in ${SRC} ${TRG}; do
     if [ -e ${CUR_DATA_DIR}/train.final.${lang} ]; then rm ${CUR_DATA_DIR}/train.final.${lang}; fi
     ln -s ${CUR_DATA_DIR}/train.${POSTFIX_TR}.${lang} ${CUR_DATA_DIR}/train.final.${lang}
-    cat ${CUR_DATA_DIR}/dt.*2015*.${POSTFIX_DT}.${lang} > ${CUR_DATA_DIR}/dev.final.${lang}
-    cat ${CUR_DATA_DIR}/dt.*{2013,2014}*.${POSTFIX_DT}.${lang} > ${CUR_DATA_DIR}/test.final.${lang}
+    cat ${CUR_DATA_DIR}/dt.*{2013,2014}*.${POSTFIX_DT}.${lang} > ${CUR_DATA_DIR}/dev.final.${lang}
+    cat ${CUR_DATA_DIR}/dt.*2015*.${POSTFIX_DT}.${lang} > ${CUR_DATA_DIR}/test.final.${lang}
     postprocess0 < ${CUR_DATA_DIR}/dev.final.${lang} > ${CUR_DATA_DIR}/dev.final.${lang}.restore
     postprocess0 < ${CUR_DATA_DIR}/test.final.${lang} > ${CUR_DATA_DIR}/test.final.${lang}.restore
 done
