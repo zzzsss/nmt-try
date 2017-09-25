@@ -15,13 +15,13 @@ class NMTModel(object):
         self.embed_trg = Embedding(self.model, len(target_dict), opts["dim_word"], dropout_wordceil=target_dict.get_num_words())
         # enc-dec
         self.enc = Encoder(self.model, sum(opts["dim_per_factor"]), opts["hidden_enc"], opts["enc_depth"], opts["rnn_type"])
-        self.dec = {"att": AttDecoder, "nematus": NematusDecoder}[opts["dec_type"]](self.model, opts["dim_word"], opts["hidden_dec"], opts["dec_depth"], 2*opts["hidden_enc"], opts["hidden_att"], opts["att_type"], opts["rnn_type"])
+        self.dec = {"att": AttDecoder, "nematus": NematusDecoder}[opts["dec_type"]](self.model, opts["dim_word"], opts["hidden_dec"], opts["dec_depth"], 2*opts["hidden_enc"], opts["hidden_att"], opts["att_type"], opts["rnn_type"], opts["summ_type"])
         # deep output
         self.outputs = [Linear(self.model, 2*opts["hidden_enc"]+opts["hidden_dec"]+opts["dim_word"], opts["hidden_out"]),
                        Linear(self.model, opts["hidden_out"], len(target_dict), act="linear")]  # no softmax here
         utils.printing("End of creating Model.")
 
-    def refresh(self, training, renew_cg=True, **argvs):
+    def refresh(self, training, renew_cg=True):
         # default: ingraph=True, update=True
         def _gd(drop):  # get dropout
             return drop if training else 0.
@@ -33,8 +33,8 @@ class NMTModel(object):
             e.refresh(hdrop=_gd(opts["drop_embedding"]), gdrop=_gd(opts["gdrop_embedding"]))
         self.embed_trg.refresh(hdrop=_gd(opts["drop_embedding"]), gdrop=_gd(opts["gdrop_embedding"]))
         # enc-dec
-        self.enc.refresh(idrop=_gd(opts["drop_enc"]), gdrop=_gd(opts["gdrop_enc"]), **argvs)
-        self.dec.refresh(idrop=_gd(opts["drop_dec"]), gdrop=_gd(opts["gdrop_dec"]), hdrop=_gd(opts["drop_hidden"]), **argvs)
+        self.enc.refresh(idrop=_gd(opts["drop_enc"]), gdrop=_gd(opts["gdrop_enc"]))
+        self.dec.refresh(idrop=_gd(opts["drop_dec"]), gdrop=_gd(opts["gdrop_dec"]), hdrop=_gd(opts["drop_hidden"]))
         # outputs
         self.outputs[0].refresh(hdrop=_gd(opts["drop_hidden"]))
         self.outputs[1].refresh()
@@ -107,7 +107,7 @@ class NMTModel(object):
     def fb(self, xs, ys, training):
         assert len(xs) == len(ys)
         bsize = len(xs)
-        self.refresh(training, bsize=bsize)      # bsize for gdrop of rec-nodes
+        self.refresh(training)
         # -- prepare batches
         xx, xm = self.prepare_x(xs, self.opts["fix_len_src"])
         yy, ym = self.prepare_y(ys, self.opts["fix_len_trg"])

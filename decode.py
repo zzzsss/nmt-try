@@ -38,7 +38,7 @@ def search(xs, models, opts, strategy, batched):
         models = [models]
     dy.renew_cg()
     for _mm in models:
-        _mm.refresh(False, False)   # no need for batch-size
+        _mm.refresh(False, False)
     # prepare
     st = {"beam":BeamStrategy(opts["beam_size"]), "sample":SamplingStrategy(opts["sample_size"])}[strategy]
     if batched:

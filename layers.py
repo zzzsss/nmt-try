@@ -5,7 +5,7 @@ import numpy as np
 
 # ================= Helpers ====================== #
 # get mask inputs
-def gen_masks_input(rate, size, bsize=1):
+def gen_masks_input(rate, size, bsize):
     def _gen_masks(size, rate):
         # inverted dropout
         r = 1-rate
@@ -51,12 +51,14 @@ class Basic(object):
         ingraph = bool(argv["ingraph"]) if "ingraph" in argv else True
         if ingraph:
             for k in self.params:
-                # todo: dynet changes API
-                # if update:
-                #     self.iparams[k] = dy.parameter(self.params[k])
-                # else:
-                #     self.iparams[k] = dy.const_parameter(self.params[k])
-                self.iparams[k] = dy.parameter(self.params[k], update)
+                # todo(warn): dynet changes API
+                try:
+                    self.iparams[k] = dy.parameter(self.params[k], update)
+                except NotImplementedError:
+                    if update:
+                        self.iparams[k] = dy.parameter(self.params[k])
+                    else:
+                        self.iparams[k] = dy.const_parameter(self.params[k])
             self.update = update
 
     def refresh(self):
@@ -169,9 +171,9 @@ class RnnNode(Basic):
         self._ingraph(argv)
         self.masks = (None, None)
         gdrop = float(argv["gdrop"]) if "gdrop" in argv else 0.
-        bsize = int(argv["bsize"]) if "bsize" in argv else 1       # if not, the same mask for all elements in batch
-        if gdrop > 0:
-            self.masks = (gen_masks_input(gdrop, self.n_input, bsize), gen_masks_input(gdrop, self.n_hidden, bsize))
+        # bsize = int(argv["bsize"]) if "bsize" in argv else 1       # if not, the same mask for all elements in batch
+        if gdrop > 0:   # ensure same masks for all instances in the batch
+            self.masks = (gen_masks_input(gdrop, self.n_input, 1), gen_masks_input(gdrop, self.n_hidden, 1))
         # TODO ?? don't remember what this todo is to do
 
     def __call__(self, input_exp, hidden_exp, mask=None):
@@ -442,7 +444,7 @@ class DecoderState(object):
 
 # attentional decoder
 class Decoder(object):
-    def __init__(self, model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden, att_type, rnn_type):
+    def __init__(self, model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden, att_type, rnn_type, summ_type):
         self.ntype = RnnNode.get_rnode(rnn_type)
         self.all_nodes = []
         # gru nodes --- wait for the sub-classes
@@ -458,24 +460,41 @@ class Decoder(object):
         self.n_hidden = n_hidden
         self.n_layers = n_layers
         self.dim_src = dim_src      # also the size of attention vector
+        # summarize for the source as the start of decoder
+        self.summer = Decoder.get_summer(summ_type, dim_src)    # bidirection
+
+    @staticmethod
+    def get_summer(s, size):  # list of values (bidirection) => one value
+        if s == "avg":
+            return dy.average
+        else:
+            mask = dy.inputVector([0. for _ in range(size)]+[1. for _ in range(size)])
+            if s == "fend":
+                return lambda x: dy.cmult(1.-mask, x[-1])
+            elif s == "bend":
+                return lambda x: dy.cmult(mask, x[0])
+            elif s == "ends":
+                return lambda x: dy.cmult(1.-mask, x[-1]) + dy.cmult(mask, x[0])
+            else:
+                return None
 
     def refresh(self, **argv):
         for nn in self.all_nodes:
             nn.refresh(**argv)    # dropouts: init/att: hdrop, rec: idrop, gdrop
 
     def start_one(self, s, expand=1):
-        # start to decode with one sentence, W*avg(s) as init
+        # start to decode with one sentence, W*summ(s) as init
         # also expand on the batch dimension # TODO: maybe should put at the col dimension
         inits = []
-        avg = dy.average(s)
+        summ = self.summer(s)
         if expand > 1:      # waste of memory, but seems to be a feasible way
             indices = []
-            for i in range(bs(avg)):
+            for i in range(bs(summ)):
                 indices += [i for _ in range(expand)]
-            avg = dy.pick_batch_elems(avg, indices)
+            summ = dy.pick_batch_elems(summ, indices)
             s = [dy.pick_batch_elems(one, indices) for one in s]
         for i in range(self.n_layers):
-            cur_init = self.inodes[i](avg)
+            cur_init = self.inodes[i](summ)
             # +1 for the init state
             inits.append({"H": cur_init, "C": dy.zeroes((self.n_hidden,), batch_size=bs(cur_init))})
         att, attw = self.anode(s, inits[0]["H"])          # start of the attention
@@ -498,8 +517,8 @@ class Decoder(object):
 
 # normal attention decoder
 class AttDecoder(Decoder):
-    def __init__(self, model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden, att_type, rnn_type):
-        super(AttDecoder, self).__init__(model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden, att_type, rnn_type)
+    def __init__(self, model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden, att_type, rnn_type, summ_type):
+        super(AttDecoder, self).__init__(model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden, att_type, rnn_type, summ_type)
         # gru nodes
         self.gnodes = [self.ntype(model, n_input+dim_src, n_hidden)]    # (E(y_{i-1})//c_i, s_{i-1}) => s_i
         for i in range(n_layers-1):
@@ -521,8 +540,8 @@ class AttDecoder(Decoder):
 
 # nematus-style attention decoder, fixed two transitions
 class NematusDecoder(Decoder):
-    def __init__(self, model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden, att_type, rnn_type):
-        super(NematusDecoder, self).__init__(model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden, att_type, rnn_type)
+    def __init__(self, model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden, att_type, rnn_type, summ_type):
+        super(NematusDecoder, self).__init__(model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden, att_type, rnn_type, summ_type)
         # gru nodes
         self.gnodes = [self.ntype(model, n_input, n_hidden)]        # gru1 for the first layer
         for i in range(n_layers-1):

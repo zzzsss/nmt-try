@@ -58,6 +58,8 @@ def init(phase):
                          help="attention type (default: %(default)s)")
     network.add_argument('--rnn_type', type=str, default="gru", choices=["gru", "lstm", "dummy"],
                          help="recurrent node type (default: %(default)s)")
+    network.add_argument('--summ_type', type=str, default="avg", choices=["avg", "fend", "bend", "ends"],
+                         help="decoder's starting summarizing type (default: %(default)s)")
     network.add_argument('--hidden_rec', type=int, default=1000, metavar='INT',
                          help="recurrent hidden layer (default for dec&&enc) (default: %(default)s)")
     network.add_argument('--hidden_dec', type=int, metavar='INT',
@@ -84,22 +86,26 @@ def init(phase):
                          help="dropout for hidden layers (0: no dropout) (default: %(default)s)")
     network.add_argument('--drop_embedding', type=float, default=0.2, metavar="FLOAT",
                          help="dropout for embeddings (0: no dropout) (default: %(default)s)")
-    network.add_argument('--drop_dec', type=float, default=0., metavar="FLOAT",
-                         help="dropout (idrop) for decoder (0: no dropout) (default: %(default)s)")
-    network.add_argument('--drop_enc', type=float, default=0., metavar="FLOAT",
-                         help="dropout (idrop) for encoder (0: no dropout) (default: %(default)s)")
     network.add_argument('--gdrop_embedding', type=float, default=0., metavar="FLOAT",
                          help="gdrop for words (0: no dropout) (default: %(default)s)")
-    network.add_argument('--gdrop_dec', type=float, default=0.2, metavar="FLOAT",
+    network.add_argument('--drop_rec', type=float, default=0., metavar="FLOAT",
+                         help="dropout (idrop) for recurrent nodes (0: no dropout) (default: %(default)s)")
+    network.add_argument('--drop_dec', type=float, metavar="FLOAT",
+                         help="dropout (idrop) for decoder (0: no dropout) (default: %(default)s)")
+    network.add_argument('--drop_enc', type=float, metavar="FLOAT",
+                         help="dropout (idrop) for encoder (0: no dropout) (default: %(default)s)")
+    network.add_argument('--gdrop_rec', type=float, default=0., metavar="FLOAT",
+                         help="gdrop for recurrent nodes (0: no dropout) (default: %(default)s)")
+    network.add_argument('--gdrop_dec', type=float, metavar="FLOAT",
                          help="gdrop for decoder (0: no dropout) (default: %(default)s)")
-    network.add_argument('--gdrop_enc', type=float, default=0.2, metavar="FLOAT",
+    network.add_argument('--gdrop_enc', type=float, metavar="FLOAT",
                          help="gdrop for encoder (0: no dropout) (default: %(default)s)")
 
     # training progress
     training = parser.add_argument_group('training parameters')
     training.add_argument('--no_shuffle_training_data', action='store_false', dest='shuffle_training_data',
                              help="don't shuffle training data before each epoch")
-    network.add_argument('--training_sort_type', type=str, default="trg", choices=["src", "trg", "src-trg", "trg-src"],
+    network.add_argument('--training_sort_type', type=str, default="trg-src", choices=["src", "trg", "src-trg", "trg-src"],
                          help="training data's sort type (default: %(default)s)")
     training.add_argument('--max_len', type=int, default=80, metavar='INT',
                          help="maximum sequence length (default: %(default)s)")
@@ -122,7 +128,7 @@ def init(phase):
                          help="gradient clipping threshold (default: %(default)s)")
     training.add_argument('--lrate', type=float, default=0.0001, metavar='FLOAT',
                          help="learning rate or alpha (default: %(default)s)")
-    training.add_argument('--moment', type=float, default=0.75, metavar='FLOAT',
+    training.add_argument('--moment', type=float, default=0.8, metavar='FLOAT',
                          help="momentum for mTrainer (default: %(default)s)")
 
     # validate
@@ -141,7 +147,7 @@ def init(phase):
                          help="don't recovery to previous best point (discard some training) when anneal")
     validation.add_argument('--anneal_decay', type=float, default=0.5, metavar='FLOAT',
                          help="learning rate decay on each restart (default: %(default)s)")
-    validation.add_argument('--valid_metrics', type=str, default="ll,bleu",
+    validation.add_argument('--valid_metrics', type=str, default="bleu,ll",
                          help="type of metric for validation (separated by ',') (default: %(default)s)")
     validation.add_argument('--validate_epoch', action='store_true',
                              help="validate at the end of each epoch")
@@ -217,9 +223,12 @@ def check_options(args):
         assert args["dim_per_factor"][0] == args["dim_word"]    # do we need this
     if args["dim_per_factor"] is None:
         args["dim_per_factor"] = [args["dim_word"]]
-    for n in ["hidden_dec", "hidden_enc"]:
-        if args[n] is None:
-            args[n] = args["hidden_rec"]
+    # defaults
+    for prefix in ["hidden_", "drop_", "gdrop_"]:
+        for n in ["dec", "enc"]:
+            n0, n1 = prefix+n, prefix+"rec"
+            if args[n0] is None:
+                args[n0] = args[n1]
     # validation
     VALID_OPTIONS = ["ll", "bleu"]
     s = args["valid_metrics"].split(",")

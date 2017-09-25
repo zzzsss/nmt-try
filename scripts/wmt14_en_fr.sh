@@ -12,8 +12,8 @@ shopt -s expand_aliases
 SRC="en"
 TRG="fr"
 
-CUR_DATA_DIR="${HOME_DIR}/${SRC}_${TRG}_data"
-mkdir -p ${CUR_DATA_DIR}
+CUR_DATA_DIR="${HOME_DIR}/${SRC}_${TRG}_data_${DIR_SUFFIX}"
+mkdir ${CUR_DATA_DIR} # should not exist previously
 
 function pstep1-train
 {
