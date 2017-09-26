@@ -3,9 +3,7 @@ import dynet as dy
 import numpy as np
 import utils, data
 
-def _check_order(l):
-    return (len(l) == 1 and l[0] == 0) or (len(l)>1 and l[-1] == l[-2]+1)
-
+# main decoding routine, the include_gold mode is only for debugging
 def decode(diter, mms, target_dict, opts, outf):
     one_recorder = utils.OnceRecorder("DECODE")
     num_sents = len(diter)
@@ -31,8 +29,43 @@ def decode(diter, mms, target_dict, opts, outf):
             f.write(" ".join(strs)+"\n")
     one_recorder.report()
 
+# for debug printing at each step
+def _debug_printing_step(s, xs, ys, hypos, results, cands, finished, src_d, trg_d, bsize, printing=True):
+    def _tops(sc, size):
+        return np.argpartition(sc, max(-len(sc),-size))[-size:]
+    rets = []
+    if ys is None:
+        ys = [[0] for _ in xs]
+    for x, y, hs, fis, rs, atts, cs in zip(xs, ys, hypos, finished, results["scores"], results["attws"], cands):
+        r = {}
+        r["src_ws"] = [src_d._getw(w[0]) for w in x]
+        r["trg_ws"] = [trg_d._getw(w) for w in y]
+        r["hypos"] = [[(one, trg_d._getw(one.last_action)) for one in h.get_path()] for h in hs]
+        r["hypos_p"] = [(" ".join([trg_d._getw(one.last_action) for one in h.get_path()]), "%.3f"%h.partial_score, "%.3f"%h.final_score) for h in hs]
+        r["finish"] = [[(one, trg_d._getw(one.last_action)) for one in h.get_path()] for h in fis]
+        r["finish_p"] = [(" ".join([trg_d._getw(one.last_action) for one in h.get_path()]), "%.3f"%h.partial_score, "%.3f"%h.final_score) for h in fis]
+        r["results"] = [[(trg_d._getw(one), "%.3f"%rs[i][one]) for one in _tops(rs[i], bsize)] for i in range(len(hs))]
+        r["atts"] = [[(w, "%.3f"%a) for w, a in zip(r["src_ws"], att)] for att in atts]
+        r["cands"] = [[prev_index, trg_d._getw(this_action), this_hypo] for this_hypo, this_action, prev_index in cs]
+        rets.append(r)
+    if printing:
+        for ii, r in enumerate(rets):
+            utils.printing("\nStep %s for %s" % (s, r["src_ws"]), func="debug")
+            utils.printing("Original hypos are:", func="debug")
+            for hi, zzz in enumerate(zip(r["hypos_p"], r["results"], r["atts"])):
+                utils.printing("%s: %s" % (hi, zzz[0]), func="debug")
+                utils.printing("!!SCORE -> %s" % zzz[1], func="debug")
+                utils.printing("!!ATTS -> %s" % zzz[2], func="debug")
+                utils.printing("="*20, func="debug")
+            for zz in r["cands"]:
+                utils.printing("!!CANDS-> %s" % ((" ".join([trg_d._getw(one.last_action) for one in zz[-1].get_path()]), zz),), func="debug")
+            for zz in r["finish_p"]:
+                utils.printing("!!FIN-> %s" % (zz,), func="debug")
+            utils.printing("!!REF-> %s" % r["trg_ws"], func="debug")
+    return rets
+
 # the main searching routine
-def search(xs, models, opts, strategy, batched):
+def search(xs, models, opts, strategy, batched, ys=None):
     # xs: list(batch) of list(sent) of int
     if type(models) not in [list, tuple]:
         models = [models]
@@ -60,6 +93,9 @@ def search(xs, models, opts, strategy, batched):
             results = pr.feed(nexts, orders)
         # get next steps
         cands = st.select_next(hypos, results)
+        # print the status for debugging
+        if opts["debug"]:
+            _debug_printing_step(s, xs, ys, hypos, results, cands, finished, models[0].source_dicts[0], models[0].target_dict, st.width())
         new_nexts, new_orders, new_hypos = [[] for _ in range(len(xs))], [[] for _ in range(len(xs))], [[] for _ in range(len(xs))]
         for i, one_cands in enumerate(cands):
             # todo(warn): decrease beam size here
@@ -136,6 +172,12 @@ class Hypo(object):
         self.attws = None
         if attws is not None:
             self.attws = [float(x) for x in attws]    # attention weights
+
+    def __repr__(self):
+        return "%s/%s/%.3f/%.3f" % (self.length, self.last_action, self.score_one, self.score_acc)
+
+    def __str__(self):
+        return self.__repr__()
 
     @property
     def partial_score(self):

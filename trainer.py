@@ -54,12 +54,12 @@ class Trainer(object):
         utils.printing("Set trainer %s with lr %s." % (self.opts["trainer_type"], cur_lr), func="info")
 
     # load and save
-    def load(self, basename):
+    def load(self, basename, load_process):
         # load model
         self._mm.load(basename)
         utils.printing("Reload model from %s." % basename, func="io")
         # load progress
-        if self.opts["reload_training_progress"]:
+        if load_process:
             tp_name = basename + Trainer.TP_TAIL
             tr_name = basename + Trainer.TR_TAIL
             utils.printing("Reload trainer from %s and %s." % (tp_name, tr_name), func="io")
@@ -150,18 +150,19 @@ class Trainer(object):
                     if ttp.anneal_restarts_done < self.opts["anneal_restarts"]:
                         utils.printing("Patience up, annealing for %s." % (self._tp.anneal_restarts_done+1), func="info")
                         if self.opts["anneal_reload_best"]:
-                            self.load(Trainer.BEST_PREFIX+self.opts["model"])   # load best
+                            self.load(Trainer.BEST_PREFIX+self.opts["model"], False)   # load model, but not process
                         self._tp.anneal_restarts_done += 1                      # new tp now maybe
                         self._set_trainer(self.opts["anneal_renew_trainer"])
                     else:
                         utils.printing("Sorry, Early Update !!", func="warn")
                         ttp.estop = True
+        utils.printing("", func="info")     # to see it more clearly
 
     # main training
     def train(self, train_iter, dev_iter):
         one_recorder = utils.OnceRecorder("CHECK")
         while not self._finished():     # epochs
-            utils.printing("", func="info")
+            # utils.printing("", func="info")
             with utils.Timer(name="Iter %s" % self._tp.eidx, print_date=True) as et:
                 iter_recorder = utils.OnceRecorder("ITER-%s"%self._tp.eidx)
                 for xs, ys, tk_x, tk_t in train_iter:

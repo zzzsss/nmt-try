@@ -43,7 +43,7 @@ class Basic(object):
         self.update = None
         # dropouts
         self.drop = 0.
-        self.masks = None
+        self.masks = None   # todo, gdrop still not good
 
     def _ingraph(self, argv):
         # update means whether the parameters should be updated
@@ -173,7 +173,7 @@ class RnnNode(Basic):
         gdrop = float(argv["gdrop"]) if "gdrop" in argv else 0.
         # bsize = int(argv["bsize"]) if "bsize" in argv else 1       # if not, the same mask for all elements in batch
         if gdrop > 0:   # ensure same masks for all instances in the batch
-            self.masks = (gen_masks_input(gdrop, self.n_input, 1), gen_masks_input(gdrop, self.n_hidden, 1))
+            self.masks = (None, gen_masks_input(gdrop, self.n_hidden, 1))
         # TODO ?? don't remember what this todo is to do
 
     def __call__(self, input_exp, hidden_exp, mask=None):
@@ -468,13 +468,14 @@ class Decoder(object):
         if s == "avg":
             return dy.average
         else:
-            mask = dy.inputVector([0. for _ in range(size)]+[1. for _ in range(size)])
+            mask = [0. for _ in range(size//2)]+[1. for _ in range(size//2)]
+            mask2 = [1. for _ in range(size//2)]+[0. for _ in range(size//2)]
             if s == "fend":
-                return lambda x: dy.cmult(1.-mask, x[-1])
+                return lambda x: dy.cmult(dy.inputVector(mask2), x[-1])
             elif s == "bend":
-                return lambda x: dy.cmult(mask, x[0])
+                return lambda x: dy.cmult(dy.inputVector(mask), x[0])
             elif s == "ends":
-                return lambda x: dy.cmult(1.-mask, x[-1]) + dy.cmult(mask, x[0])
+                return lambda x: dy.cmult(dy.inputVector(mask2), x[-1]) + dy.cmult(dy.inputVector(mask), x[0])
             else:
                 return None
 

@@ -41,4 +41,7 @@ fi
 time pstep5-concat
 
 # examples
-DIR_SUFFIX=40000 BPE_OP=40000 bash -v znmt/scripts/process.sh wmt14_en_de.sh
+# DIR_SUFFIX=40000 BPE_OP=40000 bash -v znmt/scripts/process.sh wmt14_en_de.sh
+# DIR_SUFFIX=40000 BPE_OP=40000 bash -v znmt/scripts/process.sh wmt14_en_fr.sh
+# DIR_SUFFIX=40000 BPE_OP=40000 SRC=en TRG=fr bash -v znmt/scripts/process.sh wit3.sh
+# DIR_SUFFIX=40000 BPE_OP=40000 SRC=en TRG=de bash -v znmt/scripts/process.sh wit3.sh

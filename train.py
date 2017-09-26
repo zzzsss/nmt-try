@@ -45,7 +45,7 @@ def main(opts):
     mm = model.NMTModel(opts, source_dicts, target_dict)
     tt = trainer.Trainer(opts, mm)  # trainer + training_progress
     if opts["reload"] and os.path.exists(opts["reload_model_name"]):
-        tt.load(opts["reload_model_name"])
+        tt.load(opts["reload_model_name"], opts["reload_training_progress"])
     # 4. training
     tt.train(train_iter, dev_iter)
     utils.printing("=== Training ok!! ===", func="info")

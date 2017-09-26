@@ -12,11 +12,12 @@ shopt -s expand_aliases
 mkdir -p ${DATA2_DIR}
 cd ${DATA2_DIR}
 
-SRC="en"
-TRG="fr"
+# !-- pass as env
+#SRC="en"
+#TRG="fr"
 
 # get data (under the dir of data2)
-data_name="iwslt17-${SRC}-${TRG}_${DIR_SUFFIX}"
+data_name="wit3-${SRC}-${TRG}_${DIR_SUFFIX}"
 wget -nc https://wit3.fbk.eu/archive/2017-01-trnted//texts/${SRC}/${TRG}/${SRC}-${TRG}.tgz -O "${data_name}.tgz"
 # special treating
 mkdir ${data_name}
@@ -26,10 +27,12 @@ mv * ..
 cd ..
 rmdir "${SRC}-${TRG}"
 
+CUR_DATA_DIR="${DATA2_DIR}/${data_name}"
+
 function pstep1-train
 {
+if [ -r train.${TRG} ]; then mv train.${TRG} nothing.${TRG}; fi
 # -- train: delete tags
-mv train.${TRG} nothing.${TRG}
 sed "/^[ \t]*</d" < train.tags.${SRC}-${TRG}.${SRC} > train.${SRC}
 sed "/^[ \t]*</d" < train.tags.${SRC}-${TRG}.${TRG} > train.${TRG}
 }
@@ -41,9 +44,6 @@ for f in *.xml; do
     sed -r 's/<seg id=.*>(.*)<\/seg>/\1/g' < $f | sed "/^[ \t]*</d" > dt.${f%.*};
 done
 }
-
-
-CUR_DATA_DIR="${DATA2_DIR}/${SRC}-${TRG}"
 
 function pstep3-process
 {
