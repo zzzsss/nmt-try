@@ -16,11 +16,15 @@ SRC="en"
 TRG="fr"
 
 # get data (under the dir of data2)
-data_name="iwslt17-${SRC}-${TRG}"
+data_name="iwslt17-${SRC}-${TRG}_${DIR_SUFFIX}"
 wget -nc https://wit3.fbk.eu/archive/2017-01-trnted//texts/${SRC}/${TRG}/${SRC}-${TRG}.tgz -O "${data_name}.tgz"
-tar -zxvf "${data_name}.tgz"
-# deal with them (under the dir of data2/en-fr)
-cd "${SRC}-${TRG}"
+# special treating
+mkdir ${data_name}
+tar -zxvf "${data_name}.tgz" -C ${data_name}
+cd ${data_name}/"${SRC}-${TRG}"
+mv * ..
+cd ..
+rmdir "${SRC}-${TRG}"
 
 function pstep1-train
 {

@@ -8,6 +8,7 @@ import os
 import sys
 
 def init():
+    print(" ".join(sys.argv))
     p = argparse.ArgumentParser()
     p.add_argument("--tool", "-t", type=str, required=True, choices=["nematus", "xnmt", "znmt"])
     p.add_argument("--device", "-p", type=int, required=True, help="-1:cpu >0:gpu")
@@ -32,7 +33,9 @@ def init():
         "--valid_freq": 10000,
         "--patience": 5,
         "--anneal_restarts": 2,
-        "--test_beam_size": 5
+        "--test_beam_size": 5,
+        # some extras
+        "--extras": ""
     }
     for k in dicts:
         p.add_argument(k, type=type(dicts[k]), default=dicts[k])
@@ -50,6 +53,12 @@ def init():
             args["src"], args["trg"] = fs[0], fs[1]
         else:
             raise RuntimeError("Cannot infer langs from datadir %s" % args["datadir"])
+    # especially deal with extras
+    fs = args["extras"].split()
+    assert len(fs)%2==0, "currently only support this kind of parameters"
+    for i in range(len(fs)//2):
+        fs[i*2] = "--" + fs[i*2]
+    args["extras"] = " ".join(fs)
     # report
     print("Generating with args as %s" % args)
     return args
@@ -112,4 +121,4 @@ if __name__ == "__main__":
 # python3 ../znmt/run/zprepare.py --valid_freq 100 -d ../en_ja_test -t znmt -p ?
 # the run
 # python3 ../znmt/run/zprepare.py -d ../data2/en-fr/ -t znmt -p ?
-# python3 ../../znmt/run/zpreapre.py --zmt ../.. -d ../data2/en-fr/ -t znmt -p ?
+# python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../data2/en-fr/ -t znmt -p ?

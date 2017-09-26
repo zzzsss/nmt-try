@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -e
+#set -e
 
 # xnmt (include _xnmt.yaml)
 PYTHONPATH=$DY_ZROOT/gbuild/python:${zmt}/xnmt/ python3 ${zmt}/xnmt/xnmt/xnmt_run_experiments.py ${_xnmt_yaml} --dynet-devices GPU:${gpuid} --dynet-seed 12345
