@@ -29,6 +29,15 @@ def main(opts):
             decode.decode(test_iter, mm, target_dict, opts, opts["output"])
         utils.printing("=== End decoding, write to %s ===" % opts["output"], func="info")
         eval.evaluate(opts["output"], opts["test"][1], opts["eval_metric"])
+    elif opts["decode_type"] == "decode_gold":
+        utils.printing("=== Start to decode (with gold in reranking) ===", func="info")
+        pgfile = opts["output"]+".gold"
+        with utils.Timer(name="Decoding_Gold", print_date=True):
+            decode.decode_gold(test_iter, mm, target_dict, opts, opts["output"], pgfile)
+        utils.printing("=== End decoding, write to %s and %s ===" % (opts["output"], pgfile), func="info")
+        # todo(warn), restoring here, that is to say: using bpe-ref for this test
+        eval.evaluate(opts["output"], opts["test"][1], opts["eval_metric"], True)
+        eval.evaluate(pgfile, opts["test"][1], opts["eval_metric"], True)
     elif opts["decode_type"] == "loop":
         while True:
             utils.printing("Enter the src to translate:")
@@ -37,7 +46,7 @@ def main(opts):
                 break
             sss = Dict.w2i(source_dicts, line.split(), (opts["factors"]>1))
             rs = decode.search([sss], mm, opts, opts["decode_way"], opts["decode_batched"])
-            best_seq = [one.last_action for one in rs[0][0]]
+            best_seq = rs[0][0].get_path("last_action")
             strs = Dict.i2w(target_dict, best_seq)
             utils.printing(" ".join(strs), func="none", out=sys.stdout)
     elif opts["decode_type"].startswith("test"):
@@ -46,6 +55,8 @@ def main(opts):
         utils.printing("Testing log likelihood, only using the first model; running %s." % str(ff))
         for xs, ys, tk_x, tk_t in test_iter:
             loss = ff(xs, ys, False)
+            if type(loss) == list:  # for fb2
+                loss = sum(loss)
             one_recorder.record(xs, ys, loss, 0)
         one_recorder.report()
     else:

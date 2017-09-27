@@ -25,7 +25,7 @@ def init():
         "--max_epochs": 100,
         "--max_updates": 500000,
         "--max_len": 50,
-        "--batch_size": 64,
+        "--batch_size": 80,
         "--valid_batch_width": 32,
         "--report_freq": 1000,
         "--normalize": 0.0,

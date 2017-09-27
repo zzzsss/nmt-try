@@ -4,7 +4,7 @@
 prefix=${rundir}/model.npz
 dev=${datadir}/dev.final.${src}
 ref=${datadir}/dev.final.${trg}.restore
-doutput=dev.final.${src}
+doutput=dev.final.${trg}
 
 echo "Validating at ..." `date`
 MKL_NUM_THREADS=2 OMP_NUM_THREADS=2 THEANO_FLAGS=mode=FAST_RUN,floatX=float32,device=cpu PYTHONPATH=${zmt}/Theano python2.7 ${zmt}/nematus/nematus/translate.py -i $dev -o $doutput.output.dev -k ${dev_beam_size} -n ${normalize} -m $prefix.dev.npz -p 1

@@ -4,9 +4,6 @@
 
 #set -v
 
+# postprocess0
 RUNNING_DIR="$( cd "$( dirname ${BASH_SOURCE[0]}  )" && pwd )"
-source ${RUNNING_DIR}/basic.sh
-shopt -s expand_aliases
-#set -v
-
-postprocess0
+sed -r 's/(@@ )|(@@ ?$)//g' | perl ${RUNNING_DIR}/moses/detruecase.perl

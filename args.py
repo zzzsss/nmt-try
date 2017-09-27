@@ -174,7 +174,7 @@ def init(phase):
 
     # decode (for validation or maybe certain training procedure)
     decode = parser.add_argument_group('decode')
-    decode.add_argument('--decode_type', '--decode_mode', type=str, default="decode", choices=["decode", "test1", "test2", "loop"],
+    decode.add_argument('--decode_type', '--decode_mode', type=str, default="decode", choices=["decode", "decode_gold", "test1", "test2", "loop"],
                          help="type/mode of testing (decode, test, loop)")
     decode.add_argument('--decode_way', type=str, default="beam", choices=["beam", "sample"],
                          help="decoding method (default: %(default)s)")
@@ -194,7 +194,7 @@ def init(phase):
                          help="no batched calculation when decoding")
     decode.add_argument('--decode_batched_padding', action='store_true',
                          help="Enable padding (more memory moves) for batched calculation when decoding")
-    decode.add_argument('--eval_metric', type=str, default="bleu", choices=["bleu"],
+    decode.add_argument('--eval_metric', type=str, default="bleu", choices=["bleu", "nist"],
                          help="type of metric for evaluation (default: %(default)s)")
     decode.add_argument('--test_batch_size', type=int, default=8, metavar='INT',
                          help="testing minibatch-size(default: %(default)s)")

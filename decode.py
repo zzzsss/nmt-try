@@ -24,7 +24,53 @@ def decode(diter, mms, target_dict, opts, outf):
     results = diter.restore_sort_by_length(results)
     with utils.zfopen(outf, "w") as f:
         for r in results:
-            best_seq = [one.last_action for one in r[0]]
+            best_seq = r[0].get_path("last_action")
+            strs = data.Dict.i2w(target_dict, best_seq)
+            f.write(" ".join(strs)+"\n")
+    one_recorder.report()
+
+# special decodig process
+def decode_gold(diter, mms, target_dict, opts, outf, outfg):
+    assert opts["debug"], "this should be debugging mode!!"
+    one_recorder = utils.OnceRecorder("DECODE")
+    num_sents = len(diter)
+    cur_sents = cur_goldup = cur_correct = 0.
+    bsize = diter.bsize()
+    # decoding them all
+    results = []
+    results_gold = []
+    prev_point = 0
+    for xs, ys, _2, _3 in diter:
+        if opts["verbose"] and (cur_sents - prev_point) >= (opts["report_freq"]*bsize):
+            utils.printing("Decoding process: %.2f%%" % (cur_sents/num_sents*100))
+            prev_point = cur_sents
+        cur_sents += len(xs)
+        rs = search(xs, mms, opts, opts["decode_way"], opts["decode_batched"], ys)
+        gs = build_ys(xs, ys, mms, opts)
+        results += rs
+        # compare them
+        for _t, _g in zip(rs, gs):
+            if Hypo.same_str(_t[0], _g[0]):
+                cur_correct += 1
+                results_gold.append(_t)
+            elif _g[0].final_score > _t[0].final_score:
+                cur_goldup += 1
+                results_gold.append(_g)
+            else:
+                results_gold.append(_t)
+        one_recorder.record(xs, None, 0, 0)
+    utils.printing("Results of gold up: correct:%s, goldup:%s, all:%s" % (cur_correct, cur_goldup, cur_sents), func="score")
+    # restore from sorting by length
+    results = diter.restore_sort_by_length(results)
+    results_gold = diter.restore_sort_by_length(results_gold)
+    with utils.zfopen(outf, "w") as f:
+        for r in results:
+            best_seq = r[0].get_path("last_action")
+            strs = data.Dict.i2w(target_dict, best_seq)
+            f.write(" ".join(strs)+"\n")
+    with utils.zfopen(outfg, "w") as f:
+        for r in results_gold:
+            best_seq = r[0].get_path("last_action")
             strs = data.Dict.i2w(target_dict, best_seq)
             f.write(" ".join(strs)+"\n")
     one_recorder.report()
@@ -64,6 +110,20 @@ def _debug_printing_step(s, xs, ys, hypos, results, cands, finished, src_d, trg_
             utils.printing("!!REF-> %s" % r["trg_ws"], func="debug")
     return rets
 
+# build losses with fixed outputs: each has only one
+def build_ys(xs, ys, models, opts):
+    rets = []
+    losses = [mm.fb2(xs, ys, False) for mm in models]
+    normer = Normer() if (opts["normalize"] <= 0) else PolyNormer(opts["normalize"], opts["normalize_during_search"])
+    for x, y, i in zip(xs, ys, range(len(xs))):
+        hp = Hypo(normer=normer)
+        for ss, tok in enumerate(y):
+            lo = [ll[i][ss] for ll in losses]
+            one_loss = -1*np.log(np.average([np.exp(-1*_x) for _x in lo]))
+            hp = Hypo(last_action=tok, prev=hp, score_one=-1*one_loss, attws=None)    # todo: attws
+        rets.append([hp])
+    return rets
+
 # the main searching routine
 def search(xs, models, opts, strategy, batched, ys=None):
     # xs: list(batch) of list(sent) of int
@@ -93,9 +153,6 @@ def search(xs, models, opts, strategy, batched, ys=None):
             results = pr.feed(nexts, orders)
         # get next steps
         cands = st.select_next(hypos, results)
-        # print the status for debugging
-        if opts["debug"]:
-            _debug_printing_step(s, xs, ys, hypos, results, cands, finished, models[0].source_dicts[0], models[0].target_dict, st.width())
         new_nexts, new_orders, new_hypos = [[] for _ in range(len(xs))], [[] for _ in range(len(xs))], [[] for _ in range(len(xs))]
         for i, one_cands in enumerate(cands):
             # todo(warn): decrease beam size here
@@ -112,6 +169,10 @@ def search(xs, models, opts, strategy, batched, ys=None):
                     new_hypos[i].append(this_hypo)
         nexts, orders = new_nexts, new_orders
         hypos = new_hypos
+        # print the status for debugging
+        if opts["debug"] and opts["verbose"]:
+            _debug_printing_step(s, xs, ys, hypos, results, [c[:st.width()-len(finished[i])] for i,c in enumerate(cands)],
+                                    finished, models[0].source_dicts[0], models[0].target_dict, st.width())
         # test finished ?
         if all([len(fs) >= st.width() for fs in finished]):
             break
@@ -125,9 +186,9 @@ def search(xs, models, opts, strategy, batched, ys=None):
             if len(finished[i]) < st.width():
                 finished[i] += last_finishes[:(st.width()-len(finished[i]))]
     # final check and ordering
-    rets = [[f.get_path() for f in Hypo.sort_hypos(fs)[:st.width()]] for fs in finished]
+    rets = [[f for f in Hypo.sort_hypos(fs)[:st.width()]] for fs in finished]
     # some usage printing
-    if opts["debug"]:
+    if opts["debug"] and opts["verbose"]:
         utils.printing("Usage-info: %s" % pr.get_stat())
     return rets
 
@@ -172,6 +233,7 @@ class Hypo(object):
         self.attws = None
         if attws is not None:
             self.attws = [float(x) for x in attws]    # attention weights
+        self._values = {"score_prob": lambda: np.exp(self.score_one)}
 
     def __repr__(self):
         return "%s/%s/%.3f/%.3f" % (self.length, self.last_action, self.score_one, self.score_acc)
@@ -190,6 +252,8 @@ class Hypo(object):
     def _get(self, which):
         if which is None:
             return self
+        elif which in self._values:
+            return self._values[which]()
         else:
             return getattr(self, which)
 
@@ -200,6 +264,10 @@ class Hypo(object):
             l = self.prev.get_path(which)
             l.append(self._get(which))
             return l
+
+    @staticmethod
+    def same_str(a, b):
+        return a.length==b.length and all([x==y for x,y in zip(a.get_path("last_action"), b.get_path("last_action"))])
 
     @staticmethod
     def sort_hypos(ls):

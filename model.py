@@ -142,10 +142,12 @@ class NMTModel(object):
     def fb2(self, xs, ys, training):
         # for debugging, should be the same as fb(training=False)
         assert len(xs) == len(ys)
+        assert not training
         self.refresh(False)
-        loss = 0.
+        losses = []
         for x, y in zip(xs, ys):
             ss = None
+            losses.append([])
             for i in range(len(y)):
                 if i==0:
                     ye = self.get_start_yembs(1)
@@ -157,8 +159,8 @@ class NMTModel(object):
                 sc = self.get_score(at, hi, ye)
                 prob = dy.softmax(sc)
                 pvalue = prob.value()
-                loss -= np.log(pvalue[y[i]])
-        return loss
+                losses[-1].append(-1 * np.log(pvalue[y[i]]))
+        return losses
 
     # for predciting #
     def prepare_enc(self, xs, expand):

@@ -146,7 +146,7 @@ class TextIterator:
         "non": [False, None]
     }
     def SBL_need_sort(self):
-        return TextIterator.SBL_TYPES[self.sort_type][0]
+        return TextIterator.SBL_TYPES[self.sort_type][0] and self.batch_size > 1
     def SBL_sort_buffer_index(self):
         ff = TextIterator.SBL_TYPES[self.sort_type][1]
         tlen = numpy.array([ff(len(s), len(t)) for s,t in zip(self.source_buffer, self.target_buffer)])
@@ -156,10 +156,10 @@ class TextIterator:
 
     def restore_sort_by_length(self, s):
         # restore the ordering in-place
-        assert len(s) == len(self.len_sort_indexes)     # no discarding of 0 and long sentences
         assert not self.shuffle
         if not self.SBL_need_sort():
-            return
+            return s
+        assert len(s) == len(self.len_sort_indexes)     # no discarding of 0 and long sentences
         r = [None for _ in self.len_sort_indexes]
         for ind, sent in zip(reversed(self.len_sort_indexes), s):
             r[ind] = sent

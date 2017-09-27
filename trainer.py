@@ -176,7 +176,7 @@ class Trainer(object):
                     self._update()
                     one_recorder.record(xs, ys, loss, 1)
                     iter_recorder.record(xs, ys, loss, 1)
-                    if self.opts["debug"]:
+                    if self.opts["debug"] and self.opts["verbose"]:
                         mem0, mem1 = utils.get_statm()
                         utils.DEBUG("[%s/%s] after fb(%s):%s/%s" % (mem0, mem1, len(xs), max([len(i) for i in xs]), max([len(i) for i in ys])))
                     # time to validate and save best model ??
