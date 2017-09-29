@@ -86,13 +86,15 @@ def init(phase):
                          help="dropout for hidden layers (0: no dropout) (default: %(default)s)")
     network.add_argument('--drop_embedding', type=float, default=0.2, metavar="FLOAT",
                          help="dropout for embeddings (0: no dropout) (default: %(default)s)")
+    network.add_argument('--idrop_embedding', type=float, default=0., metavar="FLOAT",
+                         help="idrop for words (0: no dropout) (default: %(default)s)")
     network.add_argument('--gdrop_embedding', type=float, default=0., metavar="FLOAT",
                          help="gdrop for words (0: no dropout) (default: %(default)s)")
-    network.add_argument('--drop_rec', type=float, default=0., metavar="FLOAT",
+    network.add_argument('--idrop_rec', type=float, default=0., metavar="FLOAT",
                          help="dropout (idrop) for recurrent nodes (0: no dropout) (default: %(default)s)")
-    network.add_argument('--drop_dec', type=float, metavar="FLOAT",
+    network.add_argument('--idrop_dec', type=float, metavar="FLOAT",
                          help="dropout (idrop) for decoder (0: no dropout) (default: %(default)s)")
-    network.add_argument('--drop_enc', type=float, metavar="FLOAT",
+    network.add_argument('--idrop_enc', type=float, metavar="FLOAT",
                          help="dropout (idrop) for encoder (0: no dropout) (default: %(default)s)")
     network.add_argument('--gdrop_rec', type=float, default=0., metavar="FLOAT",
                          help="gdrop for recurrent nodes (0: no dropout) (default: %(default)s)")
@@ -224,7 +226,7 @@ def check_options(args):
     if args["dim_per_factor"] is None:
         args["dim_per_factor"] = [args["dim_word"]]
     # defaults
-    for prefix in ["hidden_", "drop_", "gdrop_"]:
+    for prefix in ["hidden_", "idrop_", "gdrop_"]:
         for n in ["dec", "enc"]:
             n0, n1 = prefix+n, prefix+"rec"
             if args[n0] is None:

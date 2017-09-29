@@ -24,7 +24,7 @@ class Dict:
         for k in self.d:
             self.v[self.d[k]] = k
 
-    def get_num_words(self):
+    def get_wordceil(self):
         return self.d["<eos>"]      # excluding special tokens
 
     @property

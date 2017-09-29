@@ -11,8 +11,8 @@ class NMTModel(object):
         # init models
         self.model = dy.Model()
         # embeddings
-        self.embeds_src = [Embedding(self.model, len(t), i, dropout_wordceil=t.get_num_words()) for t, i in zip(source_dicts, opts["dim_per_factor"])]
-        self.embed_trg = Embedding(self.model, len(target_dict), opts["dim_word"], dropout_wordceil=target_dict.get_num_words())
+        self.embeds_src = [Embedding(self.model, len(t), i, dropout_wordceil=t.get_wordceil()) for t, i in zip(source_dicts, opts["dim_per_factor"])]
+        self.embed_trg = Embedding(self.model, len(target_dict), opts["dim_word"], dropout_wordceil=target_dict.get_wordceil())
         # enc-dec
         self.enc = Encoder(self.model, sum(opts["dim_per_factor"]), opts["hidden_enc"], opts["enc_depth"], opts["rnn_type"])
         self.dec = {"att": AttDecoder, "nematus": NematusDecoder}[opts["dec_type"]](self.model, opts["dim_word"], opts["hidden_dec"], opts["dec_depth"], 2*opts["hidden_enc"], opts["hidden_att"], opts["att_type"], opts["rnn_type"], opts["summ_type"])
@@ -30,11 +30,11 @@ class NMTModel(object):
         opts = self.opts
         # embeddings
         for e in self.embeds_src:
-            e.refresh(hdrop=_gd(opts["drop_embedding"]), gdrop=_gd(opts["gdrop_embedding"]))
-        self.embed_trg.refresh(hdrop=_gd(opts["drop_embedding"]), gdrop=_gd(opts["gdrop_embedding"]))
+            e.refresh(hdrop=_gd(opts["drop_embedding"]), gdrop=_gd(opts["gdrop_embedding"]), idrop=_gd(opts["idrop_embedding"]))
+        self.embed_trg.refresh(hdrop=_gd(opts["drop_embedding"]), gdrop=_gd(opts["gdrop_embedding"]), idrop=_gd(opts["idrop_embedding"]))
         # enc-dec
-        self.enc.refresh(idrop=_gd(opts["drop_enc"]), gdrop=_gd(opts["gdrop_enc"]))
-        self.dec.refresh(idrop=_gd(opts["drop_dec"]), gdrop=_gd(opts["gdrop_dec"]), hdrop=_gd(opts["drop_hidden"]))
+        self.enc.refresh(idrop=_gd(opts["idrop_enc"]), gdrop=_gd(opts["gdrop_enc"]))
+        self.dec.refresh(idrop=_gd(opts["idrop_dec"]), gdrop=_gd(opts["gdrop_dec"]), hdrop=_gd(opts["drop_hidden"]))
         # outputs
         self.outputs[0].refresh(hdrop=_gd(opts["drop_hidden"]))
         self.outputs[1].refresh()

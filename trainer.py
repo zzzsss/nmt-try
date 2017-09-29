@@ -143,12 +143,12 @@ class Trainer(object):
                 # anneal and early update
                 ttp.bad_counter += 1
                 ttp.bad_points.append(ss)
-                utils.printing("Patience minus 1, now bad counter is %s." % ttp.bad_counter, func="info")
+                utils.printing("Patience slightly down, now b-counter/r-num is %s/%s." % (ttp.bad_counter, ttp.anneal_restarts_done), func="info")
                 if ttp.bad_counter >= self.opts["patience"]:
                     ttp.bad_counter = 0
                     ttp.anneal_restarts_points.append(ss)
                     if ttp.anneal_restarts_done < self.opts["anneal_restarts"]:
-                        utils.printing("Patience up, annealing for %s." % (self._tp.anneal_restarts_done+1), func="info")
+                        utils.printing("Patience -= 1, annealing for %s." % (self._tp.anneal_restarts_done+1), func="info")
                         if self.opts["anneal_reload_best"]:
                             self.load(Trainer.BEST_PREFIX+self.opts["model"], False)   # load model, but not process
                         self._tp.anneal_restarts_done += 1                      # new tp now maybe

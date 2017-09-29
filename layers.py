@@ -6,20 +6,20 @@ import numpy as np
 # ================= Helpers ====================== #
 # get mask inputs
 def gen_masks_input(rate, size, bsize):
-    def _gen_masks(size, rate):
-        # inverted dropout
-        r = 1-rate
-        x = np.random.binomial(1, r, size).astype(np.float)
-        x *= (1.0/r)
-        return x
-    x = _gen_masks((size, bsize), rate)
-    return dy.inputTensor(x, True)
+    # def _gen_masks(size, rate):
+    #     # inverted dropout
+    #     r = 1-rate
+    #     x = np.random.binomial(1, r, size).astype(np.float)
+    #     x *= (1.0/r)
+    #     return x
+    # x = _gen_masks((size, bsize), rate)
+    # return dy.inputTensor(x, True)
+    return dy.random_bernoulli((size,), 1.-rate, 1./(1.-rate), batch_size=bsize)
 
 def gen_maks_embed(rate, num):
-    # hope this might not be too costy
-    # also shared dropping in one minibatch for convenience
+    # hope this might not be too costy; return the set of dropped ones
     x = set()
-    r = 1-rate
+    r = rate
     if type(num) == int:
         rr = np.random.binomial(1, r, num)
         for i, n in enumerate(rr):
@@ -42,7 +42,9 @@ class Basic(object):
         self.iparams = {}
         self.update = None
         # dropouts
-        self.drop = 0.
+        self.hdrop = 0.
+        self.idrop = 0.
+        self.gdrop = 0.
         self.masks = None   # todo, gdrop still not good
 
     def _ingraph(self, argv):
@@ -60,6 +62,11 @@ class Basic(object):
                     else:
                         self.iparams[k] = dy.const_parameter(self.params[k])
             self.update = update
+        # dropouts
+        self.hdrop = float(argv["hdrop"]) if "hdrop" in argv else 0.
+        self.idrop = float(argv["idrop"]) if "idrop" in argv else 0.
+        self.gdrop = float(argv["gdrop"]) if "gdrop" in argv else 0.
+        self.masks = None
 
     def refresh(self):
         # argvs include: hdrop=0., idrop=0., gdrop=0., update=True, ingraph=True
@@ -105,15 +112,14 @@ class Linear(Basic):
         self.act = {"tanh":dy.tanh, "softmax":dy.softmax, "linear":None}[act]
 
     def refresh(self, **argv):
-        self.drop = float(argv["hdrop"]) if "hdrop" in argv else 0.
         self._ingraph(argv)
 
     def __call__(self, input_exp):
         x = dy.affine_transform([self.iparams["B"], self.iparams["W"], input_exp])
         if self.act is not None:
             x = self.act(x)
-        if self.drop > 0.:
-            x = dy.dropout(x, self.drop)
+        if self.hdrop > 0.:
+            x = dy.dropout(x, self.hdrop)
         return x
 
 # embedding layer
@@ -133,28 +139,24 @@ class Embedding(Basic):
         # zero out
         self.params["E"].init_row(0, [0. for _ in range(self.n_dim)])
         # refresh
-        self.drop = float(argv["hdrop"]) if "hdrop" in argv else 0.
         self._ingraph(argv)
         self.masks = None
-        gdrop = float(argv["gdrop"]) if "gdrop" in argv else 0.
-        words = argv["words"] if "words" in argv else self.dropout_wordceil     # list or ceiling-num
-        if gdrop > 0:
-            self.masks = gen_maks_embed(gdrop, words)
+        if self.gdrop > 0:
+            words = argv["words"] if "words" in argv else self.dropout_wordceil     # list or ceiling-num
+            self.masks = gen_maks_embed(self.gdrop, words)  # dropped words
 
     def __call__(self, input_exp):
         # input should be a list of ints, masks should be a set of ints for the dropped ints
-        # input dropout
+        if type(input_exp) != list:
+            input_exp = [input_exp]
+        # input dropouts
         if self.masks is not None:
-            if type(input_exp) == list:
-                input_exp = [(i if (i not in self.masks) else 0) for i in input_exp]
-            elif input_exp in self.masks:
-                input_exp = 0
-        if type(input_exp) == list:
-            x = dy.lookup_batch(self.params["E"], input_exp, self.update)
-        else:
-            x = dy.lookup(self.params["E"], input_exp, self.update)
-        if self.drop > 0:
-            x = dy.dropout(x, self.drop)
+            input_exp = [(0 if (i in self.masks and i>=self.dropout_wordceil) else i) for i in input_exp]
+        if self.idrop > 0:
+            input_exp = [(0 if (v<=0 and i>=self.dropout_wordceil) else i) for i,v in zip(input_exp, np.random.binomial(1, 1-self.idrop, len(input_exp)))]
+        x = dy.lookup_batch(self.params["E"], input_exp, self.update)
+        if self.hdrop > 0:
+            x = dy.dropout(x, self.hdrop)
         return x
 
 # rnn nodes
@@ -167,14 +169,16 @@ class RnnNode(Basic):
 
     def refresh(self, **argv):
         # refresh
-        self.drop = float(argv["idrop"]) if "idrop" in argv else 0.
         self._ingraph(argv)
         self.masks = (None, None)
-        gdrop = float(argv["gdrop"]) if "gdrop" in argv else 0.
         # bsize = int(argv["bsize"]) if "bsize" in argv else 1       # if not, the same mask for all elements in batch
-        if gdrop > 0:   # ensure same masks for all instances in the batch
-            self.masks = (None, gen_masks_input(gdrop, self.n_hidden, 1))
+        if self.gdrop > 0:   # ensure same masks for all instances in the batch
+            # todo: 1. gdrop for both or rec-only? 2. diff gdrop for gates or not?
+            self.masks = [None, gen_masks_input(self.gdrop, self.n_hidden, 1)]
         # TODO ?? don't remember what this todo is to do
+
+    # def _get_num_masks(self):
+    #     return 4    # default for gru: 2*(input/rec)
 
     def __call__(self, input_exp, hidden_exp, mask=None):
         # todo(warn) return a {}
@@ -212,8 +216,8 @@ class GruNode(RnnNode):
             input_exp = dy.cmult(self.masks[0], input_exp)
         if self.masks[1] is not None:
             hh = dy.cmult(self.masks[1], hh)
-        if self.drop > 0.:
-            input_exp = dy.dropout(input_exp, self.drop)
+        if self.idrop > 0.:
+            input_exp = dy.dropout(input_exp, self.idrop)
         rt = dy.affine_transform([self.iparams["br"], self.iparams["x2r"], input_exp, self.iparams["h2r"], hh])
         rt = dy.logistic(rt)
         zt = dy.affine_transform([self.iparams["bz"], self.iparams["x2z"], input_exp, self.iparams["h2z"], hh])
@@ -221,7 +225,7 @@ class GruNode(RnnNode):
         h_reset = dy.cmult(rt, hh)
         ht = dy.affine_transform([self.iparams["bh"], self.iparams["x2h"], input_exp, self.iparams["h2h"], h_reset])
         ht = dy.tanh(ht)
-        hidden = dy.cmult(zt, hh) + dy.cmult((1. - zt), ht)
+        hidden = dy.cmult(zt, hidden_exp["H"]) + dy.cmult((1. - zt), ht)     # first one use original hh
         # mask: if 0 then pass through
         if mask is not None:
             mask_array = np.asarray(mask).reshape((1, -1))
@@ -245,8 +249,8 @@ class LstmNode(RnnNode):
             input_exp = dy.cmult(self.masks[0], input_exp)
         if self.masks[1] is not None:
             hh = dy.cmult(self.masks[1], hh)
-        if self.drop > 0.:
-            input_exp = dy.dropout(input_exp, self.drop)
+        if self.idrop > 0.:
+            input_exp = dy.dropout(input_exp, self.idrop)
         gates_t = dy.vanilla_lstm_gates(input_exp, hh, self.iparams["xw"], self.iparams["hw"], self.iparams["b"])
         cc = dy.vanilla_lstm_c(hidden_exp["C"], gates_t)
         hidden = dy.vanilla_lstm_h(cc, gates_t)
@@ -272,7 +276,6 @@ class Attention(Basic):
 
     def _refresh(self, **argv):
         self.cache_values = {}
-        # self.drop = float(argv["hdrop"]) if "hdrop" in argv else 0.
         self._ingraph(argv)
 
     def refresh(self, **argv):
@@ -323,8 +326,8 @@ class FfAttention(Attention):
         val_h = self.iparams["h2e"] * n     # {(n_hidden,), batch_size}
         att_hidden_bef = dy.colwise_add(self.cache_values["V"], val_h)    # {(n_didden, steps), batch_size}
         att_hidden = dy.tanh(att_hidden_bef)
-        # if self.drop > 0:     # save some space
-        #     att_hidden = dy.dropout(att_hidden, self.drop)
+        # if self.hdrop > 0:     # save some space
+        #     att_hidden = dy.dropout(att_hidden, self.hdrop)
         att_e = dy.reshape(self.iparams["v"] * att_hidden, (len(s), ), batch_size=bs(att_hidden))
         att_alpha = dy.softmax(att_e)
         ctx = self.cache_values["S"] * att_alpha      # {(n_s, sent_len), batch_size}
