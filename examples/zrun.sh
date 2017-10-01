@@ -20,7 +20,7 @@ python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --b
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --extras "hidden_enc 500 trainer_type momentum lrate 0.1"
 
 # 17.09.27 -- going on
-# nematus-base
+# nematus-base (36.55 on dev)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t nematus --batch_size 80 --patience 3 --extras "dropout_source 0.1 dropout_target 0.1 use_dropout"
 # base
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "drop_rec 0.2"
@@ -45,8 +45,11 @@ python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../en_fr_data_40000/ -t nem
 # 4. seems that summ:ends could be better
 
 # 17.09.29
-# base
+# base (accidentally killed, never mind)
+# -- adding on 17.10.01
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends idrop_rec 0.2" -p 3
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends idrop_rec 0.2 gdrop_rec 0.2" -p 3
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends idrop_rec 0.2 gdrop_rec 0.2 idrop_embedding 0.1" -p 2
 # gdrop-again
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.2" -p 4
 # embed_gdrop

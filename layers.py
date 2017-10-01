@@ -173,12 +173,11 @@ class RnnNode(Basic):
         self.masks = (None, None)
         # bsize = int(argv["bsize"]) if "bsize" in argv else 1       # if not, the same mask for all elements in batch
         if self.gdrop > 0:   # ensure same masks for all instances in the batch
-            # todo: 1. gdrop for both or rec-only? 2. diff gdrop for gates or not?
-            self.masks = [None, gen_masks_input(self.gdrop, self.n_hidden, 1)]
+            # todo: 1. gdrop for both or rec-only? 2. diff gdrop for gates or not? 3. diff for batches or not
+            # special for the current two: [xgate, hgate, xinput, hinput]
+            self.masks = [gen_masks_input(self.gdrop, self.n_input, 1), gen_masks_input(self.gdrop, self.n_hidden, 1),
+                          gen_masks_input(self.gdrop, self.n_input, 1), gen_masks_input(self.gdrop, self.n_hidden, 1),]
         # TODO ?? don't remember what this todo is to do
-
-    # def _get_num_masks(self):
-    #     return 4    # default for gru: 2*(input/rec)
 
     def __call__(self, input_exp, hidden_exp, mask=None):
         # todo(warn) return a {}
@@ -211,19 +210,21 @@ class GruNode(RnnNode):
 
     def __call__(self, input_exp, hidden_exp, mask=None):
         # two kinds of dropouts
-        hh = hidden_exp["H"]
-        if self.masks[0] is not None:
-            input_exp = dy.cmult(self.masks[0], input_exp)
-        if self.masks[1] is not None:
-            hh = dy.cmult(self.masks[1], hh)
         if self.idrop > 0.:
             input_exp = dy.dropout(input_exp, self.idrop)
-        rt = dy.affine_transform([self.iparams["br"], self.iparams["x2r"], input_exp, self.iparams["h2r"], hh])
+        input_exp_g = input_exp_t = input_exp
+        hidden_exp_g = hidden_exp_t = hidden_exp["H"]
+        if self.gdrop > 0.:
+            input_exp_g = dy.cmult(input_exp, self.masks[0])
+            hidden_exp_g = dy.cmult(hidden_exp["H"], self.masks[1])
+            input_exp_t = dy.cmult(input_exp, self.masks[2])
+            hidden_exp_t = dy.cmult(hidden_exp["H"], self.masks[3])
+        rt = dy.affine_transform([self.iparams["br"], self.iparams["x2r"], input_exp_g, self.iparams["h2r"], hidden_exp_g])
         rt = dy.logistic(rt)
-        zt = dy.affine_transform([self.iparams["bz"], self.iparams["x2z"], input_exp, self.iparams["h2z"], hh])
+        zt = dy.affine_transform([self.iparams["bz"], self.iparams["x2z"], input_exp_g, self.iparams["h2z"], hidden_exp_g])
         zt = dy.logistic(zt)
-        h_reset = dy.cmult(rt, hh)
-        ht = dy.affine_transform([self.iparams["bh"], self.iparams["x2h"], input_exp, self.iparams["h2h"], h_reset])
+        h_reset = dy.cmult(rt, hidden_exp_t)
+        ht = dy.affine_transform([self.iparams["bh"], self.iparams["x2h"], input_exp_t, self.iparams["h2h"], h_reset])
         ht = dy.tanh(ht)
         hidden = dy.cmult(zt, hidden_exp["H"]) + dy.cmult((1. - zt), ht)     # first one use original hh
         # mask: if 0 then pass through
@@ -245,13 +246,13 @@ class LstmNode(RnnNode):
     def __call__(self, input_exp, hidden_exp, mask=None):
         # two kinds of dropouts
         hh = hidden_exp["H"]
-        if self.masks[0] is not None:
-            input_exp = dy.cmult(self.masks[0], input_exp)
-        if self.masks[1] is not None:
-            hh = dy.cmult(self.masks[1], hh)
         if self.idrop > 0.:
             input_exp = dy.dropout(input_exp, self.idrop)
-        gates_t = dy.vanilla_lstm_gates(input_exp, hh, self.iparams["xw"], self.iparams["hw"], self.iparams["b"])
+        if self.gdrop > 0.:
+            gates_t = dy.vanilla_lstm_gates_dropout(input_exp, hh, self.iparams["xw"], self.iparams["hw"], self.iparams["b"],
+                                                    self.masks[0], self.masks[1])
+        else:
+            gates_t = dy.vanilla_lstm_gates(input_exp, hh, self.iparams["xw"], self.iparams["hw"], self.iparams["b"])
         cc = dy.vanilla_lstm_c(hidden_exp["C"], gates_t)
         hidden = dy.vanilla_lstm_h(cc, gates_t)
         # mask: if 0 then pass through
