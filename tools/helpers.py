@@ -15,6 +15,14 @@ def zfopen(filename, mode='r'):
         return open(filename, mode, encoding="utf-8")
 
 # tools
+class RR:
+    _LOCAL_SEED=12345
+    @staticmethod
+    def shuffle(ls):
+        rr = random.Random(RR._LOCAL_SEED)
+        RR._LOCAL_SEED += 1
+        rr.shuffle(ls)
+
 def shuffle(files):
     with zfopen(files[0]) as f:
         lines = [[i.strip()] for i in f]
@@ -22,7 +30,7 @@ def shuffle(files):
         with zfopen(ff) as f:
             for i, li in enumerate(f):
                 lines[i].append(li.strip())
-    random.shuffle(lines)
+    RR.shuffle(lines)
     # write
     for ii, ff in enumerate(files):
         path, filename = os.path.split(os.path.realpath(ff))
@@ -77,8 +85,8 @@ def get_final_vocab(v, thres):
 # utils with cmd
 def main():
     # cmd: python *.py raw // python *.py cut <thres> // python *.py shuffle
-    if sys.argv[1] == shuffle:
-        shuffle(sys.argv[1:])
+    if sys.argv[1] == "shuffle":
+        shuffle(sys.argv[2:])
     else:
         worddict = get_origin_vocab(sys.stdin)
         if sys.argv[1] == "raw":

@@ -97,12 +97,13 @@ function bpe
 # better practice for join bpe (tc->bpe)
 function bpe-join
 {
-    echo "Bpe with DIR=$1, SRC=$2, TRG=$3, OP_NUM=$4, CUT_FREQ=$5"
+    echo "Bpe with DIR=$1, SRC=$2, TRG=$3, OP_NUM=$4, CUT_FREQ=$5, CUT_TH=$6"
     DIR=$1
     SRC=$2
     TRG=$3
     OP_NUM=$4
     CUT_FREQ=$5
+    CUT_TH=$6
     # learn
     echo "Learning BPE_join with bpe_operations=${OP_NUM}. This may take a while..."
     python3 ${SUBWORD_DIR}/learn_joint_bpe_and_vocab.py \
@@ -116,7 +117,7 @@ function bpe-join
             echo "Apply BPE with bpe_operations=${OP_NUM} to $f"
             outfile="${f%.*}.bpe.${lang}"
             python3 ${SUBWORD_DIR}/apply_bpe.py -c ${DIR}/bpe.${OP_NUM} \
-                --vocabulary ${DIR}/bpe-vocab.cut.${lang} < $f > ${outfile}
+                --vocabulary ${DIR}/bpe-vocab.cut.${lang} --vocabulary-threshold ${CUT_TH} < $f > ${outfile}
         done
     done
 

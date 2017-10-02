@@ -56,8 +56,8 @@ prepare-data "${CUR_DATA_DIR}" "${SRC}" "${TRG}"
 }
 
 function pstep4-bpe
-{    # number of ops as $1, vocab-cut as $2
-bpe-join "${CUR_DATA_DIR}" "${SRC}" "${TRG}" $1 $2
+{    # number of ops as $1, vocab-cut as $2, vocab-thres as $3
+bpe-join "${CUR_DATA_DIR}" "${SRC}" "${TRG}" $1 $2 $3
 }
 
 function pstep5-concat

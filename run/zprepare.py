@@ -17,6 +17,7 @@ def init():
     p.add_argument("--src", type=str)   # could be inferred from data_dir name
     p.add_argument("--trg", type=str)   # could be inferred from data_dir name
     p.add_argument("--output", "-o", type=str, default="output.txt")
+    p.add_argument("--debug", action='store_true')
     # some others
     dicts = {
         # zmt home
@@ -59,6 +60,11 @@ def init():
     for i in range((len(fs)+1)//2):
         fs[i*2] = "--" + fs[i*2]
     args["extras"] = " ".join(fs)
+    # debugging
+    if args["debug"]:
+        args["py_args"] = "-m pdb"
+    else:
+        args["py_args"] = ""
     # report
     print("Generating with args as %s" % args)
     args["cmd"] = " ".join(sys.argv)
@@ -78,7 +84,7 @@ def _read_file(f, args, no_env):
             lf = re.sub(PATTERN, "%s", ss)
             if len(fs) > 0:
                 ss = lf % tuple(args[k] for k in fs)
-    return ss
+    return "\n".join(s) + "\n" + ss
 
 def _get_script(f):
     dname = os.path.dirname(os.path.abspath(__file__))
@@ -99,6 +105,11 @@ def main():
     is_gpu = (args["device"] >= 0)
     if is_gpu:
         args["gpuid"] = args["device"]
+    # specifically for dynet systems
+    if is_gpu:
+        args["_dy_device"] = "GPU:%s" % args["gpuid"]
+    else:
+        args["_dy_device"] = "CPU"
     table = {
         "nematus": [
             ["run_nematus.sh", "_test.sh", args, {"_nematus_device":("cuda" if is_gpu else "cpu"), "_nematus_valid_script":"./_nematus_valid.sh"}],

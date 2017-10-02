@@ -70,6 +70,10 @@ def init(phase):
                          help="attention hidden layer size (default: %(default)s)")
     network.add_argument('--hidden_out', type=int, default=500, metavar='INT',
                          help="output hidden layer size (default: %(default)s)")
+    network.add_argument('--coverage_dim', type=int, default=0, metavar='INT',
+                         help="dimension for coverage in att (default: %(default)s)")
+    network.add_argument('--coverage_dim_hidden', type=int, default=100, metavar='INT',
+                         help="dimension for coverage-hidden <special for memory saving> in att (default: %(default)s)")
     # network.add_argument('--thres_src', type=int, default=2, metavar='INT',
     #                      help="source vocabulary threshold (default: %(default)s)")
     # network.add_argument('--thres_trg', type=int, default=2, metavar='INT',
@@ -102,6 +106,8 @@ def init(phase):
                          help="gdrop for decoder (0: no dropout) (default: %(default)s)")
     network.add_argument('--gdrop_enc', type=float, metavar="FLOAT",
                          help="gdrop for encoder (0: no dropout) (default: %(default)s)")
+    network.add_argument('--gdrop_rec_diff_masks', action='store_true', dest="gdrop_rec_diff_masks",
+                         help="using diff gdrop-masks for ones in the same mini-batch (default: %(default)s)")
 
     # training progress
     training = parser.add_argument_group('training parameters')
