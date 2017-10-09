@@ -73,15 +73,31 @@ python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --b
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.3 idrop_embedding 0.2" -p 3
 
 # 17.10.4 (fix shuffling)
-# base (x46)
+# base (x46) (34.5+, 35.4)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.2 idrop_embedding 0.1" -p 6
-# diff-gdrop
+# diff-gdrop (35.0+, 34.5+)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.2 idrop_embedding 0.1 gdrop_rec_diff_masks" -p 3
-# biaff
+# biaff (35.5+, 35.3+)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.2 idrop_embedding 0.1 att_type biaff" -p 5
-# coverage
+# coverage (35.0+, 35.0)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.2 idrop_embedding 0.1 coverage_dim 20 coverage_dim_hidden 50" -p 6
-# momentum
+# momentum (35.5+, 36.0+)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.2 idrop_embedding 0.1 trainer_type momentum lrate 0.5 moment 0.6" -p 7
-# lstm (x46)
+# lstm (x46) (34.0+, 35.2)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.2 idrop_embedding 0.1 rnn_type lstm" -p 7
+
+# 17.10.8 (tuning again)
+# t0-noshuffle (x46)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.2 idrop_embedding 0.1 no_shuffle_training_data" -p 6
+# t1-d0.4 (x46)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.1" -p 7
+# idrop
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends idrop_rec 0.2 gdrop_rec 0.2 idrop_embedding 0.1" -p 3
+# avg
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type avg gdrop_rec 0.2 idrop_embedding 0.1" -p 5
+# rnn
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.2 idrop_embedding 0.1 dec_type att" -p 6
+# lrate
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.2 idrop_embedding 0.1 lrate 0.0002" -p 7
+# momentum (x46)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.2 idrop_embedding 0.1 trainer_type momentum lrate 0.2 moment 0.6" -p 2
