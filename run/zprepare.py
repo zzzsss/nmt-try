@@ -10,7 +10,7 @@ import sys
 def init():
     print(" ".join(sys.argv))
     p = argparse.ArgumentParser()
-    p.add_argument("--tool", "-t", type=str, required=True, choices=["nematus", "xnmt", "znmt"])
+    p.add_argument("--tool", "-t", type=str, required=True, choices=["nematus", "xnmt", "znmt", "opennmt"])
     p.add_argument("--device", "-p", type=int, required=True, help="-1:cpu >0:gpu")
     p.add_argument("--datadir", "-d", type=str, required=True)
     p.add_argument("--rundir", type=str)    # None means current one (pwd)
@@ -121,6 +121,9 @@ def main():
         ],
         "znmt": [
             ["run_znmt.sh", "_test.sh", args, {}]
+        ],
+        "opennmt": [
+            ["run_opennmt.sh", "_test.sh", args, {"_opennmt_device":("-gpuid %s"%args["gpuid"] if is_gpu else ""), "_opennmt_test_device":("-gpu %s"%args["gpuid"] if is_gpu else "")}]
         ]
     }
     for eve in table[args["tool"]]:

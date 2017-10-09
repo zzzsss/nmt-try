@@ -26,6 +26,13 @@ class TrainingProgress(object):
         self.best_scores = -12345678
         self.best_point = -1
 
+    def report(self):
+        s = ""
+        for k in sorted(self.__dict__):
+            if type(k) != list:
+                s += "%s=%s;" % (k, self.__dict__[k])
+        utils.printing("Training progress: %s" % s, func="score")
+
 class Trainer(object):
     TP_TAIL = ".progress.json"
     TR_TAIL = ".trainer"
@@ -156,6 +163,7 @@ class Trainer(object):
                     else:
                         utils.printing("Sorry, Early Update !!", func="warn")
                         ttp.estop = True
+        self._tp.report()
         utils.printing("", func="info")     # to see it more clearly
 
     # main training
