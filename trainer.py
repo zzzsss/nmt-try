@@ -27,11 +27,8 @@ class TrainingProgress(object):
         self.best_point = -1
 
     def report(self):
-        s = ""
         for k in sorted(self.__dict__):
-            if type(k) != list:
-                s += "%s=%s;" % (k, self.__dict__[k])
-        utils.printing("Training progress: %s" % s, func="score")
+            utils.printing("Training progress results: %s = %s." % (k, self.__dict__[k]), func="score")
 
 class Trainer(object):
     TP_TAIL = ".progress.json"

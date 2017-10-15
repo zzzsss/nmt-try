@@ -10,8 +10,8 @@ export PYTHONPATH=$DY_ZROOT/cbuild/python;
 fi
 
 # should be using python3.5
-PY="python"
-#PY="python3.5"
+#PY="python"
+PY="python3.5"
 
 $PY ${py_args} ${zmt}/znmt/train.py -v --no_overwrite --train ${datadir}/train.final.{${src},${trg}} --dev ${datadir}/dev.final.{${src},${trg}} --max_updates ${max_updates} --max_len ${max_len} --batch_size ${batch_size} --valid_batch_width ${valid_batch_width} --report_freq ${report_freq} --beam_size ${dev_beam_size} -n ${normalize} --valid_freq ${valid_freq} --patience ${patience} --anneal_restarts ${anneal_restarts} --dynet-devices ${_dy_device} --dynet-seed 12345 ${extras}
 

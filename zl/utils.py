@@ -263,6 +263,7 @@ class Random(object):
             one = 1
             for t in task:
                 one = one * ord(t) // (2**31)
+            one += 1
             Random._seeds[task] = np.random.RandomState(one)
         return Random._seeds[task]
 
@@ -272,22 +273,30 @@ class Random(object):
 
     @staticmethod
     def _function(task, type, *argv):
-        rg = Random.get_generator(task+type)
+        rg = Random.get_generator(type)
         return getattr(rg, task)(*argv)
 
     @staticmethod
-    def shuffle(xs, type=""):
+    def shuffle(xs, type):
         Random._function("shuffle", type, xs)
 
     @staticmethod
-    def binomial(n, p, size, type=""):
+    def binomial(n, p, size, type):
         return Random._function("binomial", type, n, p, size)
 
     @staticmethod
-    def ortho_weight(ndim, type=""):
+    def ortho_weight(ndim, type):
         W = Random._function("randn", type, ndim, ndim)
         u, s, v = np.linalg.svd(W)
         return u.astype(np.float)
+
+    @staticmethod
+    def rand(dims, type):
+        return Random._function("rand", type, *dims)
+
+    @staticmethod
+    def randn(dims, type):
+        return Random._function("randn", type, *dims)
 
 # about lists and generators
 class ZStream(object):

@@ -9,12 +9,12 @@ def _test_utils():
         utils.zcheck(100==1, "math2", "warn")
     with utils.Timer("test", print_date=True, accumulated=True):
         for _ in range(100):
-            z = utils.Random.binomial(1, 0.1, 100)
+            z = utils.Random.binomial(1, 0.1, 100, "test")
         utils.zlog(z)
     with utils.Timer("test", print_date=True, accumulated=True):
         utils.zcheck(100==1+99, "math", "fatal")
         for _ in range(100):
-            z = utils.Random.binomial(1, 0.1, 100)
+            z = utils.Random.binomial(1, 0.1, 100, "test")
         utils.zcheck(100==1, "math2", "warn")
     utils.zlog(utils.Task.get_accu(), func="info")
     with open(log_file) as f:
