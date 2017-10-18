@@ -306,6 +306,19 @@ class ZStream(object):
             for w in tok(line):
                 yield w
 
+# convenience for basic classes like lists and dicts
+class Helper(object):
+    @staticmethod
+    def combine_dicts(*args, func="fatal"):
+        # combine {}s, but warn/fatal when finding repeated keys
+        x = {}
+        for one in args:
+            for k in one:
+                zforce(zcheck, k not in x, "Repeated key %s: replacing %s with %s?" % (k, x[k], one[k]), func)
+                x[k] = one[k]
+        return x
+
+
 # Calling once at start, init them all
 def init(extra_file=Logger.MAGIC_CODE):
     Logger.init([extra_file, sys.stderr])

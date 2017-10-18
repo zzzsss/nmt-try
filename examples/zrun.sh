@@ -123,7 +123,17 @@ python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --b
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.1 att_type biaff coverage_dim 50 coverage_dim_hidden 100" -p 7
 
 # 17.10.15
-# now compare them again on z5
-python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../wit3-en-fr_z5/ -t znmt --batch_size 80 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.4 drop_hidden 0.4 drop_embedding 0.4"
-python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../wit3-en-fr_z5/ -t nematus --batch_size 80 --extras "dropout_embedding 0.4 dropout_hidden 0.4 dropout_source 0.4 dropout_target 0.4 use_dropout"
-python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../wit3-en-fr_z5/ -t nematus --batch_size 80 --extras "dropout_embedding 0.2 dropout_hidden 0.2 dropout_source 0.1 dropout_target 0.1 use_dropout"
+# now run nematus again on z5 (x46)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t nematus --batch_size 80 --extras "dropout_embedding 0.4 dropout_hidden 0.4 dropout_source 0.4 dropout_target 0.4 use_dropout" -p 6
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t nematus --batch_size 80 --extras "dropout_embedding 0.2 dropout_hidden 0.2 dropout_source 0.1 dropout_target 0.1 use_dropout" -p 7
+# and back on x48
+# 0. base on z5
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.4 drop_hidden 0.4 drop_embedding 0.4" -p 3
+# 1. base
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.4 drop_hidden 0.4 drop_embedding 0.4" -p 4
+# 2. bi-affine
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.4 drop_hidden 0.4 drop_embedding 0.4 att_type biaff" -p 5
+# 3. small
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.4 drop_hidden 0.4 drop_embedding 0.4 hidden_rec 500 hidden_att 500" -p 6
+# 4. all dropouts
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.4 drop_hidden 0.4 drop_embedding 0.4 idrop_rec 0.4" -p 7

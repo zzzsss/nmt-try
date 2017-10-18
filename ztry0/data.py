@@ -1,7 +1,10 @@
 # some routines for preparing data and dictionaries
 
-import json, numpy
-import utils
+import json
+import numpy
+
+from . import utils
+
 
 class Dict:
     def __init__(self, d=None, fname=None, vname=None, thres=None):

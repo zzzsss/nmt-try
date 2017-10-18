@@ -1,7 +1,9 @@
 # decoding with the model
 import dynet as dy
 import numpy as np
-import utils, data
+from . import utils
+from . import data
+
 
 # main decoding routine, the include_gold mode is only for debugging
 def decode(diter, mms, target_dict, opts, outf):
@@ -14,7 +16,7 @@ def decode(diter, mms, target_dict, opts, outf):
     prev_point = 0
     for xs, _1, _2, _3 in diter:
         if opts["verbose"] and (cur_sents - prev_point) >= (opts["report_freq"]*bsize):
-            utils.printing("Decoding process: %.2f%%" % (cur_sents/num_sents*100))
+            utils.printing("Decoding process: %.2f%%" % (cur_sents / num_sents * 100))
             prev_point = cur_sents
         cur_sents += len(xs)
         rs = search(xs, mms, opts, opts["decode_way"], opts["decode_batched"])
@@ -42,7 +44,7 @@ def decode_gold(diter, mms, target_dict, opts, outf, outfg):
     prev_point = 0
     for xs, ys, _2, _3 in diter:
         if opts["verbose"] and (cur_sents - prev_point) >= (opts["report_freq"]*bsize):
-            utils.printing("Decoding process: %.2f%%" % (cur_sents/num_sents*100))
+            utils.printing("Decoding process: %.2f%%" % (cur_sents / num_sents * 100))
             prev_point = cur_sents
         cur_sents += len(xs)
         rs = search(xs, mms, opts, opts["decode_way"], opts["decode_batched"], ys)
@@ -102,7 +104,7 @@ def _debug_printing_step(s, xs, ys, hypos, results, cands, finished, src_d, trg_
                 utils.printing("%s: %s" % (hi, zzz[0]), func="debug")
                 utils.printing("!!SCORE -> %s" % zzz[1], func="debug")
                 utils.printing("!!ATTS -> %s" % zzz[2], func="debug")
-                utils.printing("="*20, func="debug")
+                utils.printing("=" * 20, func="debug")
             for zz in r["cands"]:
                 utils.printing("!!CANDS-> %s" % ((" ".join([trg_d._getw(one.last_action) for one in zz[-1].get_path()]), zz),), func="debug")
             for zz in r["finish_p"]:

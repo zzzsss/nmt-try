@@ -1,5 +1,9 @@
-import utils, args
-import os, subprocess
+import os
+import subprocess
+
+from . import utils
+from . import args
+
 
 def evaluate(output, gold, metric, process_gold=False):
     eva = {"bleu":_eval_bleu, "nist":_eval_nist}[metric]
@@ -35,7 +39,10 @@ def _eval_nist(output, gold, process_gold):
     # => directly use eval_nist.sh
     raise NotImplementedError("need ref and other processing, calling outside.")
 
-if __name__ == '__main__':
+def main():
     opts = args.init("eval")
     utils.init_print()
     evaluate(opts["files"][0], opts["files"][1], opts["eval_metric"])
+
+if __name__ == '__main__':
+    main()

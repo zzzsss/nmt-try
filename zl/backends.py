@@ -39,13 +39,23 @@ class BK_DY:
     def init():
         pass
 
-    @staticmethod
-    def getf(s):
-        return {"tanh":dy.tanh, "softmax":dy.softmax, "linear":lambda x:x}
-
     affine = dy.affine_transform
-    zeros = dy.zeros
+    average = dy.average
+    cmult = dy.cmult
+    colwise_add = dy.colwise_add
+    concatenate = dy.concatenate
+    concatenate_cols = dy.concatenate_cols
     dropout = dy.dropout
+    inputTensor = dy.inputTensor
+    inputVector = dy.inputVector
+    logistic = dy.logistic
+    lookup_batch = dy.lookup_batch
+    random_bernoulli = dy.random_bernoulli
+    reshape = dy.reshape
+    softmax = dy.softmax
+    tanh = dy.tanh
+    transpose = dy.transpose
+    zeros = dy.zeros
 
     @staticmethod
     def param2expr(p, update):
@@ -61,9 +71,34 @@ class BK_DY:
 
     @staticmethod
     def get_params(model, shape, lookup=False, init="default"):
-        arr = _get_params_init(shape, init)
+        if isinstance(init, np.ndarray):    # pass it directly
+            arr = init
+        else:
+            arr = _get_params_init(shape, init)
         if lookup:
-            p = model.add_lookup_parameters(shape, init=dy.NumpyInitializer(arr))
+            p = model.lookup_parameters_from_numpy(arr)
         else:
             p = model.add_parameters(shape, init=dy.NumpyInitializer(arr))
         return p
+
+    @staticmethod
+    def gru():
+        pass
+
+    @staticmethod
+    def vanilla_lstm(iis, hh, cc, px, ph, b, dropx, droph):
+        if dropx is not None and droph is not None:
+            gates_t = dy.vanilla_lstm_gates_concat_dropout(iis, hh, px, ph, b, dropx, droph)
+        else:
+            gates_t = dy.vanilla_lstm_gates_concat(iis, hh, px, ph, b)
+        cc = dy.vanilla_lstm_c(cc, gates_t)
+        hidden = dy.vanilla_lstm_h(cc, gates_t)
+        return hidden, cc
+
+    @staticmethod
+    def dims(expr):
+        return expr.dim()[0]
+
+    @staticmethod
+    def bsize(expr):
+        return expr.dim()[-1]

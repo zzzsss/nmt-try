@@ -1,6 +1,6 @@
 # the specifications of the model
-from layers import *
-import utils
+from . import utils
+from .layers import *
 
 class NMTModel(object):
     def __init__(self, opts, source_dicts, target_dict):

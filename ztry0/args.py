@@ -1,5 +1,7 @@
 import argparse
-from utils import Logger, Timer
+
+from .utils import Logger, Timer
+
 
 # parse the arguments for main
 def init(phase):
