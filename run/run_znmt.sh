@@ -22,5 +22,5 @@ ZMT=${zmt} bash ${zmt}/znmt/scripts/restore.sh <${output} | perl ${zmt}/znmt/scr
 # timeout for another two days
 if echo ${_dy_device} | grep "GPU";
 then
-timeout 2d $PY ${zmt}/znmt/run/zhold.py --dynet-devices ${_dy_device} --dynet-mem 4
+timeout 2d $PY ${zmt}/znmt/run/zhold.py ${zhold} --dynet-devices ${_dy_device} --dynet-mem 4
 fi

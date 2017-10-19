@@ -14,7 +14,6 @@ class Layer(object):
         self.model = model
         self.params = {}
         self.iparams = {}
-        self.iparams = {}
         self.update = None
         # aux info like dropouts/masks (could be refreshed)
         self.hdrop = 0.     # hidden output drops
@@ -32,7 +31,7 @@ class Layer(object):
     def __str__(self):
         return self.__repr__()
 
-    def refresh(self, **argv):
+    def refresh(self, argv):
         self._refresh(argv)
 
     # !! this one should be FINAL, not overridden
@@ -98,6 +97,18 @@ class Affine(Layer):
             h1 = BK.dropout(h1, self.hdrop)
         return h1
 
+# nearly the same as affine but enforcing no-dropout (usually as output layer)
+class AffineNodrop(Affine):
+    def __init__(self, model, n_ins, n_out, act="linear", bias=True):
+        super(AffineNodrop, self).__init__(model, n_ins, n_out, act, bias)
+
+    def __repr__(self):
+        return "# AffineNodrop (%s -> %s [%s])" % (self.n_ins, self.n_out, self.act)
+
+    def __call__(self, input_exp):
+        self.hdrop = 0.
+        super(AffineNodrop, self).__call__(input_exp)
+
 # embedding layer
 # [inputs] or input -> (batched) output
 class Embedding(Layer):
@@ -112,7 +123,7 @@ class Embedding(Layer):
         self.n_words = n_words
         self.dropout_wordceil = dropout_wordceil if dropout_wordceil is not None else n_words
 
-    def refresh(self, **argv):
+    def refresh(self, argv):
         self._refresh(argv)
         # zero out (todo: for tr?)
         self.params["E"].init_row(0, [0. for _ in range(self.n_dim)])
@@ -143,7 +154,7 @@ class RnnNode(Layer):
         self.n_inputs = n_inputs
         self.n_hidden = n_hidden
 
-    def refresh(self, **argv):
+    def refresh(self, argv):
         self._refresh(argv)
         if self.gdrop > 0:   # same masks for all instances in the batch
             # todo(warn): 1. gdrop for both or rec-only? 2. diff gdrop for gates or not? 3. same for batches or not?
@@ -302,10 +313,10 @@ class Attention(Layer):
         return self.cov_gru([att, s, h], {"H": cov})["H"]
     # --- coverage related
 
-    def refresh(self, **argv):
+    def refresh(self, argv):
         self._refresh(argv)
         if self.has_cov():
-            self.cov_gru.refresh(**argv)
+            self.cov_gru.refresh(argv)
 
 class DmAttention(Attention):
     def __init__(self, model, n_src, n_trg, n_hidden, n_cov=0):
@@ -398,10 +409,10 @@ class Encoder(object):
         self.n_hidden = n_hidden
         self.n_layers = n_layers
 
-    def refresh(self, **argv):
+    def refresh(self, argv):
         for nn in self.nodes:
-            nn[0].refresh(**argv)
-            nn[1].refresh(**argv)
+            nn[0].refresh(argv)
+            nn[1].refresh(argv)
 
     def __call__(self, embeds, masks):
         # todo(warn), only put masks here in enc
@@ -467,9 +478,9 @@ class Decoder(object):
             else:
                 return None
 
-    def refresh(self, **argv):
+    def refresh(self, argv):
         for nn in self.all_nodes:
-            nn.refresh(**argv)    # dropouts: init/att?: hdrop, rec: idrop, gdrop
+            nn.refresh(argv)    # dropouts: init/att?: hdrop, rec: idrop, gdrop
 
     def start_one(self, ss):
         # ss: list of srcs (to be attended), return

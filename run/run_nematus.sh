@@ -12,3 +12,9 @@ CUDA_VISIBLE_DEVICES=${gpuid} PYTHONPATH=${zmt}/Theano THEANO_FLAGS=mode=FAST_RU
 time CUDA_VISIBLE_DEVICES=${gpuid} PYTHONPATH=${zmt}/Theano THEANO_FLAGS=mode=FAST_RUN,floatX=float32,device=${_nematus_device} python2.7 ${zmt}/nematus/nematus/translate.py -i ${datadir}/test.final.${src} -o ${output} -k ${test_beam_size} -n ${normalize} -m ${rundir}/model.npz.dev.npz
 
 ZMT=${zmt} bash ${zmt}/znmt/scripts/restore.sh <${output} | perl ${zmt}/znmt/scripts/multi-bleu.perl ${datadir}/test.final.${trg}.restore
+
+# timeout for another two days
+if echo ${_dy_device} | grep "GPU";
+then
+timeout 2d python ${zmt}/znmt/run/zhold.py ${zhold} --dynet-devices ${_dy_device} --dynet-mem 4
+fi

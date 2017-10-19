@@ -20,8 +20,8 @@ def _get_lang(gold_fn):
 
 def _eval_bleu(output, gold, process_gold):
     dir_name = os.path.dirname(os.path.abspath(__file__))
-    restore_name = os.path.join(dir_name, "scripts", "restore.sh")
-    script_name = os.path.join(dir_name, "scripts", "moses", "multi-bleu.perl")
+    restore_name = os.path.join(dir_name, "..", "scripts", "restore.sh")
+    script_name = os.path.join(dir_name, "..", "scripts", "moses", "multi-bleu.perl")
     # zmt_name = os.path.join(dir_name, "..")  # todo(warn) need to find mosesdecoder for restore: default $ZMT is znmt/../
     # maybe preprocess
     if process_gold:

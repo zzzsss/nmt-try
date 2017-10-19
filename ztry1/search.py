@@ -11,4 +11,6 @@ class MTAction(Action):
         super(Action, self).__init__()
 
 class MTSearcher(Searcher):
-    pass
+    def search(self, models, ):
+        pass
+    

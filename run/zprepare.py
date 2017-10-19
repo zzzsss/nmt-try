@@ -18,6 +18,7 @@ def init():
     p.add_argument("--trg", type=str)   # could be inferred from data_dir name
     p.add_argument("--output", "-o", type=str, default="output.txt")
     p.add_argument("--debug", action='store_true')
+    p.add_argument("--zhold", "-z", type=str, default="nope")      # "-z n" will be about n-G
     # some others
     dicts = {
         # zmt home
@@ -103,8 +104,7 @@ def _prepare_file(sinput, output, args, additions):
 def main():
     args = init()
     is_gpu = (args["device"] >= 0)
-    if is_gpu:
-        args["gpuid"] = args["device"]
+    args["gpuid"] = args["device"]
     # specifically for dynet systems
     if is_gpu:
         args["_dy_device"] = "GPU:%s" % args["gpuid"]

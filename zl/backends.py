@@ -58,6 +58,23 @@ class BK_DY:
     zeros = dy.zeros
 
     @staticmethod
+    def new_graph():
+        dy.renew_cg()   # new graph
+
+    @staticmethod
+    def new_model():
+        return dy.ParameterCollection()
+
+    @staticmethod
+    def load_model(fname, m):
+        m.populate(fname)
+        return m
+
+    @staticmethod
+    def save_model(fname, m):
+        m.save(fname)
+
+    @staticmethod
     def param2expr(p, update):
         # todo(warn): dynet changes API
         try:

@@ -54,3 +54,10 @@ for n in ${ZGPUS[*]}; do
 echo; echo GPUs@50$n; ssh -i key mm$n bash -ic zcgpu;
 done
 }
+
+# tools
+alias seg-jp="$ZZ/mt/tools/kytea-0.4.7/src/bin/kytea -model $ZZ/mt/tools/kytea-0.4.7/data/model.bin -notags"
+function seg-ch
+{
+bash $ZZ/mt/tools/stanford-seg/segment.sh ctb $1 UTF-8 0 2>/dev/null;
+}
