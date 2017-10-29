@@ -43,15 +43,15 @@ class Vocab(object):
         if d is not None:
             self.d = d
             # insure specials are in here
-            utils.zforce(utils.zcheck_ff_iter, specials, lambda x: x in self.d, "not included specials", "warn")
-            utils.zforce(utils.zcheck_ff, self.d[Vocab.NON_TOKEN], lambda x: x==0, "unequal to 0", "warn")
+            utils.zcheck_ff_iter(specials, lambda x: x in self.d, "not included specials", "warn", _forced=True)
+            utils.zcheck_ff(self.d[Vocab.NON_TOKEN], lambda x: x==0, "unequal to 0", "warn", _forced=True)
         elif s is not None:
             with utils.Timer(tag="vocab", info="build vocabs from stream."):
                 self.d, _ = Vocab._build_vocab(s, rthres, fthres, specials)
         elif fname is not None:
             with utils.Timer(tag="vocab", info="build vocabs from corpus %s" % fname):
                 with utils.zopen(fname) as f:
-                    self.d, _ = Vocab._build_vocab(utils.ZStream.stream_on_file(f), rthres, fthres, specials)
+                    self.d, _ = Vocab._build_vocab(utils.Helper.stream_on_file(f), rthres, fthres, specials)
         else:
             utils.zfatal("No way to init Vocab.")
         # reverse vocab
@@ -225,11 +225,11 @@ class BatchArranger(object):
 
     def restore_order(self, x):
         # rearrange back according to self.tracking_list (caused by sorting and shuffling)
-        utils.zforce(utils.zcheck, self.tracking_order, "Tracking function has not been opened")
-        utils.zforce(utils.zcheck_matched_length, self.tracking_list, x)
+        utils.zcheck(self.tracking_order, "Tracking function has not been opened", _forced=True)
+        utils.zcheck_matched_length(self.tracking_list, x, _forced=True)
         ret = [None for _ in x]
         for idx, one in zip(self.tracking_list, x):
-            utils.zforce(utils.zcheck_type, ret[idx], type(None), "Wrong tracking list, internal error!!")
+            utils.zcheck_type(ret[idx], type(None), "Wrong tracking list, internal error!!", _forced=True)
             ret[idx] = one
         return ret
 
@@ -291,7 +291,7 @@ class TextInstanceLengthSorter(object):
 # read from files
 class TextFileReader(InstanceReader):
     def __init__(self, files, vocabs, shuffling):
-        utils.zforce(utils.zcheck_matched_length, files, vocabs)
+        utils.zcheck_matched_length(files, vocabs, _forced=True)
         self.files = files
         self.vocabs = vocabs
         self.shuffling = shuffling
@@ -339,7 +339,7 @@ class TextFileReader(InstanceReader):
             if len(fds) > 1:
                 for ffd in fds[1:]:
                     line = ffd.readline()
-                    utils.zforce(utils.zcheck_ff, line, lambda x: len(x)>0, "EOF (unmatched) %s" % ffd, "warn")
+                    utils.zcheck_ff(line, lambda x: len(x)>0, "EOF (unmatched) %s" % ffd, "warn", _forced=True)
                     insts.append(line)
             # split and lookup (this one with no factors)
             words = [[x for x in one.strip().split()] for one in insts]
@@ -350,7 +350,7 @@ class TextFileReader(InstanceReader):
         if len(fds) > 1:
             for ffd in fds[1:]:
                 line = ffd.readline()
-                utils.zforce(utils.zcheck_ff, line, lambda x: len(x)==0, "EOF (unmatched) %s" % ffd, "warn")
+                utils.zcheck_ff(line, lambda x: len(x)==0, "EOF (unmatched) %s" % ffd, "warn", _forced=True)
         for ffd in fds:
             ffd.close()
 

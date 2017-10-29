@@ -115,7 +115,7 @@ class Embedding(Layer):
     def __init__(self, model, n_words, n_dim, dropout_wordceil=None, npvec=None):
         super(Embedding, self).__init__(model)
         if npvec is not None:
-            utils.zforce(utils.zcheck, len(npvec.shape) == 2 and npvec.shape[0] == n_words and npvec.shape[1] == n_dim, "Wrong dimension for init embeddings.")
+            utils.zcheck(len(npvec.shape) == 2 and npvec.shape[0] == n_words and npvec.shape[1] == n_dim, "Wrong dimension for init embeddings.", _forced=True)
             self.params["_E"] = self._add_params((n_words, n_dim), lookup=True, init=npvec)
         else:
             self.params["_E"] = self._add_params((n_words, n_dim), lookup=True, init="random")
@@ -135,7 +135,7 @@ class Embedding(Layer):
 
     def __call__(self, input_exp):
         # input should be a list of ints or int
-        if type(input_exp) != list:
+        if not isinstance(input_exp, Iterable):
             input_exp = [input_exp]
         if self.idrop > 0:
             input_exp = [(0 if (v<=0 and i>=self.dropout_wordceil) else i) for i,v in zip(input_exp, utils.Random.binomial(1, 1-self.idrop, len(input_exp), "drop"))]
@@ -183,7 +183,8 @@ class RnnNode(Layer):
 
     @staticmethod
     def get_rnode(s):
-        return {"gru":GruNode, "lstm":LstmNode, "dummy":DmRnnNode}[s]
+        return {"gru": GruNode, "gru2": lambda _1,_2,_3: GruNode(_1,_2,_3,False),
+                "lstm": LstmNode, "dummy": DmRnnNode}[s]
 
 class DmRnnNode(RnnNode):
     def __init__(self, model, n_input, n_hidden):
@@ -193,17 +194,24 @@ class DmRnnNode(RnnNode):
         return hidden_exp
 
 class GruNode(RnnNode):
-    def __init__(self, model, n_inputs, n_hidden):
+    def __init__(self, model, n_inputs, n_hidden, split=True):
         super(GruNode, self).__init__(model, n_inputs, n_hidden)
         # paramters
-        for i, dim in enumerate(n_inputs):
-            self.params["x2r_%s"%i] = self._add_params((n_hidden, dim))
-        self.params["h2r"] = self._add_params((n_hidden, n_hidden), init="ortho")
-        self.params["br"] = self._add_params((n_hidden,))
-        for i, dim in enumerate(n_inputs):
-            self.params["x2z_%s"%i] = self._add_params((n_hidden, dim))
-        self.params["h2z"] = self._add_params((n_hidden, n_hidden), init="ortho")
-        self.params["bz"] = self._add_params((n_hidden,))
+        self.split = split
+        if split:
+            for i, dim in enumerate(n_inputs):
+                self.params["x2r_%s"%i] = self._add_params((n_hidden, dim))
+            self.params["h2r"] = self._add_params((n_hidden, n_hidden), init="ortho")
+            self.params["br"] = self._add_params((n_hidden,))
+            for i, dim in enumerate(n_inputs):
+                self.params["x2z_%s"%i] = self._add_params((n_hidden, dim))
+            self.params["h2z"] = self._add_params((n_hidden, n_hidden), init="ortho")
+            self.params["bz"] = self._add_params((n_hidden,))
+        else:
+            for i, dim in enumerate(n_inputs):
+                self.params["x2rz_%s"%i] = self._add_params((2*n_hidden, dim))
+            self.params["h2rz"] = self._add_params((2*n_hidden, n_hidden), init="ortho")
+            self.params["brz"] = self._add_params((2*n_hidden,))
         for i, dim in enumerate(n_inputs):
             self.params["x2h_%s"%i] = self._add_params((n_hidden, dim))
         self.params["h2h"] = self._add_params((n_hidden, n_hidden), init="ortho")
@@ -232,10 +240,15 @@ class GruNode(RnnNode):
             hidden_exp_g = BK.cmult(hidden_exp_g, self.gmasks[0][-1])
             input_exp_t = [BK.cmult(one, dd) for one, dd in zip(input_exp_t, self.gmasks[1][:-1])]
             hidden_exp_t = BK.cmult(hidden_exp_t, self.gmasks[1][-1])
-        rt = BK.affine([self.iparams["br"], self.iparams["h2r"], hidden_exp_g] + _ff_list("x2r", input_exp_g))
-        rt = BK.logistic(rt)
-        zt = BK.affine([self.iparams["bz"], self.iparams["h2z"], hidden_exp_g] + _ff_list("x2z", input_exp_g))
-        zt = BK.logistic(zt)
+        if self.split:
+            rt = BK.affine([self.iparams["br"], self.iparams["h2r"], hidden_exp_g] + _ff_list("x2r", input_exp_g))
+            rt = BK.logistic(rt)
+            zt = BK.affine([self.iparams["bz"], self.iparams["h2z"], hidden_exp_g] + _ff_list("x2z", input_exp_g))
+            zt = BK.logistic(zt)
+        else:
+            rzt = BK.affine([self.iparams["brz"], self.iparams["h2rz"], hidden_exp_g] + _ff_list("x2rz", input_exp_g))
+            rzt = BK.logistic(rzt)
+            rt, zt = BK.pick_range(rzt, 0, self.n_hidden), BK.pick_range(rzt, self.n_hidden, 2*self.n_hidden)
         h_reset = BK.cmult(rt, hidden_exp_t)
         ht = BK.affine([self.iparams["bh"], self.iparams["h2h"], h_reset] + _ff_list("x2h", input_exp_t))
         ht = BK.tanh(ht)
@@ -274,6 +287,7 @@ class Attention(Layer):
         super(Attention, self).__init__(model)
         self.n_src, self.n_trg, self.n_hidden, self.n_cov = n_src, n_trg, n_hidden, n_cov
         self.cov_gru = None
+        self.prepares = []  # how to prepare for caches
 
     def __repr__(self):
         return "# Attention[%s] (src=%s, trg=%s, hidden=%s, cov=%s)" % (type(self), self.n_src, self.n_trg, self.n_hidden, self.n_cov)
@@ -282,9 +296,18 @@ class Attention(Layer):
         # (s, n, caches) -> {"ctx", "att"}, {"S","V","cov"}
         raise NotImplementedError("No calling __call__ from Attention.")
 
-    def prepare_cache(self, s):
+    def prepare_cache(self, s, caches):
         # prepare some pre-computed values to make it efficient
-        raise NotImplementedError("No calling prepare_cache from Attention.")
+        if caches is None:
+            caches = {}
+        new_one = {}
+        for p in self.prepares:
+            k, ff = p
+            if k in caches:
+                new_one[k] = caches[k]
+            else:
+                new_one[k] = ff(s, new_one)
+        return new_one
 
     @staticmethod
     def get_attentioner(s):
@@ -337,19 +360,13 @@ class FfAttention(Attention):
         self.params["e2a"] = self._add_params((1, n_hidden))
         if self.has_cov():
             self.init_cov(n_hidden)
-
-    def prepare_cache(self, s):
-        caches = {}
-        caches["S"] = BK.concatenate_cols(s)
-        caches["V"] = self.iparams["s2e"] * caches["S"]     # {(n_hidden, steps), batch_size}
-        if self.has_cov():
-            caches["cov"] = self.start_cov(len(s), BK.bsize(caches["V"]))
-        return caches
+        self.prepares = [("S", lambda s, caches: BK.concatenate_cols(s)),
+                         ("V", lambda s, caches: self.iparams["s2e"] * caches["S"]),    # {(n_hidden, steps), batch_size}
+                         ("cov", lambda s, caches: self.start_cov(len(s), BK.bsize(caches["V"])) if self.has_cov() else None)]
 
     def __call__(self, s, n, caches):
-        # s: list(len==steps) of {(n_s,), batch_size}, n: {(n_h,), batch_size}
-        if caches is None:
-            caches = self.prepare_cache(s)
+        # s: list(len==steps) of {(n_s,), batch_size}, n: {(n_h,), batch_size}, s could be None for later steps
+        caches = self.prepare_cache(s, caches)
         val_h = BK.affine(self.iparams["be"], self.iparams["h2e"], n)     # {(n_hidden,), batch_size}
         att_hidden_bef = BK.colwise_add(caches["V"], val_h)    # {(n_hidden, steps), batch_size}
         att_hidden = BK.tanh(att_hidden_bef)
@@ -357,7 +374,8 @@ class FfAttention(Attention):
             att_hidden = self.output_cov(att_hidden, caches["cov"])
         # if self.hdrop > 0:     # save some space
         #     att_hidden = BK.dropout(att_hidden, self.hdrop)
-        att_e = BK.reshape(self.iparams["e2a"] * att_hidden, (len(s), ), batch_size=BK.bsize(att_hidden))
+        att_e0 = self.iparams["e2a"] * att_hidden
+        att_e = BK.reshape(att_e0, (BK.dims(att_e0)[1], ), batch_size=BK.bsize(att_hidden))
         att_alpha = BK.softmax(att_e)
         ctx = caches["S"] * att_alpha      # {(n_s, sent_len), batch_size}
         if self.has_cov():
@@ -372,24 +390,19 @@ class BiaffAttention(Attention):
         self.params["W"] = self._add_params((n_trg, n_src))
         if self.has_cov():
             self.init_cov(n_trg)
-
-    def prepare_cache(self, s):
-        caches = {}
-        caches["S"] = BK.concatenate_cols(s)
-        caches["V"] = self.iparams["W"] * caches["S"]   # {(n_trg, steps), batch_size}
-        if self.has_cov():
-            caches["cov"] = self.start_cov(len(s), BK.bsize(caches["V"]))
-        return caches
+        self.prepares = [("S", lambda s, caches: BK.concatenate_cols(s)),
+                         ("V", lambda s, caches: self.iparams["W"] * caches["S"]),  # {(n_trg, steps), batch_size}
+                         ("cov", lambda s, caches: self.start_cov(len(s), BK.bsize(caches["V"])) if self.has_cov() else None)]
 
     def __call__(self, s, n, caches):
         # s: list(len==steps) of {(n_s,), batch_size}, n: {(n_h,), batch_size}
-        if caches is None:
-            caches = self.prepare_cache(s)
+        caches = self.prepare_cache(s, caches)
         wn_t = BK.transpose(n)
         att_hidden = caches["V"]
         if self.has_cov():
             att_hidden = self.output_cov(att_hidden, caches["cov"])
-        att_e = BK.reshape(wn_t * att_hidden, (len(s), ), batch_size=BK.bsize(n))
+        att_e0 = wn_t * att_hidden
+        att_e = BK.reshape(att_e0, (BK.dims(att_e0)[1], ), batch_size=BK.bsize(n))
         att_alpha = BK.softmax(att_e)
         ctx = caches["S"] * att_alpha
         if self.has_cov():
@@ -491,8 +504,7 @@ class Decoder(object):
             # +1 for the init state
             inits.append({"H": cur_init, "C": BK.zeros((self.n_hidden,), batch_size=BK.bsize(cur_init))})
         att_res, att_caches = self.anode(ss, inits[0]["H"], None)          # start of the attention
-        att_res["hidden"] = inits
-        return att_res, att_caches
+        return utils.Helper.combine_dicts(att_res, att_caches, {"hid": inits, "summ": summ})
 
     def feed_one(self, ss, inputs, hiddens, att_caches):
         # input ones
@@ -520,13 +532,13 @@ class AttDecoder(Decoder):
     def _feed_one(self, ss, inputs, hiddens, att_caches):
         # first layer with attetion
         att_res, att_caches = self.anode(ss, hiddens[0]["H"], att_caches)
-        hidd = self.gnodes[0](inputs+[att_res["result"]], hiddens[0])
+        hidd = self.gnodes[0](inputs+[att_res["ctx"]], hiddens[0])
         this_hiddens = [hidd]
         # later layers
         for i in range(1, self.n_layers):
             ihidd = self.gnodes[i](this_hiddens[i-1]["H"], hiddens[i])
             this_hiddens.append(ihidd)
-        return utils.Helper.combine_dicts(att_res, {"hid": this_hiddens}), att_caches
+        return utils.Helper.combine_dicts(att_res, att_caches, {"hid": this_hiddens})
 
 # nematus-style attention decoder, fixed two transitions
 class NematusDecoder(Decoder):
@@ -544,10 +556,10 @@ class NematusDecoder(Decoder):
         # first layer with attetion, gru1 -> att -> gru2
         s1 = self.gnodes[0](inputs, hiddens[0])
         att_res, att_caches = self.anode(ss, s1["H"], att_caches)
-        hidd = self.gnodes[-1](att_res["result"], s1)
+        hidd = self.gnodes[-1](att_res["ctx"], s1)
         this_hiddens = [hidd]
         # later layers
         for i in range(1, self.n_layers):
             ihidd = self.gnodes[i](this_hiddens[i-1]["H"], hiddens[i])
             this_hiddens.append(ihidd)
-        return utils.Helper.combine_dicts(att_res, {"hid": this_hiddens}), att_caches
+        return utils.Helper.combine_dicts(att_res, att_caches, {"hid": this_hiddens})

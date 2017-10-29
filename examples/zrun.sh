@@ -125,7 +125,7 @@ python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --b
 # 17.10.15
 # now run nematus again on z5 (x46)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t nematus --batch_size 80 --extras "dropout_embedding 0.4 dropout_hidden 0.4 dropout_source 0.4 dropout_target 0.4 use_dropout" -p 6 # (too large dropout, skip)
-python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t nematus --batch_size 80 --extras "dropout_embedding 0.2 dropout_hidden 0.2 dropout_source 0.1 dropout_target 0.1 use_dropout" -p 7
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t nematus --batch_size 80 --extras "dropout_embedding 0.2 dropout_hidden 0.2 dropout_source 0.1 dropout_target 0.1 use_dropout" -p 7 # (36.5, 36.7)
 # and back on x48
 # 0. base on z5 (36.2, 36.7)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.4 drop_hidden 0.4 drop_embedding 0.4" -p 3
@@ -143,9 +143,21 @@ python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --b
 
 # 17.10.20
 ## now start to turn to z5 & JE
-# base nematus (x47)
+# base nematus (x47) (oom)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../ja_en_data_z5 -t nematus --batch_size 80 --extras "dropout_embedding 0.2 dropout_hidden 0.2 dropout_source 0.1 dropout_target 0.1 n_words_src 50000 n_words 50000 use_dropout" -z 6 -p 6
-# 0. drop
+# 0. drop (35.76, 36.02)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2" -z 6 -p 5
-# 1. biaffine
+# 1. biaffine (36.21, 36.29)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 att_type biaff" -z 6 -p 7
+##
+# JE on x46
+# 0. drop
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../ja_en_data_z5 -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 dicts_thres 50000" -z 6 -p 6
+# 1. biaffine
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../ja_en_data_z5 -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 att_type biaff dicts_thres 50000" -z 6 -p 7
+
+# 17.10.26
+## final tuning on dropouts
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.5 drop_hidden 0.2 idrop_embedding 0.2 drop_embedding 0.2" -z 6 -p 5
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.5 drop_hidden 0.2 idrop_embedding 0.1 drop_embedding 0.1" -z 6 -p 6
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.5 drop_hidden 0.2 idrop_embedding 0.1 drop_embedding 0.2" -z 6 -p 7

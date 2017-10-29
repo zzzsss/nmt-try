@@ -11,7 +11,7 @@ class SearchGraph(object):
 
     def reg(self, state):
         self.num += 1
-        state.id = self.num
+        state.id = self.num    # setter from this friend class
         if state.prev is not None:
             self.ch_recs[state.prev.id].append(state)
 
@@ -29,6 +29,9 @@ class State(object):
         self.id = -1
         sg.reg(self)            # register in the search graph
 
+    # for convenience, leave these out
+    # @property: action, prev, id
+
     @property
     def score(self):
         return self.score_all
@@ -36,6 +39,10 @@ class State(object):
     @property
     def signature(self):
         return -1
+
+    # whether this is the starting state
+    def is_start(self):
+        return self.prev is None
 
     def get(self, which=None):
         if which is None:
@@ -72,7 +79,7 @@ class Results(object):
     pass
 
 # state + actions (to be scored, not fully expanded)
-class StateCandidates(object):
+class StateCands(object):
     pass
 
 # the searcher

@@ -18,9 +18,9 @@ def _test_utils():
         utils.zcheck(100==1, "math2", "warn")
     utils.zlog(utils.Task.get_accu(), func="info")
     with open(log_file) as f:
-        w = [i for i in utils.ZStream.stream_on_file(f)]
+        w = [i for i in utils.Helper.stream_on_file(f)]
     utils.zlog(w)
-    utils.zforce(utils.zcheck_ff_iter, [1,2,3], lambda x: x>0, "what")
+    utils.zcheck_ff_iter([1,2,3], lambda x: x>0, "what", _forced=True)
 
 def _test_data_iter():
     # get vocab

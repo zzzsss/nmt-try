@@ -45,6 +45,9 @@ def init(phase):
                           help="final dictionaries (one per source factor, plus target vocabulary), also write dest")
         data.add_argument('--models', '-m', type=str, default=["zbest.model"], metavar='PATHs', nargs="*",
                              help="model file names (ensemble if >1)")
+        # for convenience
+        data.add_argument('--dicts_thres', type=int, default=-1, metavar='INT',
+                             help="WARNING!!: no effects in testing mode")
     elif phase == "eval":
         data.add_argument('--files', '-t', type=str, required=True, metavar='PATH', nargs=2, help="output and gold files")
     else:

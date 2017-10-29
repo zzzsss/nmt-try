@@ -4,6 +4,8 @@ import dynet as dy
 import torch as tr
 import numpy as np
 from .utils import Random
+from . import utils
+from collections import Iterable
 
 # first init params with np: return is C-order as the default of numpy
 # -- also fix some hyper-params here
@@ -45,11 +47,14 @@ class BK_DY:
     colwise_add = dy.colwise_add
     concatenate = dy.concatenate
     concatenate_cols = dy.concatenate_cols
+    concatenate_to_batch = dy.concatenate_to_batch
     dropout = dy.dropout
     inputTensor = dy.inputTensor
     inputVector = dy.inputVector
     logistic = dy.logistic
     lookup_batch = dy.lookup_batch
+    pick_batch_elems = dy.pick_batch_elems
+    pick_range = dy.pick_range
     random_bernoulli = dy.random_bernoulli
     reshape = dy.reshape
     softmax = dy.softmax
@@ -119,3 +124,30 @@ class BK_DY:
     @staticmethod
     def bsize(expr):
         return expr.dim()[-1]
+
+    # manipulating the batches #
+    @staticmethod
+    def batch_rearrange(exprs, orders):
+        if not isinstance(exprs, Iterable):
+            exprs = [exprs]
+        if not isinstance(orders, Iterable):
+            orders = [orders]
+        utils.zcheck_matched_length(exprs, orders, _forced=True)
+        new_ones = []
+        for e, o in zip(exprs, orders):
+            new_ones.append(BK_DY.pick_batch_elems(e, o))
+        if len(new_ones) == 1:
+            return new_ones[0]
+        else:
+            return BK_DY.concatenate_to_batch(new_ones)
+
+    @staticmethod
+    def batch_repeat(expr, num=1):
+        # repeat each element (expanding) in the batch
+        utils.zcheck_range(num, 1, None, _forced=True)
+        if num == 1:
+            return expr
+        else:
+            bsize = BK_DY.bsize(expr)
+            orders = [i//num for i in range(bsize*num)]
+            return BK_DY.batch_rearrange(expr, orders)

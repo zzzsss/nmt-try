@@ -1,6 +1,7 @@
 # some useful functions
 import sys, gzip, platform, subprocess, os, time
 import numpy as np
+from collections import Iterable
 
 # Part 0: loggings
 def zopen(filename, mode='r'):
@@ -67,11 +68,6 @@ class Logger(object):
 def zfatal(ss=""):
     zlog(ss, func="fatal")
     raise RuntimeError()
-
-# wrapper for zcheck*
-# todo(warn) should not provide func for f here
-def zforce(f, *argv):
-    return f(*argv, _forced=True)
 
 # general
 def zcheck(ff, ss, func="fatal", _forced=False):
@@ -298,26 +294,32 @@ class Random(object):
     def randn(dims, type):
         return Random._function("randn", type, *dims)
 
-# about lists and generators
-class ZStream(object):
+# convenience for basic classes like lists and dicts
+class Helper(object):
+    @staticmethod
+    def combine_dicts(*args, func="fatal", relax=set()):
+        # combine {}s, but warn/fatal when finding repeated keys
+        x = {}
+        for one in args:
+            for k in one:
+                zcheck((k not in x) and (k not in relax), "Repeated key %s: replacing %s with %s?" % (k, x[k], one[k]), func, _forced=True)
+                x[k] = one[k]
+        return x
+
     @staticmethod
     def stream_on_file(fd, tok=(lambda x: x.strip().split())):
         for line in fd:
             for w in tok(line):
                 yield w
 
-# convenience for basic classes like lists and dicts
-class Helper(object):
     @staticmethod
-    def combine_dicts(*args, func="fatal"):
-        # combine {}s, but warn/fatal when finding repeated keys
-        x = {}
-        for one in args:
-            for k in one:
-                zforce(zcheck, k not in x, "Repeated key %s: replacing %s with %s?" % (k, x[k], one[k]), func)
-                x[k] = one[k]
-        return x
-
+    def stream_rec(obj):
+        if isinstance(obj, Iterable):
+            for x in obj:
+                for y in Helper.stream_rec(x):
+                    yield y
+        else:
+            yield obj
 
 # Calling once at start, init them all
 def init(extra_file=Logger.MAGIC_CODE):
