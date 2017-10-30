@@ -321,12 +321,23 @@ class Helper(object):
         else:
             yield obj
 
+# constants
+class Constants(object):
+    MAX_V = 12345678
+    MIN_V = -12345678
+
 # Calling once at start, init them all
 def init(extra_file=Logger.MAGIC_CODE):
-    Logger.init([extra_file, sys.stderr])
+    flist = [sys.stderr]
+    if len(extra_file) > 0:
+        flist.append(extra_file)
+    Logger.init(flist)
     Checker.init(True)
     Timer.init()
     Random.init()
+    # init_print
+    zlog("*cmd: %s" % ' '.join(sys.argv))
+    zlog("*platform: %s" % ' '.join(platform.uname()))
 
 # ========================================================== #
 # outside perspective: init, zlog, zcheck, Random, Timer

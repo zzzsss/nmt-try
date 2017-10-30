@@ -154,11 +154,8 @@ class BatchArranger(object):
         self.tracking_list = None
         self.batch_size = batch_size
         # todo(notice): if <=0 then read all at one time and possibly sort all
-        self.maxibatch_size = maxibatch_size if maxibatch_size>0 else sys.maxsize
+        self.maxibatch_size = maxibatch_size if maxibatch_size>0 else utils.Constants.MAX_V
         self.shuffling = shuffling  # shuffle inside the maxi-batches?
-
-    def __iter__(self):
-        return self
 
     def __len__(self):
         return len(self.streamer)
@@ -267,9 +264,9 @@ class TextInstance(Instance):
 
 class TextInstanceRangeOutlier(object):
     # detect outlier, return True if outlier detected
-    def __init__(self, a=None, b=None):
-        self.a = -1*sys.maxsize if a is None else a
-        self.b = sys.maxsize if b is None else b
+    def __init__(self, a=utils.Constants.MIN_V, b=utils.Constants.MAX_V):
+        self.a = a
+        self.b = b
 
     def __call__(self, inst):  # True if any not in [a, b)
         return any(not (x >= self.a and x < self.b) for x in inst.get_lens())

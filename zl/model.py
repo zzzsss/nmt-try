@@ -10,8 +10,8 @@ class Model(object):
         self.model = layers.BK.new_model()
         # self.nodes = []
         # general computation process: according to the values in the caches
-        self.names_bv = set()       # batch variant (need reshuffle within batches)
-        self.names_bi = set()       # batch invariant (only controlling the size for each instance will be fine)
+        self.names_bv = set()       # beam variant (need reshuffle within batches)
+        self.names_bi = set()       # beam invariant (only controlling the size for each instance will be fine)
         self.names_ig = set()       # ignored (not used in the next steps)
 
     @staticmethod

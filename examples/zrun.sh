@@ -161,3 +161,16 @@ python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../ja_en_data_z5 -t znmt --
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.5 drop_hidden 0.2 idrop_embedding 0.2 drop_embedding 0.2" -z 6 -p 5
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.5 drop_hidden 0.2 idrop_embedding 0.1 drop_embedding 0.1" -z 6 -p 6
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.5 drop_hidden 0.2 idrop_embedding 0.1 drop_embedding 0.2" -z 6 -p 7
+# => 35+, maybe slightly too large gdrop
+
+# 17.10.29
+# see what is for wmt_ef (30k vocab)
+# python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../en_fr_data_z5/set2/ -t nematus --batch_size 80 --extras "dropout_source 0.1 dropout_target 0.1 n_words_src 30000 n_words 30000 use_dropout" -p 1
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../en_fr_data_z5/set2/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 dicts_thres 30000" -p 4
+
+# 17.10.30
+# ..., don't know what to run, please finish ztry1 as soon as possible
+# if several runs will be quite different?
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2" -z 6 -p 5
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2" -z 6 -p 6
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2" -z 6 -p 7

@@ -4,7 +4,7 @@
 from . import utils
 from collections import Iterable
 import numpy
-from .backends import BK_DY as BK
+from .backends import BK
 
 # ================= Basic Blocks ================= #
 # basic unit (stateful about dropouts)
