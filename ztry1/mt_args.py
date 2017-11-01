@@ -128,7 +128,7 @@ def init(phase):
     validation = parser.add_argument_group('validation parameters')
     validation.add_argument('--valid_freq', type=int, default=10000, metavar='INT',
                          help="validation frequency (default: %(default)s)")
-    training.add_argument('--valid_batch_size', type=int, default=8, metavar='INT',
+    training.add_argument('--valid_batch_size', '--valid_batch_width', type=int, default=8, metavar='INT',
                          help="validating minibatch-size (default: %(default)s)")
     validation.add_argument('--patience', type=int, default=5, metavar='INT',
                          help="early stopping patience (default: %(default)s)")
