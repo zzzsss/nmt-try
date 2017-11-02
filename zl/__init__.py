@@ -2,8 +2,8 @@
 # starting at 17.10.06
 
 from . import utils
-from .backends import BK
+from .backends import init_bk
 
 def init_all(opts):
     utils.init(opts["log"])
-    BK.init(opts)
+    init_bk(opts)

@@ -78,7 +78,7 @@ def zcheck(ff, ss, func="fatal", _forced=False):
 def zcheck_matched_length(a, b, func="fatal", _forced=False):
     if Checker.enabled() or _forced:
         la, lb = len(a), len(b)
-        Checker._instance._check(la==lb, "Failed matched_length checking, %s / %s for %s / %s" % (la, lb, a, b), func, _forced)
+        Checker._instance._check(la==lb, "Failed matched_length checking, %s / %s for %s / %s" % (la, lb, type(a), type(b)), func, _forced)
 
 # x in [a, b)
 def zcheck_range(x, a=None, b=None, func="fatal", _forced=False):
@@ -98,7 +98,7 @@ def zcheck_type(x, t, func="fatal", _forced=False):
 # x in y
 def zcheck_in(x, y, func="fatal", _forced=False):
     if Checker.enabled() or _forced:
-        Checker._instance._check(x in y, "Failed in checking, %s not in %s" % (x, y), func, _forced)
+        Checker._instance._check(x in y, "Failed in checking, %s not in %s" % (x, type(y)), func, _forced)
 
 # function
 def zcheck_ff(x, ff, finfo, func="fatal", _forced=False):
@@ -208,7 +208,7 @@ class Timer(Task):
         self.info = info
         self.accu = 0.   # accumulated time
         self.paused = False
-        self.start = None
+        self.start = Timer.systime()
 
     def pause(self):
         if not self.paused:
@@ -302,7 +302,8 @@ class Helper(object):
         x = {}
         for one in args:
             for k in one:
-                zcheck((k not in x) and (k not in relax), "Repeated key %s: replacing %s with %s?" % (k, x[k], one[k]), func, _forced=True)
+                if k in x and k not in relax:
+                    zcheck(False, "Repeated key %s: replacing %s with %s?" % (k, x[k], one[k]), func, _forced=True)
                 x[k] = one[k]
         return x
 

@@ -34,12 +34,14 @@ class TrainingProgress(object):
         return self.anneal_restarts_done
 
     def record(self, ss, score, trains):
+        def _getv(z):
+            return utils.Constants.MIN_V if z is None else z[0]
         # record one score, return (if-best, if-anneal)
         if_best = if_anneal = False
         self.hist_points.append(ss)
         self.hist_scores.append(score)
         self.hist_trains.append(trains)
-        if score.v > self.best_score.v:
+        if _getv(score) > _getv(self.best_score):
             self.bad_counter = 0
             self.best_score = score
             self.best_point = ss
@@ -86,7 +88,7 @@ class Trainer(object):
     def _set_trainer(self, renew):
         cur_lr = self.opts["lrate"] * (Trainer.ANNEAL_DECAY ** self._tp.num_anneals)
         if self.trainer is None:
-            self.trainer = BK.Trainer(self._mm, self.opts["trainer_type"], self.opts["lrate"], self.opts["moment"])
+            self.trainer = BK.Trainer(self._mm.get_pc(), self.opts["trainer_type"], self.opts["lrate"], self.opts["moment"])
         elif renew:
             self.trainer.restart()
         self.trainer.set_lrate(cur_lr)
@@ -137,6 +139,9 @@ class Trainer(object):
     def _get_recorder(self, name):
         raise NotImplementedError("Not here are basic trainer!")
 
+    def _fb_once(self, insts):
+        raise NotImplementedError("Not here are basic trainer!")
+
     # main rountines
     def _validate(self, dev_iter, name=None, training_states=None):
         # validate and log in the stats
@@ -167,17 +172,19 @@ class Trainer(object):
             # utils.printing("", func="info")
             with utils.Timer(tag="Train-Iter", info="Iter %s" % self._tp.eidx, print_date=True) as et:
                 iter_recorder = self._get_recorder("ITER-%s" % self._tp.eidx)
-                for insts in train_iter:
+                for insts in train_iter.arrange_batches():
                     if utils.Random.rand([1], "skipping") < self.opts["rand_skip"]:     # introduce certain randomness
                         continue
                     # training for one batch
-                    loss = self._mm.fb(insts, True)
+                    loss = self._fb_once(insts)
                     self._update()
                     one_recorder.record(insts, loss, 1)
                     iter_recorder.record(insts, loss, 1)
                     if self.opts["debug"] and self.opts["verbose"]:
                         mem0, mem1 = utils.get_statm()
                         utils.zlog("[%s/%s] after fb(%s): %s" % (mem0, mem1, len(insts), insts[0].describe(insts)), func="DE")
+                    if self.opts["verbose"] and self._tp.uidx % self.opts["report_freq"] == 0:
+                        one_recorder.report("Training process: ")
                     # time to validate and save best model ??
                     if self._tp.uidx % self.opts["valid_freq"] == 0:    # update when _update
                         one_recorder.report()
@@ -185,8 +192,6 @@ class Trainer(object):
                         one_recorder.reset()
                         if self._finished():
                             break
-                    elif self.opts["verbose"] and self._tp.uidx % self.opts["report_freq"] == 0:
-                        one_recorder.report("Training process: ")
                 iter_recorder.report()
                 if self.opts["validate_epoch"]:
                     # here, also record one_recorder, might not be accurate

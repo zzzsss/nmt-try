@@ -18,6 +18,7 @@ def init():
     p.add_argument("--trg", type=str)   # could be inferred from data_dir name
     p.add_argument("--output", "-o", type=str, default="output.txt")
     p.add_argument("--debug", action='store_true')
+    p.add_argument("--profile", action='store_true')
     p.add_argument("--zhold", "-z", type=str, default="nope")      # "-z n" will be about n-G
     # some others
     dicts = {
@@ -61,9 +62,12 @@ def init():
     for i in range((len(fs)+1)//2):
         fs[i*2] = "--" + fs[i*2]
     args["extras"] = " ".join(fs)
-    # debugging
+    # debugging or profile
+    assert not (args["debug"] and args["profile"]), "cannot achieve both"
     if args["debug"]:
         args["py_args"] = "-m pdb"
+    elif args["profile"]:
+        args["py_args"] = '-m cProfile -o stat.prof'
     else:
         args["py_args"] = ""
     # report
@@ -140,3 +144,9 @@ if __name__ == "__main__":
 
 # checking
 # grep --color -E -C 2 "BLEU|cmd" *.log
+
+# cProfile
+# import pstats
+# p = pstats.Stats('stat.prof')
+# p.strip_dirs().sort_stats('cumtime').print_stats(30)
+# python3 -c "import pstats;p = pstats.Stats('stat.prof');p.strip_dirs().sort_stats('cumtime').print_stats(30)"

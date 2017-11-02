@@ -57,9 +57,9 @@ def init(phase):
                          help="decoder type (default: %(default)s)")
     network.add_argument('--att_type', type=str, default="ff", choices=["ff", "biaff", "dummy"],
                          help="attention type (default: %(default)s)")
-    network.add_argument('--rnn_type', type=str, default="gru", choices=["gru", "lstm", "dummy"],
+    network.add_argument('--rnn_type', type=str, default="gru", choices=["gru", "gru2", "lstm", "dummy"],
                          help="recurrent node type (default: %(default)s)")
-    network.add_argument('--summ_type', type=str, default="avg", choices=["avg", "fend", "bend", "ends"],
+    network.add_argument('--summ_type', type=str, default="ends", choices=["avg", "fend", "bend", "ends"],
                          help="decoder's starting summarizing type (default: %(default)s)")
     network.add_argument('--hidden_rec', type=int, default=1000, metavar='INT',
                          help="recurrent hidden layer (default for dec&&enc) (default: %(default)s)")
@@ -71,7 +71,7 @@ def init(phase):
                          help="attention hidden layer size (default: %(default)s)")
     network.add_argument('--hidden_out', type=int, default=500, metavar='INT',
                          help="output hidden layer size (default: %(default)s)")
-    network.add_argument('--coverage_dim', type=int, default=0, metavar='INT',
+    network.add_argument('--dim_cov', type=int, default=0, metavar='INT',
                          help="dimension for coverage in att (default: %(default)s)")
     network.add_argument('--enc_depth', type=int, default=1, metavar='INT',
                          help="number of encoder layers (default: %(default)s)")
@@ -81,7 +81,7 @@ def init(phase):
                          help="dropout for hidden layers (0: no dropout) (default: %(default)s)")
     network.add_argument('--drop_embedding', type=float, default=0.2, metavar="FLOAT",
                          help="dropout for embeddings (0: no dropout) (default: %(default)s)")
-    network.add_argument('--idrop_embedding', type=float, default=0., metavar="FLOAT",
+    network.add_argument('--idrop_embedding', type=float, default=0.2, metavar="FLOAT",
                          help="idrop for words (0: no dropout) (default: %(default)s)")
     network.add_argument('--gdrop_embedding', type=float, default=0., metavar="FLOAT",
                          help="gdrop for words (0: no dropout) (default: %(default)s)")
@@ -147,10 +147,12 @@ def init(phase):
 
     # common
     common = parser.add_argument_group('common')
-    common.add_argument("--dynet-mem", type=str, default="4")
-    common.add_argument("--dynet-devices", type=str, default="CPU")
-    common.add_argument("--dynet-autobatch", type=str, default="0")
-    common.add_argument("--dynet-seed", type=int, default=12345)    # default will be of no use, need to specify it
+    common.add_argument("--dynet-mem", type=str, default="4", dest="dynet-mem")
+    common.add_argument("--dynet-devices", type=str, default="CPU", dest="dynet-devices")
+    common.add_argument("--dynet-autobatch", type=str, default="0", dest="dynet-autobatch")
+    common.add_argument("--dynet-seed", type=str, default="12345", dest="dynet-seed")    # default will be of no use, need to specify it
+    common.add_argument("--dynet-immed", action='store_true', dest="dynet-immed")
+    common.add_argument("--bk_init_nl", type=str, default="glorot", )
     common.add_argument("--debug", action='store_true')
     common.add_argument("--verbose", "-v", action='store_true')
     common.add_argument("--log", type=str, default=zl.utils.Logger.MAGIC_CODE, help="logger for the process")
@@ -164,18 +166,29 @@ def init(phase):
     # decode.add_argument('--decode_way', type=str, default="beam", choices=["beam", "sample"],
     #                      help="decoding method (default: %(default)s)")
     decode.add_argument('--beam_size', '-k', type=int, default=10, help="Beam size (default: %(default)s))")
+    # todo: additive, gaussian
     decode.add_argument('--normalize', '-n', type=float, default=0.0, metavar="ALPHA",
                          help="Normalize scores by sentence length (exponentiate lengths by ALPHA, neg means nope)")
-    decode.add_argument('--normalize_way', type=str, default="norm", choices=["norm", "google"],
+    decode.add_argument('--normalize_way', type=str, default="norm", choices=["norm", "google", "gaussian", "xgaussian"],
                          help="how to norm length (default: %(default)s)")
     decode.add_argument('--decode_len', type=int, default=80, metavar='INT',
                          help="maximum decoding sequence length (default: %(default)s)")
-    decode.add_argument('--decode_ratio', type=float, default=10.,
-                         help="maximum decoding sequence length ratio compared with src (default: %(default)s)")
+    # decode.add_argument('--decode_ratio', type=float, default=10.,
+    #                      help="maximum decoding sequence length ratio compared with src (default: %(default)s)")
     decode.add_argument('--eval_metric', type=str, default="bleu", choices=["bleu", "nist"],
                          help="type of metric for evaluation (default: %(default)s)")
     decode.add_argument('--test_batch_size', type=int, default=8, metavar='INT',
                          help="testing minibatch-size(default: %(default)s)")
+
+    # extra: for training
+    training2 = parser.add_argument_group('training parameters section2')
+    # scale original loss function for training
+    training2.add_argument('--train_scale', type=float, default=0.0, metavar="ALPHA",
+                         help="(train2) Scale scores by sentence length (exponentiate lengths by ALPHA, neg means nope)")
+    training2.add_argument('--train_scale_way', type=str, default="norm", choices=["norm", "google"],
+                         help="(train2) how to norm length with score scales (default: %(default)s)")
+    # length fitting for training
+
 
     a = parser.parse_args()
 
@@ -190,13 +203,6 @@ def check_options(args):
     # network
     assert args["enc_depth"] >= 1
     assert args["dec_depth"] >= 1
-    assert args["factors"] >= 1
-    if args["factors"] > 1:
-        assert type(args["dim_per_factor"]) == list
-        assert len(args["dim_per_factor"]) == args["factors"]
-        assert args["dim_per_factor"][0] == args["dim_word"]    # do we need this
-    if args["dim_per_factor"] is None:
-        args["dim_per_factor"] = [args["dim_word"]]
     # defaults
     for prefix in ["hidden_", "idrop_", "gdrop_"]:
         for n in ["dec", "enc"]:

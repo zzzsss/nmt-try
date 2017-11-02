@@ -76,6 +76,10 @@ class Vocab(object):
         return self.d["<unk>"]+1      # excluding special tokens except unk
 
     @property
+    def non(self):
+        return 0
+
+    @property
     def eos(self):
         return self.d["<eos>"]
 
@@ -132,7 +136,7 @@ class Vocab(object):
         tmp = []
         # get real list
         real_ii = ii
-        if len(ii)>0 and rm_eos and ii[-1][0]==dicts[0].eos:
+        if len(ii)>0 and rm_eos and ii[-1]==dicts[0].eos:
             real_ii = ii[:-1]
         # transform each token
         for one in real_ii:
@@ -158,7 +162,7 @@ class BatchArranger(object):
         self.shuffling = shuffling  # shuffle inside the maxi-batches?
 
     def __len__(self):
-        return len(self.streamer)
+        return sum([len(i) for i in self.arrange_batches()])
 
     @property
     def k(self):
@@ -196,10 +200,11 @@ class BatchArranger(object):
                     if self.tracking_order:
                         self.tracking_list.append(idx)
                     yield [one]
-                # adding in buffer with index
-                buffer.append((idx, one))
-                if len(buffer) == self.k:  # must reach equal because +=1 each time
-                    break
+                else:
+                    # adding in buffer with index
+                    buffer.append((idx, one))
+                    if len(buffer) == self.k:  # must reach equal because +=1 each time
+                        break
             # time for yielding
             if len(buffer) > 0:
                 # sorting
@@ -319,7 +324,7 @@ class TextFileReader(InstanceReader):
     def __len__(self):
         # return num of instances (use cached value)
         if self.num_insts < 0:
-            self.num_insts = sum(len(i) for i in self)
+            self.num_insts = sum([1 for _ in self.stream()])
         return self.num_insts
 
     def stream(self):

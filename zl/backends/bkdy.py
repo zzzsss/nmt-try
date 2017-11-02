@@ -3,13 +3,18 @@ from .common import *
 import sys
 
 import _dynet as dy
+
+class DY_CONFIG:
+    immediate_compute = False
+
 def init(opts):
     # todo: manipulating sys.argv
     utils.zlog("Using BACKEND of DYNET.")
     params = dy.DynetParams()
     temp = sys.argv
-    sys.argv = ["--dynet-mem", opts["dynet-mem"], "--dynet-autobatch", opts["dynet-autobatch"],
+    sys.argv = [temp[0], "--dynet-mem", opts["dynet-mem"], "--dynet-autobatch", opts["dynet-autobatch"],
                 "--dynet-devices", opts["dynet-devices"], "--dynet-seed", opts["dynet-seed"]]
+    DY_CONFIG.immediate_compute = opts["dynet-immed"]
     params.from_args(None)
     params.init()
     sys.argv = temp
@@ -30,7 +35,6 @@ lookup_batch = dy.lookup_batch
 pickneglogsoftmax_batch = dy.pickneglogsoftmax_batch
 pick_batch_elems = dy.pick_batch_elems
 pick_range = dy.pick_range
-random_bernoulli = dy.random_bernoulli
 reshape = dy.reshape
 softmax = dy.softmax
 sum_batches = dy.sum_batches
@@ -38,8 +42,12 @@ tanh = dy.tanh
 transpose = dy.transpose
 zeros = dy.zeros
 
+def random_bernoulli(rate, size, bsize):
+    return dy.random_bernoulli((size,), 1.-rate, 1./(1.-rate), batch_size=bsize)
+
 def new_graph():
-    dy.renew_cg()   # new graph
+    # dy.renew_cg(immediate_compute = True, check_validity = True)   # new graph
+    dy.renew_cg(immediate_compute=DY_CONFIG.immediate_compute)
 
 def new_model():
     return dy.ParameterCollection()
@@ -62,11 +70,25 @@ def param2expr(p, update):
             e = dy.const_parameter(p)
     return e
 
+def forward(expr):
+    expr.forward()
+
+def backward(expr):
+    expr.backward()
+
+def get_value_vec(expr):
+    expr.forward()
+    return expr.vec_value()
+
+def get_value_sca(expr):
+    expr.forward()
+    return expr.scalar_value()
+
 def get_params(model, shape, lookup=False, init="default"):
     if isinstance(init, np.ndarray):    # pass it directly
         arr = init
     else:
-        arr = get_params_init(shape, init)
+        arr = get_params_init(shape, init, lookup)
     if lookup:
         p = model.lookup_parameters_from_numpy(arr)
     else:
@@ -93,16 +115,16 @@ def bsize(expr):
 
 # manipulating the batches #
 
-def batch_rearrange(exprs, orders):
-    if not isinstance(exprs, Iterable):
-        exprs = [exprs]
-    if not isinstance(orders, Iterable):
-        orders = [orders]
-    utils.zcheck_matched_length(exprs, orders, _forced=True)
-    new_ones = []
-    for e, o in zip(exprs, orders):
-        new_ones.append(pick_batch_elems(e, o))
-    return concatenate_to_batch(new_ones)
+# def batch_rearrange(exprs, orders):
+#     if not isinstance(exprs, Iterable):
+#         exprs = [exprs]
+#     if not isinstance(orders, Iterable):
+#         orders = [orders]
+#     utils.zcheck_matched_length(exprs, orders, _forced=True)
+#     new_ones = []
+#     for e, o in zip(exprs, orders):
+#         new_ones.append(pick_batch_elems(e, o))
+#     return concatenate_to_batch(new_ones)
 
 def batch_rearrange_one(e, o):
     return pick_batch_elems(e, o)
@@ -115,7 +137,7 @@ def batch_repeat(expr, num=1):
     else:
         bs = bsize(expr)
         orders = [i//num for i in range(bs*num)]
-        return batch_rearrange(expr, orders)
+        return batch_rearrange_one(expr, orders)
 
 class Trainer(object):
     def __init__(self, model, type, lrate, moment=None):
@@ -125,7 +147,7 @@ class Trainer(object):
                         }[type]
 
     def restart(self):
-        self._tt.restrat()
+        self._tt.restart()
 
     def set_lrate(self, lr):
         self._tt.learning_rate = lr

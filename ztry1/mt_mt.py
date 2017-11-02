@@ -1,3 +1,5 @@
+# focusing on speed
+
 from zl.model import Model
 from zl.trainer import Trainer
 from zl import layers, utils, data
@@ -5,6 +7,35 @@ import numpy
 from zl.layers import BK
 from collections import Iterable
 from . import mt_search, mt_eval
+from zl.search import State, SearchGraph, Action
+from .mt_length import MTLengther
+
+# herlpers
+# data helpers #
+def prepare_data(ys, dict, fix_len=0):
+    # input: list of list of index (bsize, step),
+    # output: padded input (step, bsize), masks (1 for real words, 0 for paddings)
+    bsize, steps = len(ys), max([len(i) for i in ys])
+    if fix_len > 0:
+        steps = fix_len
+    y = [[] for _ in range(steps)]
+    lens = [len(i) for i in ys]
+    eos, padding = dict.eos, dict.pad
+    for s in range(steps):
+        for b in range(bsize):
+            y[s].append(ys[b][s] if s<lens[b] else padding)
+    # check last step
+    for b in range(bsize):
+        if y[-1][b] not in [eos, padding]:
+            y[-1][b] = eos
+    return y, [[(1. if len(one)>s else 0.) for one in ys] for s in range(steps)]
+
+def prepare_y_step(ys, i):
+    _mask = [1. if i<len(_y) else 0. for _y in ys]
+    ystep = [_y[i] if i<len(_y) else 0 for _y in ys]
+    mask_expr = layers.BK.inputVector(_mask)
+    mask_expr = layers.BK.reshape(mask_expr, (1, ), len(ys))
+    return ystep, mask_expr
 
 # An typical example of a model, fixed architecture
 # single s2s: one input(no factors), one output
@@ -28,10 +59,13 @@ class s2sModel(Model):
         self.out1 = layers.AffineNodrop(self.model, opts["hidden_out"], len(target_dict), act="linear")
         #
         # computation values
-        # What is in the cache: S,V/ cov,ctx,att,/ out_hid,/ out_s,results => these are handled/rearranged by the Scorer
-        self.names_bv = {"cov", "ctx", "hid", "out_hid"}
+        # What is in the cache: S,V,summ/ cov,ctx,att,/ out_s,results
+        self.names_bv = {"cov", "ctx", "hid"}
         self.names_bi = {"S", "V", "summ"}
         self.names_ig = {"att", "out_s", "results"}
+        # length
+        self.scaler = MTLengther.get_scaler_f(opts["train_scale_way"], opts["train_scale"])  # for training
+        self.normer = None
         utils.zlog("End of creating Model.")
 
     def refresh(self, training):
@@ -45,25 +79,6 @@ class s2sModel(Model):
         self.out0.refresh({"hdrop":_gd(opts["drop_hidden"])})
         self.out1.refresh({})
 
-    # data helpers #
-    def prepare_data(self, ys, fix_len=0):
-        # input: list of list of index (bsize, step),
-        # output: padded input (step, bsize), masks (1 for real words, 0 for paddings)
-        bsize, steps = len(ys), max([len(i) for i in ys])
-        if fix_len > 0:
-            steps = fix_len
-        y = [[] for _ in range(steps)]
-        lens = [len(i) for i in ys]
-        eos, padding = self.target_dict.eos, self.target_dict.pad
-        for s in range(steps):
-            for b in range(bsize):
-                y[s].append(ys[b][s] if s<lens[b] else padding)
-        # check last step
-        for b in range(bsize):
-            if y[-1][b] not in [eos, padding]:
-                y[-1][b] = eos
-        return y, [[(1. if len(one)>s else 0.) for one in ys] for s in range(steps)]
-
     # helper routines #
     def get_embeddings_step(self, tokens, embed):
         # tokens: list of int or one int, embed: Embedding => one expression (batched)
@@ -73,7 +88,8 @@ class s2sModel(Model):
         return self.get_embeddings_step([self.target_dict.bos for _ in range(bsize)], self.embed_trg)
 
     def get_scores(self, at, hi, ye):
-        output_concat = BK.concatenate([at, hi, ye])
+        real_hi = hi[-1]["H"]
+        output_concat = BK.concatenate([at, real_hi, ye])
         output_hidden = self.out0(output_concat)
         output_score = self.out1(output_hidden)
         return output_score, output_hidden
@@ -94,40 +110,86 @@ class s2sModel(Model):
         return self.dec.feed_one(x_encodes, inputs, hiddens, caches)
 
     # main routines #
-    def start(self, xs, repeat=1):
+    def start(self, xs, repeat=1, softmax=True):
         # encode
         bsize = len(xs)
-        xx, xm = self.prepare_data(xs)
+        xx, xm = prepare_data(xs, self.source_dict)
         x_encodes = self.encode(xx, xm)
         x_encodes = [layers.BK.batch_repeat(one, repeat) for one in x_encodes]
         # init decode
         cache = self.decode_start(x_encodes)
         start_embeds = self.get_start_yembs(bsize)
         output_score, output_hidden = self.get_scores(cache["ctx"], cache["hid"], start_embeds)
-        probs = layers.BK.softmax(output_score)
-        return utils.Helper.combine_dicts(cache, {"out_hid": output_hidden, "out_s": output_score, "results": probs})
+        if softmax:
+            probs = layers.BK.softmax(output_score)
+        else:
+            probs = output_score
+        # return
+        cache["out_s"] = output_score
+        cache["results"] = probs
+        return cache
 
-    def step(self, prev_val, inputs):
+    def step(self, prev_val, inputs, softmax=True):
         x_encodes, hiddens = None, prev_val["hid"]
         next_embeds = self.get_embeddings_step(inputs, self.embed_trg)
-        cache = self.decode_step(x_encodes, inputs, next_embeds, prev_val)
+        cache = self.decode_step(x_encodes, next_embeds, hiddens, prev_val)
         output_score, output_hidden = self.get_scores(cache["ctx"], cache["hid"], next_embeds)
-        probs = layers.BK.softmax(output_score)
-        return utils.Helper.combine_dicts(cache, {"out_hid": output_hidden, "out_s": output_score, "results": probs})
+        if softmax:
+            probs = layers.BK.softmax(output_score)
+        else:
+            probs = output_score
+        # return
+        cache["out_s"] = output_score
+        cache["results"] = probs
+        return cache
 
-    def fb(self, insts, backward):
-        return mt_search.MTSearcher.fb_loss([self], insts, backward)
+    # training
+    def fb(self, insts, training):
+        xs = [i[0] for i in insts]
+        ys = [i[1] for i in insts]
+        Model.new_graph()
+        self.refresh(training)
+        bsize = len(xs)
+        # opens = [State(sg=SearchGraph()) for _ in range(bsize)]     # with only one init state
+        cur_maxlen = max([len(_y) for _y in ys])
+        losses = []
+        caches = []
+        yprev = None
+        for i in range(cur_maxlen):
+            # forward
+            ystep, mask_expr = prepare_y_step(ys, i)
+            if i==0:
+                cc = self.start(xs, softmax=False)
+            else:
+                cc = self.step(caches[-1], yprev, softmax=False)
+            caches.append(cc)
+            yprev = ystep
+            # build loss
+            scores_exprs = cc["out_s"]
+            loss = _mle_loss_step(scores_exprs, ystep, mask_expr)
+            len_scales = layers.BK.inputVector([self.scaler(len(_y)) for _y in ys])
+            len_scales = layers.BK.reshape(len_scales, (1, ), len(ys))
+            loss = loss * len_scales
+            losses.append(loss)
+            # prepare next steps: only following gold
+            # new_opens = [State(prev=ss, action=Action(yy, 0.)) for ss, yy in zip(opens, ystep)]
+            # opens = new_opens
+        # -- final
+        loss = layers.BK.esum(losses)
+        loss = layers.BK.sum_batches(loss) / bsize
+        if training:
+            # layers.BK.forward(loss)
+            layers.BK.backward(loss)
+        # return value?
+        loss_val = layers.BK.get_value_sca(loss)
+        return loss_val*bsize
 
-# ======= about the training of the model
-class ValidResult(object):
-    def __init__(self, scores):
-        if not isinstance(scores, Iterable):
-            scores = [scores]
-        self.scores = scores
+def _mle_loss_step(scores_exprs, ystep, mask_expr):
+    one_loss = layers.BK.pickneglogsoftmax_batch(scores_exprs, ystep)
+    one_loss = one_loss * mask_expr
+    return one_loss
 
-    @property
-    def v(self):
-        return self.scores[0]
+ValidResult = list
 
 class OnceRecorder(object):
     def __init__(self, name):
@@ -140,8 +202,8 @@ class OnceRecorder(object):
 
     def record(self, insts, loss, update):
         self.loss += loss
-        self.sents += len(insts[0])
-        self.words += sum([len(x) for x in insts[0]])     # for src
+        self.sents += len(insts)
+        self.words += sum([len(x[0]) for x in insts])     # for src
         self.updates += update
 
     def reset(self):
@@ -160,8 +222,8 @@ class OnceRecorder(object):
         word_per_second = float(self.words) / one_time
         return ("Recoder <%s>, %.3f(time)/%s(updates)/%.3f(sents)/%.3f(words)/%.3f(sl-loss)/%.3f(w-loss)/%.3f(s-sec)/%.3f(w-sec)" % (self.name, one_time, self.updates, self.sents, self.words, loss_per_sentence, loss_per_word, sent_per_second, word_per_second))
 
-    def report(self):
-        utils.zlog(self.state(), func="info")
+    def report(self, s=""):
+        utils.zlog(s+self.state(), func="info")
 
 class MTTrainer(Trainer):
     def __init__(self, opts, model):
@@ -170,7 +232,7 @@ class MTTrainer(Trainer):
     def _validate_ll(self, dev_iter):
         # log likelihood
         one_recorder = self._get_recorder("VALID-LL")
-        for insts in dev_iter:
+        for insts in dev_iter.arrange_batches():
             loss = self._mm.fb(insts, False)
             one_recorder.record(insts, loss, 0)
         one_recorder.report()
@@ -193,30 +255,8 @@ class MTTrainer(Trainer):
     def _get_recorder(self, name):
         return OnceRecorder(name)
 
-
-# how to take lengths into account
-class MTLengthNormer(object):
-    def __init__(self, alpha, method):
-        if alpha <= 0.:
-            alpha = 0.
-        self.alpha = alpha
-        if alpha <= 0.:
-            self._ff = self.score_none
-        else:
-            self._ff = {"norm":self.score_norm, "google":self.score_google}[method]
-
-    def score_none(self, s):
-        return s.score_sum
-
-    def score_norm(self, s):
-        return s.score_sum / pow(s.length, self.alpha)
-
-    def score_google(self, s):
-        return s.score_sum * pow(6, self.alpha) / pow(5+s.length, self.alpha)
-
-    def __call__(self, ls):
-        for s in ls:
-            s.set_score_final(self._ff(s))
+    def _fb_once(self, insts):
+        return self._mm.fb(insts, True)
 
 def mt_decode(test_iter, mms, target_dict, opts, outf):
     one_recorder = OnceRecorder("DECODE")
@@ -226,18 +266,22 @@ def mt_decode(test_iter, mms, target_dict, opts, outf):
     results = []
     prev_point = 0
     for insts in test_iter.arrange_batches():
-        if opts["verbose"] and (cur_sents - prev_point) >= (opts["report_freq"]):
+        if opts["verbose"] and (cur_sents - prev_point) >= (opts["report_freq"]*test_iter.bsize()):
             utils.zlog("Decoding process: %.2f%%" % (cur_sents / num_sents * 100))
             prev_point = cur_sents
-        cur_sents += len(insts[0])
-        rs = mt_search.MTSearcher.search_beam(mms, MTLengthNormer(opts["normalize"], opts["normalize_way"]), insts, target_dict)
+        cur_sents += len(insts)
+        if opts["beam_size"] == 1:
+            rs = mt_search.search_greedy(mms, insts, target_dict, opts)
+        else:
+            # todo: currently only greedy
+            raise NotImplementedError()
         results += [[int(x) for x in r[0].get_path("action")] for r in rs]
         one_recorder.record(insts, 0, 0)
     # restore from sorting by length
     results = test_iter.restore_order(results)
     with utils.zopen(outf, "w") as f:
         for r in results:
-            best_seq = r[0].get_path("last_action")
+            best_seq = r
             strs = data.Vocab.i2w(target_dict, best_seq)
             f.write(" ".join(strs)+"\n")
     one_recorder.report()

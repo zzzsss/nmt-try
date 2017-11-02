@@ -78,6 +78,27 @@ class Affine(Layer):
             self.params["W"+str(i)] = self._add_params((n_out, din))
         if bias:
             self.params["B"] = self._add_params((n_out,))
+        # prepare inputs
+        self._input_f = None
+
+    def _input_f_obtain(self):
+        # called when refresh
+        if self.bias:
+            input_lists = [self.iparams["B"]]
+        else:
+            input_lists = [BK.zeros(self.n_out)]
+        for i in range(len(self.n_ins)):
+            input_lists += [self.iparams["W"+str(i)], None]
+        # fill in the list
+        def _fill(inputs):
+            for i, one in enumerate(inputs):
+                input_lists[2+2*i] = one
+            return input_lists
+        return _fill
+
+    def refresh(self, argv):
+        self._refresh(argv)
+        self._input_f = self._input_f_obtain()
 
     def __repr__(self):
         return "# Affine (%s -> %s [%s])" % (self.n_ins, self.n_out, self.act)
@@ -85,12 +106,8 @@ class Affine(Layer):
     def __call__(self, input_exp):
         if not isinstance(input_exp, Iterable):
             input_exp = [input_exp]
-        if self.bias:
-            input_lists = [self.iparams["B"]]
-        else:
-            input_lists = [BK.zeros(self.n_out)]
-        for i, one_inp in enumerate(input_exp):
-            input_lists += [self.iparams["W"+str(i)], one_inp]
+        utils.zcheck_matched_length(input_exp, self.n_ins)
+        input_lists = self._input_f(input_exp)
         h0 = BK.affine(input_lists)
         h1 = self._act_ffs(h0)
         if self.hdrop > 0.:
@@ -107,7 +124,7 @@ class AffineNodrop(Affine):
 
     def __call__(self, input_exp):
         self.hdrop = 0.
-        super(AffineNodrop, self).__call__(input_exp)
+        return super(AffineNodrop, self).__call__(input_exp)
 
 # embedding layer
 # [inputs] or input -> (batched) output
@@ -124,9 +141,9 @@ class Embedding(Layer):
         self.dropout_wordceil = dropout_wordceil if dropout_wordceil is not None else n_words
 
     def refresh(self, argv):
-        self._refresh(argv)
+        super(Embedding, self).refresh(argv)
         # zero out (todo: for tr?)
-        self.params["E"].init_row(0, [0. for _ in range(self.n_dim)])
+        self.params["_E"].init_row(0, [0. for _ in range(self.n_dim)])
         # special treatment (todo: for tr?)
         self.iparams["E"] = self.params["_E"]
 
@@ -155,7 +172,7 @@ class RnnNode(Layer):
         self.n_hidden = n_hidden
 
     def refresh(self, argv):
-        self._refresh(argv)
+        super(RnnNode, self).refresh(argv)
         if self.gdrop > 0:   # same masks for all instances in the batch
             # todo(warn): 1. gdrop for both or rec-only? 2. diff gdrop for gates or not? 3. same for batches or not?
             # special gdrops: [inputs+hidden for _ in num_gmasks]
@@ -178,7 +195,7 @@ class RnnNode(Layer):
         mask_array = numpy.asarray(mask).reshape((1, -1))
         m1 = BK.inputTensor(mask_array, True)           # 1.0 for real words
         m0 = BK.inputTensor(1.0 - mask_array, True)     # 1.0 for padding words (mask=0)
-        hiddens = [ho * m1 + hn * m0 for ho, hn in zip(hidden_origins, hidden_news)]
+        hiddens = [ho * m0 + hn * m1 for ho, hn in zip(hidden_origins, hidden_news)]
         return hiddens
 
     @staticmethod
@@ -199,35 +216,62 @@ class GruNode(RnnNode):
         # paramters
         self.split = split
         if split:
-            for i, dim in enumerate(n_inputs):
+            for i, dim in enumerate(self.n_inputs):
                 self.params["x2r_%s"%i] = self._add_params((n_hidden, dim))
             self.params["h2r"] = self._add_params((n_hidden, n_hidden), init="ortho")
             self.params["br"] = self._add_params((n_hidden,))
-            for i, dim in enumerate(n_inputs):
+            for i, dim in enumerate(self.n_inputs):
                 self.params["x2z_%s"%i] = self._add_params((n_hidden, dim))
             self.params["h2z"] = self._add_params((n_hidden, n_hidden), init="ortho")
             self.params["bz"] = self._add_params((n_hidden,))
         else:
-            for i, dim in enumerate(n_inputs):
+            for i, dim in enumerate(self.n_inputs):
                 self.params["x2rz_%s"%i] = self._add_params((2*n_hidden, dim))
             self.params["h2rz"] = self._add_params((2*n_hidden, n_hidden), init="ortho")
             self.params["brz"] = self._add_params((2*n_hidden,))
-        for i, dim in enumerate(n_inputs):
+        for i, dim in enumerate(self.n_inputs):
             self.params["x2h_%s"%i] = self._add_params((n_hidden, dim))
         self.params["h2h"] = self._add_params((n_hidden, n_hidden), init="ortho")
         self.params["bh"] = self._add_params((n_hidden,))
+        # prepare inputs
+        self._input_f = None
 
     def num_gmasks(self):
         return 2
 
-    def __call__(self, input_exp, hidden_exp, mask=None):
-        # tmp one for convenience
-        def _ff_list(s, ins):
+    def _input_f_obtain(self):
+        def _ff_list(s, ):
             r = []
-            for i in self.n_inputs:
+            for i, dim in enumerate(self.n_inputs):
                 r.append(self.iparams["%s_%s"%(s,i)])
-                r.append(ins[i])
+                r.append(None)
             return r
+        # called when refresh
+        if self.split:
+            lists = ([self.iparams["br"], self.iparams["h2r"], None] + _ff_list("x2r"),
+                     [self.iparams["bz"], self.iparams["h2z"], None] + _ff_list("x2z"),
+                     [self.iparams["bh"], self.iparams["h2h"], None] + _ff_list("x2h"))
+        else:
+            lists = ([self.iparams["brz"], self.iparams["h2rz"], None] + _ff_list("x2rz"),
+                     [self.iparams["bh"], self.iparams["h2h"], None] + _ff_list("x2h"))
+        # fill in the list
+        def _fill(hidden_g, inputs_g, hidden_t, inputs_t):
+            lists_g, lists_t = lists[:-1], lists[-1]
+            for i, one in enumerate(lists_g):
+                one[2] = hidden_g
+                for j, inp in enumerate(inputs_g):
+                    one[4+2*j] = inp
+            lists_t[2] = hidden_t
+            for j, inp in enumerate(inputs_t):
+                lists_t[4+2*j] = inp
+            return lists
+        return _fill
+
+    def refresh(self, argv):
+        super(GruNode, self).refresh(argv)
+        self._input_f = self._input_f_obtain()
+
+    def __call__(self, input_exp, hidden_exp, mask=None):
         # two kinds of dropouts
         if not isinstance(input_exp, Iterable):
             input_exp = [input_exp]
@@ -240,17 +284,20 @@ class GruNode(RnnNode):
             hidden_exp_g = BK.cmult(hidden_exp_g, self.gmasks[0][-1])
             input_exp_t = [BK.cmult(one, dd) for one, dd in zip(input_exp_t, self.gmasks[1][:-1])]
             hidden_exp_t = BK.cmult(hidden_exp_t, self.gmasks[1][-1])
+        # lists
+        input_lists = self._input_f(hidden_exp_g, input_exp_g, hidden_exp_t, input_exp_t)
         if self.split:
-            rt = BK.affine([self.iparams["br"], self.iparams["h2r"], hidden_exp_g] + _ff_list("x2r", input_exp_g))
+            rt = BK.affine(input_lists[0])
             rt = BK.logistic(rt)
-            zt = BK.affine([self.iparams["bz"], self.iparams["h2z"], hidden_exp_g] + _ff_list("x2z", input_exp_g))
+            zt = BK.affine(input_lists[1])
             zt = BK.logistic(zt)
         else:
-            rzt = BK.affine([self.iparams["brz"], self.iparams["h2rz"], hidden_exp_g] + _ff_list("x2rz", input_exp_g))
+            rzt = BK.affine(input_lists[0])
             rzt = BK.logistic(rzt)
             rt, zt = BK.pick_range(rzt, 0, self.n_hidden), BK.pick_range(rzt, self.n_hidden, 2*self.n_hidden)
         h_reset = BK.cmult(rt, hidden_exp_t)
-        ht = BK.affine([self.iparams["bh"], self.iparams["h2h"], h_reset] + _ff_list("x2h", input_exp_t))
+        input_lists[-1][2] = h_reset    # todo(warn): refill new input
+        ht = BK.affine(input_lists[-1])
         ht = BK.tanh(ht)
         hidden = BK.cmult(zt, hidden_exp["H"]) + BK.cmult((1. - zt), ht)     # first one use original hh
         if mask is not None:
@@ -259,26 +306,27 @@ class GruNode(RnnNode):
 
 class LstmNode(RnnNode):
     def __init__(self, model, n_input, n_hidden):
+        pass
         super(LstmNode, self).__init__(model, n_input, n_hidden)
-        # paramters
-        self.params["xw"] = self._add_params((n_hidden*4, n_input))
-        self.params["hw"] = self._add_params((n_hidden*4, n_hidden), init="ortho")
-        self.params["b"] = self._add_params((n_hidden*4,))
-
-    def __call__(self, input_exp, hidden_exp, mask=None):
-        # two kinds of dropouts
-        if not isinstance(input_exp, Iterable):
-            input_exp = [input_exp]
-        if self.idrop > 0.:
-            input_exp = [BK.dropout(one, self.idrop) for one in input_exp]
-        if self.gdrop > 0.:     # todo(warn): only use 2 masks and only one input
-            hidden, cc = BK.vanilla_lstm(input_exp, hidden_exp["H"], hidden_exp["C"], self.iparams["xw"], self.iparams["hw"], self.iparams["b"], self.gmasks[0][0], self.gmasks[0][-1])
-        else:
-            hidden, cc = BK.vanilla_lstm(input_exp, hidden_exp["H"], hidden_exp["C"], self.iparams["xw"], self.iparams["hw"], self.iparams["b"], None, None)
-        # mask: if 0 then pass through
-        if mask is not None:
-            hidden, cc = self._pass_mask([hidden_exp["H"], hidden_exp["C"]], [hidden, cc], mask)
-        return {"H": hidden, "C": cc}
+    #     # paramters
+    #     self.params["xw"] = self._add_params((n_hidden*4, n_input))
+    #     self.params["hw"] = self._add_params((n_hidden*4, n_hidden), init="ortho")
+    #     self.params["b"] = self._add_params((n_hidden*4,))
+    #
+    # def __call__(self, input_exp, hidden_exp, mask=None):
+    #     # two kinds of dropouts
+    #     if not isinstance(input_exp, Iterable):
+    #         input_exp = [input_exp]
+    #     if self.idrop > 0.:
+    #         input_exp = [BK.dropout(one, self.idrop) for one in input_exp]
+    #     if self.gdrop > 0.:     # todo(warn): only use 2 masks and only one input
+    #         hidden, cc = BK.vanilla_lstm(input_exp, hidden_exp["H"], hidden_exp["C"], self.iparams["xw"], self.iparams["hw"], self.iparams["b"], self.gmasks[0][0], self.gmasks[0][-1])
+    #     else:
+    #         hidden, cc = BK.vanilla_lstm(input_exp, hidden_exp["H"], hidden_exp["C"], self.iparams["xw"], self.iparams["hw"], self.iparams["b"], None, None)
+    #     # mask: if 0 then pass through
+    #     if mask is not None:
+    #         hidden, cc = self._pass_mask([hidden_exp["H"], hidden_exp["C"]], [hidden, cc], mask)
+    #     return {"H": hidden, "C": cc}
 
 # stateless attender
 # [srcs] + target + caches -> {ctx, att}
@@ -298,6 +346,7 @@ class Attention(Layer):
 
     def prepare_cache(self, s, caches):
         # prepare some pre-computed values to make it efficient
+        # todo(warn): cache renew once from here !!
         if caches is None:
             caches = {}
         new_one = {}
@@ -367,7 +416,7 @@ class FfAttention(Attention):
     def __call__(self, s, n, caches):
         # s: list(len==steps) of {(n_s,), batch_size}, n: {(n_h,), batch_size}, s could be None for later steps
         caches = self.prepare_cache(s, caches)
-        val_h = BK.affine(self.iparams["be"], self.iparams["h2e"], n)     # {(n_hidden,), batch_size}
+        val_h = BK.affine([self.iparams["be"], self.iparams["h2e"], n])     # {(n_hidden,), batch_size}
         att_hidden_bef = BK.colwise_add(caches["V"], val_h)    # {(n_hidden, steps), batch_size}
         att_hidden = BK.tanh(att_hidden_bef)
         if self.has_cov():
@@ -380,7 +429,10 @@ class FfAttention(Attention):
         ctx = caches["S"] * att_alpha      # {(n_s, sent_len), batch_size}
         if self.has_cov():
             caches["cov"] = self.update_cov(att_alpha, caches["S"], n, caches["cov"])
-        return {"ctx": ctx, "att": att_alpha}, caches
+        # return
+        caches["ctx"] = ctx
+        caches["att"] = att_alpha
+        return caches
 
 class BiaffAttention(Attention):
     def __init__(self, model, n_src, n_trg, n_hidden, n_cov=0):
@@ -407,7 +459,10 @@ class BiaffAttention(Attention):
         ctx = caches["S"] * att_alpha
         if self.has_cov():
             caches["cov"] = self.update_cov(att_alpha, caches["S"], n, caches["cov"])
-        return {"ctx": ctx, "att": att_alpha}, caches
+        # return
+        caches["ctx"] = ctx
+        caches["att"] = att_alpha
+        return caches
 
 # ================= Blocks ================= #
 # stateless encoder
@@ -503,16 +558,22 @@ class Decoder(object):
             cur_init = self.inodes[i](summ)
             # +1 for the init state
             inits.append({"H": cur_init, "C": BK.zeros((self.n_hidden,), batch_size=BK.bsize(cur_init))})
-        att_res, att_caches = self.anode(ss, inits[0]["H"], None)          # start of the attention
-        return utils.Helper.combine_dicts(att_res, att_caches, {"hid": inits, "summ": summ})
+        caches = self.anode(ss, inits[0]["H"], None)          # start of the attention
+        # return
+        caches["hid"] = inits
+        caches["summ"] = summ
+        return caches
 
-    def feed_one(self, ss, inputs, hiddens, att_caches):
+    def feed_one(self, ss, inputs, hiddens, caches):
         # input ones
         if not isinstance(inputs, Iterable):
             inputs = [inputs]
         # check batch-size, todo
         # caches are only for attentions
-        return self._feed_one(ss, inputs, hiddens, att_caches)
+        next_caches = self._feed_one(ss, inputs, hiddens, caches)
+        # return
+        next_caches["summ"] = caches["summ"]
+        return next_caches
 
     def _feed_one(self, ss, inputs, hiddens, caches):
         # [src], [inputs], [hiddens], caches -> {ctx, att, hid}, {<ATT-caches>}
@@ -529,16 +590,18 @@ class AttDecoder(Decoder):
         for gnod in self.gnodes:
             self.all_nodes.append(gnod)
 
-    def _feed_one(self, ss, inputs, hiddens, att_caches):
+    def _feed_one(self, ss, inputs, hiddens, caches):
         # first layer with attetion
-        att_res, att_caches = self.anode(ss, hiddens[0]["H"], att_caches)
-        hidd = self.gnodes[0](inputs+[att_res["ctx"]], hiddens[0])
+        next_caches = self.anode(ss, hiddens[0]["H"], caches)
+        hidd = self.gnodes[0](inputs+[next_caches["ctx"]], hiddens[0])
         this_hiddens = [hidd]
         # later layers
         for i in range(1, self.n_layers):
             ihidd = self.gnodes[i](this_hiddens[i-1]["H"], hiddens[i])
             this_hiddens.append(ihidd)
-        return utils.Helper.combine_dicts(att_res, att_caches, {"hid": this_hiddens})
+        # return
+        next_caches["hid"] = this_hiddens
+        return next_caches
 
 # nematus-style attention decoder, fixed two transitions
 class NematusDecoder(Decoder):
@@ -552,14 +615,46 @@ class NematusDecoder(Decoder):
         for gnod in self.gnodes:
             self.all_nodes.append(gnod)
 
-    def _feed_one(self, ss, inputs, hiddens, att_caches):
+    def _feed_one(self, ss, inputs, hiddens, caches):
         # first layer with attetion, gru1 -> att -> gru2
         s1 = self.gnodes[0](inputs, hiddens[0])
-        att_res, att_caches = self.anode(ss, s1["H"], att_caches)
-        hidd = self.gnodes[-1](att_res["ctx"], s1)
+        next_caches = self.anode(ss, s1["H"], caches)
+        hidd = self.gnodes[-1](next_caches["ctx"], s1)
         this_hiddens = [hidd]
         # later layers
         for i in range(1, self.n_layers):
             ihidd = self.gnodes[i](this_hiddens[i-1]["H"], hiddens[i])
             this_hiddens.append(ihidd)
-        return utils.Helper.combine_dicts(att_res, att_caches, {"hid": this_hiddens})
+        # return
+        next_caches["hid"] = this_hiddens
+        return next_caches
+
+# re-arrange caches (recursive)
+def rearrange_cache(cache, order):
+    if isinstance(cache, dict):
+        ret = {}
+        for n in cache:
+            ret[n] = rearrange_cache(cache[n], order)
+        return ret
+    elif isinstance(cache, list):
+        return [rearrange_cache(_i, order) for _i in cache]
+    elif isinstance(cache, type(None)):
+        return None
+    else:
+        return BK.batch_rearrange_one(cache, order)
+
+def concate_cache(ll):
+    # ensure len(ll) > 0
+    utils.zcheck(len(ll)>0, "cannot concat empty lists!")
+    if isinstance(ll[0], dict):
+        ret = {}
+        for n in ll[0]:
+            ret[n] = concate_cache([one[n] for one in ll])
+        return ret
+    elif isinstance(ll[0], list):
+        length = len(ll[0])
+        return [concate_cache([one[_i] for one in ll]) for _i in range(length)]
+    elif isinstance(ll[0], type(None)):
+        return None
+    else:
+        return BK.concatenate_to_batch(ll)

@@ -18,6 +18,10 @@ class Model(object):
     def new_graph():
         layers.BK.new_graph()
 
+    def get_pc(self):
+        # return the real model, only used for Trainer
+        return self.model
+
     def refresh(self, training):
         # should be called after a new graph and before building the graph
         # default: ingraph=True, update=True

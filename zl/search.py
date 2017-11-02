@@ -1,7 +1,8 @@
 # !! maybe the most important module, the searching/decoding part
 # used for both testing and training
 
-from collections import defaultdict
+from collections import defaultdict, Iterable
+import numpy as np
 from . import utils
 
 # the searching graph (tracking the relations between states)
@@ -15,6 +16,20 @@ class SearchGraph(object):
             self.ch_recs[state.prev.id].append(state)
         else:
             self.root = state
+
+    def childs(self, state):
+        return self.ch_recs[state.id]
+
+    def bfs(self):
+        ret = []
+        currents = [self.root]
+        while len(currents) > 0:
+            ret.append(currents)
+            nexts = []
+            for one in currents:
+                nexts += self.childs(one)
+            currents = nexts
+        return ret
 
 # the states in the searching graph (should be kept small)
 class State(object):
@@ -38,7 +53,7 @@ class State(object):
         self._score_final = None
         self._score_partial = 0
         if prev is not None:
-            self.length += prev.length
+            self.length = prev.length + 1
             self._score_partial = action.score + prev._score_partial
             self.sg = prev.sg
         self.id = State._get_id()   # should be enough within python's int range
@@ -47,6 +62,12 @@ class State(object):
 
     # for convenience, leave these out
     # @property: action, prev, id, length
+
+    def __repr__(self):
+        return "(%s/%d/%.3f)" % (self.action, self.length, self.score_all)
+
+    def __str__(self):
+        return self.__repr__()
 
     @property
     def score_partial(self):
@@ -98,6 +119,12 @@ class Action(object):
         self.score = score
         self.values = kwargs
 
+    def __repr__(self):
+        return "[%s/%.3f/%s]" % (self.action_code, self.score, self.values)
+
+    def __str__(self):
+        return self.__repr__()
+
     def __int__(self):
         return self.action_code
 
@@ -109,7 +136,26 @@ class Scorer(object):
 
 # results of one step of calculation, including the scores
 class Results(object):
-    pass
+    def __init__(self, data, ls, lastd):
+        # ls could be int(ls*lastd) or list-of-int(sum(ls)*lastd)
+        self._data = data
+        self._ls = ls
+        self._d = lastd
+
+    def __getitem__(self, item):
+        if self._ls is None:
+            return self._data[self._start+item]
+        else:
+            return self._ls[item]
+
+    def __setitem__(self, key, value):
+        raise NotImplementedError("Don't need to do this?")
+
+    def argmax(self, n=1):
+        utils.zcheck(self._ls is None, "only argmax on smallest one")
+        thres = max(-self._d, -n)
+        ids = np.argpartition(self._data[self._start: self._start+self._d], thres)[thres:]
+        return [int(i) for i in ids]
 
 # state + actions (to be scored, not fully expanded)
 class StateCands(object):
