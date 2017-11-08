@@ -10,16 +10,16 @@ def main():
     # 1. data
     source_dict, target_dict = Vocab.read(opts["dicts"][0]), Vocab.read(opts["dicts"][1])
     # -- here no need for test[1], but for convenience ...
-    test_iter = get_arranger(opts["test"], [source_dict, target_dict], shuffling_corpus=False, shuflling_buckets=False, sort_prior=[0], batch_size=opts["test_batch_size"], maxibatch_size=-1, max_len=utils.Constants.MAX_V, min_len=0, one_len=opts["max_len"])
+    test_iter = get_arranger(opts["test"], [source_dict, target_dict], shuffling_corpus=False, shuflling_buckets=False, sort_prior=[0], batch_size=opts["test_batch_size"], maxibatch_size=-1, max_len=utils.Constants.MAX_V, min_len=0, one_len=opts["max_len"]+1)
     # 2. model
     mm = []
     for mn in opts["models"]:
-        x = s2sModel(opts, source_dict, target_dict)     # rebuild from opts, thus use the same opts when testing
+        x = s2sModel(opts, source_dict, target_dict, None)     # rebuild from opts, thus use the same opts when testing
         x.load(mn)
         mm.append(x)
     if len(mm) == 0:
         utils.zlog("No models specified, must be testing mode?", func="warn")
-        mm.append(s2sModel(opts, source_dict, target_dict))      # no loading, only for testing
+        mm.append(s2sModel(opts, source_dict, target_dict, None))      # no loading, only for testing
     # 3. decode
     utils.zlog("=== Start to decode ===", func="info")
     with utils.Timer(tag="Decoding", print_date=True):

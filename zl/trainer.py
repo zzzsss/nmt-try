@@ -128,7 +128,10 @@ class Trainer(object):
         return self._tp.estop or self._tp.eidx >= self.opts["max_epochs"] \
                 or self._tp.uidx >= self.opts["max_updates"]
 
-    def _update(self):
+    def _update_before(self):
+        self._mm.update_schedule(self._tp.uidx)
+
+    def _update_after(self):
         self.trainer.update()
         self._tp.uidx += 1
 
@@ -176,8 +179,9 @@ class Trainer(object):
                     if utils.Random.rand([1], "skipping") < self.opts["rand_skip"]:     # introduce certain randomness
                         continue
                     # training for one batch
+                    self._update_before()
                     loss = self._fb_once(insts)
-                    self._update()
+                    self._update_after()
                     one_recorder.record(insts, loss, 1)
                     iter_recorder.record(insts, loss, 1)
                     if self.opts["debug"] and self.opts["verbose"]:

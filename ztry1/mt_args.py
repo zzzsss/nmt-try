@@ -71,8 +71,8 @@ def init(phase):
                          help="attention hidden layer size (default: %(default)s)")
     network.add_argument('--hidden_out', type=int, default=500, metavar='INT',
                          help="output hidden layer size (default: %(default)s)")
-    network.add_argument('--dim_cov', type=int, default=0, metavar='INT',
-                         help="dimension for coverage in att (default: %(default)s)")
+    # network.add_argument('--dim_cov', type=int, default=0, metavar='INT',
+    #                      help="dimension for coverage in att (default: %(default)s)")
     network.add_argument('--enc_depth', type=int, default=1, metavar='INT',
                          help="number of encoder layers (default: %(default)s)")
     network.add_argument('--dec_depth', type=int, default=1, metavar='INT',         # only the first is with att
@@ -128,7 +128,7 @@ def init(phase):
     validation = parser.add_argument_group('validation parameters')
     validation.add_argument('--valid_freq', type=int, default=10000, metavar='INT',
                          help="validation frequency (default: %(default)s)")
-    training.add_argument('--valid_batch_size', '--valid_batch_width', type=int, default=8, metavar='INT',
+    validation.add_argument('--valid_batch_size', '--valid_batch_width', type=int, default=8, metavar='INT',
                          help="validating minibatch-size (default: %(default)s)")
     validation.add_argument('--patience', type=int, default=5, metavar='INT',
                          help="early stopping patience (default: %(default)s)")
@@ -140,7 +140,7 @@ def init(phase):
                          help="don't recovery to previous best point (discard some training) when anneal")
     validation.add_argument('--anneal_decay', type=float, default=0.5, metavar='FLOAT',
                          help="learning rate decay on each restart (default: %(default)s)")
-    validation.add_argument('--valid_metrics', type=str, default="bleu,ll",
+    validation.add_argument('--valid_metrics', type=str, default="bleu,ll,len",
                          help="type of metric for validation (separated by ',') (default: %(default)s)")
     validation.add_argument('--validate_epoch', action='store_true',
                              help="validate at the end of each epoch")
@@ -159,18 +159,18 @@ def init(phase):
     common.add_argument('--report_freq', type=int, default=800, metavar='INT',
                          help="report frequency (number of instances / only when verbose) (default: %(default)s)")
 
-    # decode (for validation or maybe certain training procedure)
+    # decode (also for BLEU validation, training with other params)
     decode = parser.add_argument_group('decode')
     # decode.add_argument('--decode_type', '--decode_mode', type=str, default="decode", choices=["decode", "decode_gold", "test1", "test2", "loop"],
     #                      help="type/mode of testing (decode, test, loop)")
     # decode.add_argument('--decode_way', type=str, default="beam", choices=["beam", "sample"],
     #                      help="decoding method (default: %(default)s)")
     decode.add_argument('--beam_size', '-k', type=int, default=10, help="Beam size (default: %(default)s))")
-    # todo: additive, gaussian
-    decode.add_argument('--normalize', '-n', type=float, default=0.0, metavar="ALPHA",
-                         help="Normalize scores by sentence length (exponentiate lengths by ALPHA, neg means nope)")
-    decode.add_argument('--normalize_way', type=str, default="norm", choices=["norm", "google", "gaussian", "xgaussian"],
-                         help="how to norm length (default: %(default)s)")
+    # # todo: additive, gaussian
+    # decode.add_argument('--normalize', '-n', type=float, default=0.0, metavar="ALPHA",
+    #                      help="Normalize scores by sentence length (exponentiate lengths by ALPHA, neg means nope)")
+    # decode.add_argument('--normalize_way', type=str, default="norm", choices=["norm", "google", "gaussian", "xgaussian"],
+    #                      help="how to norm length (default: %(default)s)")
     decode.add_argument('--decode_len', type=int, default=80, metavar='INT',
                          help="maximum decoding sequence length (default: %(default)s)")
     # decode.add_argument('--decode_ratio', type=float, default=10.,
@@ -180,16 +180,28 @@ def init(phase):
     decode.add_argument('--test_batch_size', type=int, default=8, metavar='INT',
                          help="testing minibatch-size(default: %(default)s)")
 
-    # extra: for training
+    # extra: for advanced training
     training2 = parser.add_argument_group('training parameters section2')
     # scale original loss function for training
     training2.add_argument('--train_scale', type=float, default=0.0, metavar="ALPHA",
                          help="(train2) Scale scores by sentence length (exponentiate lengths by ALPHA, neg means nope)")
-    training2.add_argument('--train_scale_way', type=str, default="norm", choices=["norm", "google"],
+    training2.add_argument('--train_scale_way', type=str, default="none", choices=["none", "norm", "google"],
                          help="(train2) how to norm length with score scales (default: %(default)s)")
     # length fitting for training
+    training2.add_argument('--train_len_uidx', type=int, default=1000000,
+                         help="start to fit len after this updates (default: %(default)s)")
+    training2.add_argument('--train_len_xadd', action='store_true', help="adding xsrc for length fitting")
+    training2.add_argument('--train_len_xback', action='store_true', help="backprop of xsrc for length fitting")
 
-
+    # extra: for advanced decoding
+    decode2 = parser.add_argument_group('decoding parameters section2')
+    # -- norm
+    # todo(warn): have to be cautious about parameters, some model specification is also needed to construct model for decoding)
+    # todo(warn): only using the first model if using gaussian
+    decode2.add_argument('--normalize_way', type=str, default="none", choices=["none", "norm", "google", "add", "gaussian", "xgaussian"],
+                         help="how to norm length (default: %(default)s)")
+    decode2.add_argument('--normalize_alpha', '-n', type=float, default=0.0, metavar="ALPHA",
+                         help="Normalize scores by sentence length or lambda for gaussian.")
     a = parser.parse_args()
 
     # check options and some processing
@@ -210,7 +222,10 @@ def check_options(args):
             if args[n0] is None:
                 args[n0] = args[n1]
     # validation
-    VALID_OPTIONS = ["ll", "bleu"]
+    VALID_OPTIONS = ["ll", "bleu", "len"]
     s = args["valid_metrics"].split(",")
     assert all([one in VALID_OPTIONS for one in s])
     args["valid_metrics"] = s
+    # about length
+    if args["normalize_way"] == "xgaussian":
+        assert args["train_len_xadd"]

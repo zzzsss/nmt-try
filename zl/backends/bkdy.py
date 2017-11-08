@@ -22,21 +22,26 @@ def init(opts):
 affine = dy.affine_transform
 average = concat_wrapper(dy.average)
 cmult = dy.cmult
+cdiv = dy.cdiv
 colwise_add = dy.colwise_add
 concatenate = concat_wrapper(dy.concatenate)
 concatenate_cols = concat_wrapper(dy.concatenate_cols)
 concatenate_to_batch = concat_wrapper(dy.concatenate_to_batch)
 dropout = dy.dropout
 esum = dy.esum
+log = dy.log
 inputTensor = dy.inputTensor
 inputVector = dy.inputVector
 logistic = dy.logistic
 lookup_batch = dy.lookup_batch
+mean_batches = dy.mean_batches
+nobackprop = dy.nobackprop
 pickneglogsoftmax_batch = dy.pickneglogsoftmax_batch
 pick_batch_elems = dy.pick_batch_elems
 pick_range = dy.pick_range
 reshape = dy.reshape
 softmax = dy.softmax
+square = dy.square
 sum_batches = dy.sum_batches
 tanh = dy.tanh
 transpose = dy.transpose
@@ -69,6 +74,9 @@ def param2expr(p, update):
         else:
             e = dy.const_parameter(p)
     return e
+
+def param2np(p):
+    return p.as_array()
 
 def forward(expr):
     expr.forward()
@@ -165,3 +173,16 @@ class Trainer(object):
 
     def update(self):
         self._tt.update()
+
+def rearrange_cache(cache, order):
+    if isinstance(cache, dict):
+        ret = {}
+        for n in cache:
+            ret[n] = rearrange_cache(cache[n], order)
+        return ret
+    elif isinstance(cache, list):
+        return [rearrange_cache(_i, order) for _i in cache]
+    elif isinstance(cache, type(None)):
+        return None
+    else:
+        return batch_rearrange_one(cache, order)

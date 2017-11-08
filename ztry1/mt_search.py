@@ -1,17 +1,21 @@
 # first write a full process for standard beam-decoding, then use it as a template to see how to re-factor
 
 # the main searching processes
-from zl.search import State, Action, Searcher, SearchGraph, Results, Scorer
+from zl.search import State, Action, SearchGraph
 from zl.model import Model
-from zl import utils, layers
-from collections import Iterable
-import numpy
+from zl import utils, data
+from . import mt_layers as layers
+import numpy as np
 
 MTState = State
 MTAction = Action
 
+def search_init():
+    State.reset_id()
+
 # a padding version of greedy search
-def search_greedy(models, insts, target_dict, opts):
+# todo(warn) normer is not used when greedy decoding
+def search_greedy(models, insts, target_dict, opts, normer):
     xs = [i[0] for i in insts]
     Model.new_graph()
     for _m in models:
@@ -42,7 +46,7 @@ def search_greedy(models, insts, target_dict, opts):
                 next_y = eos_id
                 if not force_end:
                     next_y = int(rr.argmax())
-                score = rr[next_y]
+                score = np.log(rr[next_y])
                 # check eos
                 if next_y == eos_id:
                     ends[j] = State(prev=opens[j], action=Action(next_y, score))
@@ -56,76 +60,135 @@ def search_greedy(models, insts, target_dict, opts):
     # return them
     return [[s] for s in ends]
 
-# class MTSearcher(Searcher):
-#     # todo: with several pruning and length checking
-#     @staticmethod
-#     def search_beam(models, insts, target_dict, opts):
-#         # input: scorer, list of instances
-#         xs = [i[0] for i in insts]
-#         # ys = [i[1] for i in insts]
-#         sc = MTScorer(models, False)
-#         # init the search
-#         bsize = len(xs)
-#         opens = [[MTState(sg=SearchGraph())] for _ in range(bsize)]     # with only one init state
-#         ends = [[] for _ in range(bsize)]
-#         # search for them
-#         esize_all = opts["beam_size"]
-#         esize_one = opts["beam_size"]
-#         eos_code = target_dict.eos
-#         decode_maxlen = opts["decode_len"]
-#         still_going = False
-#         for _ in range(decode_maxlen):
-#             # expand and generate cands
-#             sc.calc_step(opens, xs)
-#             results = sc.get_result_values(opens, ["results"])[0]    # list of list of list of scores
-#             next_opens = []
-#             still_going = False
-#             for j in range(bsize):
-#                 one_inst, one_end, one_res = opens[j], ends[j], results[j]
-#                 # for one instance
-#                 extended_candidates = []
-#                 # pruning locally
-#                 for i in range(len(one_inst)):
-#                     one_state, one_score = one_inst[i], one_res[i]
-#                     top_cands = one_score.argmax(esize_one)
-#                     for cand_action in top_cands:
-#                         code = int(cand_action)
-#                         prob = one_score[code]
-#                         next_one = MTState(prev=one_state, action=MTAction(code, numpy.log(prob), prob=prob))
-#                         extended_candidates.append(next_one)
-#                 # sort globally
-#                 best_cands = sorted(extended_candidates, key=lambda x: x.score_partial, reverse=True)[:esize_all]
-#                 # pruning globally & set up
-#                 # todo(warn): decrease beam size here
-#                 next_opens_one = []
-#                 cap = max(0, esize_all-len(one_end))
-#                 for j in range(cap):
-#                     one_cand = best_cands[j]
-#                     if int(one_cand.action) == eos_code:
-#                         one_cand.mark_end()
-#                         one_end.append(one_cand)
-#                     else:
-#                         next_opens_one.append(one_cand)
-#                 next_opens.append(next_opens_one)
-#                 cap = max(0, esize_all-len(one_end))
-#                 still_going = still_going or (cap>0)
-#             opens = next_opens
-#             if not still_going:
-#                 break
-#         # finish up the un-finished (maybe +1 step)
-#         if still_going:
-#             sc.calc_step(opens, xs)
-#             results = sc.get_result_values(opens, ["results"])[0]
-#             for j in range(bsize):
-#                 one_inst, one_end, one_res = opens[j], ends[j], results[j]
-#                 for i in range(len(one_inst)):
-#                     one_state, one_score = one_inst[i], one_res[i]
-#                     code = eos_code
-#                     prob = one_score[code]
-#                     finished_one = MTState(prev=one_state, action=MTAction(code, numpy.log(prob), prob=prob))
-#                     finished_one.mark_end()
-#                     one_end.append(finished_one)
-#         # re-ranking to the final ones
-#         # todo: length normer: to final_score
-#         final_list = [sorted(beam, key=lambda x: x.score_partial, reverse=True) for beam in ends]
-#         return final_list
+def nargmax(v, n):
+    # return UNORDERED list of (id, value)
+    thres = max(-len(v), -n)
+    ids = np.argpartition(v, thres)[thres:]
+    return [int(i) for i in ids]
+
+class BatchedHelper(object):
+    def __init__(self, opens):
+        # opens is list of list
+        self.bsize = None
+        self.shapes = None
+        self.bases = None
+        self._build(opens)
+
+    def _build(self, opens):
+        b = [0]
+        for ss in opens:
+            b.append(b[-1]+len(ss))
+        self.bsize = len(opens)
+        self.shapes = [len(one) for one in opens]
+        self.bases = b
+
+    def get_basis(self, i):
+        return self.bases[i]
+
+    def rerange(self, nexts):
+        # nexts is list of list of (prev-idx, next_token), return orders, next_ys
+        utils.zcheck_matched_length(nexts, self.shapes)
+        bv_orders = []
+        new_ys = []
+        break_bv, break_bi = False, False
+        for i in range(len(nexts)):
+            nns = nexts[i]
+            bas = self.bases[i]
+            if len(nns) != self.shapes[i]:
+                break_bi = True
+            for one in nns:
+                j = one[0]
+                if (len(bv_orders)==0 and bas+j!=0) or (len(bv_orders)>0 and bas+j-1!=bv_orders[-1]):
+                    break_bv = True
+                bv_orders.append(bas+j)
+                new_ys.append(one[1])
+        if len(bv_orders) != self.bases[-1]:
+            break_bv, break_bi = True, True
+        # rebuild
+        self._build(nexts)
+        # return
+        if break_bi:
+            return bv_orders, bv_orders, new_ys
+        elif break_bv:
+            return bv_orders, None, new_ys
+        else:
+            return None, None, new_ys
+
+def search_beam(models, insts, target_dict, opts, normer):
+    xs = [i[0] for i in insts]
+    Model.new_graph()
+    for _m in models:
+        _m.refresh(False)
+    bsize = len(xs)
+    esize_all = opts["beam_size"]
+    esize_one = opts["beam_size"]
+    decode_maxlen = opts["decode_len"]
+    remain_sizes = [esize_all for _ in range(bsize)]
+    opens = [[State(sg=SearchGraph())] for _ in range(bsize)]
+    ends = [[] for _ in range(bsize)]
+    bh = BatchedHelper(opens)
+    caches = []
+    eos_id = target_dict.eos
+    yprev = None
+    for step in range(decode_maxlen+1):
+        one_cache = []
+        if step==0:
+            for mi, _m in enumerate(models):
+                cc = _m.start(xs)
+                one_cache.append(cc)
+            # todo(warn) init normer and pruner here!! (after the first step)
+            # todo(warn) only using the first model
+            pred_lens = models[0].predict_length(insts, cc=one_cache[0])     # (#insts, ) of real lengths
+        else:
+            for mi, _m in enumerate(models):
+                cc = _m.step(caches[-1][mi], yprev)
+                one_cache.append(cc)
+        # select cands
+        results = layers.BK.average([one["results"] for one in one_cache])
+        results_v0 = results.npvalue()
+        results_v = results_v0.reshape(layers.BK.dims(results)[0], layers.BK.bsize(results)).T
+        nexts = []
+        force_end = step >= decode_maxlen
+        for i in range(bsize):
+            # for each one in the batch
+            r_start = bh.get_basis(i)
+            prev_states = opens[i]
+            cur_cands = []
+            for j, one in enumerate(prev_states):
+                # for each one in the beam of one instance
+                one_result = results_v[r_start+j]
+                # todo(warn): force end for the last step
+                one_cands = [eos_id] if force_end else nargmax(one_result, esize_one)
+                for idx in one_cands:
+                    # todo(warn): (prev-inner_dix)
+                    cur_cands.append((j, State(prev=prev_states[j], action=Action(idx, np.log(one_result[idx])))))
+            # sorting them all
+            cur_cands.sort(key=(lambda x: x[-1].score_partial), reverse=True)
+            # append the next cands
+            cur_cands = cur_cands[:remain_sizes[i]]
+            # prepare for next steps
+            cur_nexts = []
+            opens[i] = []
+            for prev_inner_idx, new_state in cur_cands:
+                action_id = new_state.action_code
+                if action_id == eos_id:
+                    ends[i].append(new_state)
+                    new_state.mark_end()
+                    remain_sizes[i] -= 1
+                else:
+                    opens[i].append(new_state)
+                    cur_nexts.append((prev_inner_idx, action_id))
+            nexts.append(cur_nexts)
+        # re-arrange for next step if not ending
+        if sum(remain_sizes) <= 0:
+            break
+        bv_orders, bi_orders, new_ys = bh.rerange(nexts)
+        new_caches = [_m.rerange(_c, bv_orders, bi_orders) for _c, _m in zip(one_cache, models)]
+        caches.append(new_caches)
+        yprev = new_ys
+    # final re-ranking
+    normer(ends, pred_lens)
+    final_list = [sorted(beam, key=lambda x: x.score_partial, reverse=True) for beam in ends]
+    # data.Vocab.i2w(target_dict, final_list[0][0])
+    # final_list[0][0].sg.print_graph(target_dict)
+    return final_list
