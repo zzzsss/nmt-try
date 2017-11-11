@@ -35,7 +35,7 @@ def init(phase):
                              help="don't write all models to same file")
     elif phase == "test":
         # data, dictionary, model
-        data.add_argument('--test', '-t', type=str, required=True, metavar='PATH', nargs=2,
+        data.add_argument('--test', '-t', type=str, required=True, metavar='PATH', nargs="+",
                              help="parallel testing corpus (source and target)")
         data.add_argument('--output', '-o', type=str, default='output.txt', metavar='PATH', help="output target corpus")
         # data.add_argument('--gold', type=str, metavar='PATH', help="gold target corpus (for eval)") # test[1]
@@ -112,7 +112,7 @@ def init(phase):
                          help="randomly skip batches for training (default: %(default)s)")
     training.add_argument('--max_epochs', type=int, default=100, metavar='INT',
                          help="maximum number of epochs (default: %(default)s)")
-    training.add_argument('--max_updates', type=int, default=1000000, metavar='INT',
+    training.add_argument('--max_updates', type=int, default=500000, metavar='INT',
                          help="maximum number of updates (minibatches) (default: %(default)s)")
     # -- trainer
     network.add_argument('--trainer_type', type=str, default="adam", choices=["adam", "sgd", "momentum"],
@@ -128,7 +128,7 @@ def init(phase):
     validation = parser.add_argument_group('validation parameters')
     validation.add_argument('--valid_freq', type=int, default=10000, metavar='INT',
                          help="validation frequency (default: %(default)s)")
-    validation.add_argument('--valid_batch_size', '--valid_batch_width', type=int, default=8, metavar='INT',
+    validation.add_argument('--valid_batch_size', '--valid_batch_width', type=int, default=40, metavar='INT',
                          help="validating minibatch-size (default: %(default)s)")
     validation.add_argument('--patience', type=int, default=5, metavar='INT',
                          help="early stopping patience (default: %(default)s)")
@@ -152,29 +152,25 @@ def init(phase):
     common.add_argument("--dynet-autobatch", type=str, default="0", dest="dynet-autobatch")
     common.add_argument("--dynet-seed", type=str, default="12345", dest="dynet-seed")    # default will be of no use, need to specify it
     common.add_argument("--dynet-immed", action='store_true', dest="dynet-immed")
-    common.add_argument("--bk_init_nl", type=str, default="glorot", )
+    # common.add_argument("--bk_init_nl", type=str, default="glorot", )
     common.add_argument("--debug", action='store_true')
     common.add_argument("--verbose", "-v", action='store_true')
     common.add_argument("--log", type=str, default=zl.utils.Logger.MAGIC_CODE, help="logger for the process")
-    common.add_argument('--report_freq', type=int, default=800, metavar='INT',
+    common.add_argument('--report_freq', type=int, default=1000, metavar='INT',
                          help="report frequency (number of instances / only when verbose) (default: %(default)s)")
 
     # decode (also for BLEU validation, training with other params)
     decode = parser.add_argument_group('decode')
     # decode.add_argument('--decode_type', '--decode_mode', type=str, default="decode", choices=["decode", "decode_gold", "test1", "test2", "loop"],
     #                      help="type/mode of testing (decode, test, loop)")
-    # decode.add_argument('--decode_way', type=str, default="beam", choices=["beam", "sample"],
-    #                      help="decoding method (default: %(default)s)")
+    decode.add_argument('--decode_way', type=str, default="beam", choices=["greedy", "beam"],
+                         help="decoding method (default: %(default)s)")
     decode.add_argument('--beam_size', '-k', type=int, default=10, help="Beam size (default: %(default)s))")
     # # todo: additive, gaussian
-    # decode.add_argument('--normalize', '-n', type=float, default=0.0, metavar="ALPHA",
-    #                      help="Normalize scores by sentence length (exponentiate lengths by ALPHA, neg means nope)")
-    # decode.add_argument('--normalize_way', type=str, default="norm", choices=["norm", "google", "gaussian", "xgaussian"],
-    #                      help="how to norm length (default: %(default)s)")
-    decode.add_argument('--decode_len', type=int, default=80, metavar='INT',
+    decode.add_argument('--decode_len', type=int, default=100, metavar='INT',
                          help="maximum decoding sequence length (default: %(default)s)")
-    # decode.add_argument('--decode_ratio', type=float, default=10.,
-    #                      help="maximum decoding sequence length ratio compared with src (default: %(default)s)")
+    decode.add_argument('--decode_ratio', type=float, default=2.,
+                         help="maximum decoding sequence length ratio compared with src (default: %(default)s)")
     decode.add_argument('--eval_metric', type=str, default="bleu", choices=["bleu", "nist"],
                          help="type of metric for evaluation (default: %(default)s)")
     decode.add_argument('--test_batch_size', type=int, default=8, metavar='INT',
@@ -192,16 +188,28 @@ def init(phase):
                          help="start to fit len after this updates (default: %(default)s)")
     training2.add_argument('--train_len_xadd', action='store_true', help="adding xsrc for length fitting")
     training2.add_argument('--train_len_xback', action='store_true', help="backprop of xsrc for length fitting")
+    # -- training methods and output modeling
+    training2.add_argument('--no_model_softmax', action='store_false', dest="model_softmax",
+                         help="No adding softmax for vocab output (direct score)")
 
     # extra: for advanced decoding
     decode2 = parser.add_argument_group('decoding parameters section2')
     # -- norm
-    # todo(warn): have to be cautious about parameters, some model specification is also needed to construct model for decoding)
+    # todo(warn): have to be cautious about parameters, some model specification is also needed to construct model for decoding
     # todo(warn): only using the first model if using gaussian
     decode2.add_argument('--normalize_way', type=str, default="none", choices=["none", "norm", "google", "add", "gaussian", "xgaussian"],
                          help="how to norm length (default: %(default)s)")
     decode2.add_argument('--normalize_alpha', '-n', type=float, default=0.0, metavar="ALPHA",
                          help="Normalize scores by sentence length or lambda for gaussian.")
+    # -- pruning
+    # --- length (the default ones should be enough)
+    decode2.add_argument('--pr_len_khigh', type=float, default=10., metavar="K_HIGH",
+                         help="Another max-len upper limit: (mu+k*si)")
+    decode2.add_argument('--pr_len_klow', type=float, default=10., metavar="K_LOW",
+                         help="Another max-len lower limit: (mu+k*si)")
+    # --- local pruning
+
+
     a = parser.parse_args()
 
     # check options and some processing

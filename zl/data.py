@@ -199,6 +199,8 @@ class BatchArranger(object):
                 if self.single_outliers(one):
                     if self.tracking_order:
                         self.tracking_list.append(idx)
+                    else:
+                        utils.zfatal("Should not have outliers when training!!")
                     yield [one]
                 else:
                     # adding in buffer with index
@@ -329,6 +331,7 @@ class TextFileReader(InstanceReader):
 
     def stream(self):
         if self.shuffling:
+            # todo(warn) only shuffling when training
             with utils.Timer(tag="shuffle", info="shuffle the file corpus"):
                 fds = TextFileReader.shuffle_corpus(self.files)
         else:

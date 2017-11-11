@@ -44,8 +44,9 @@ class LinearGaussain(BasicLayer):
         with utils.Timer(tag="Fit-length-once", print_date=True):
             # 1. collect length
             with utils.zopen(fit_files[0]) as f0, utils.zopen(fit_files[1]) as f1:
-                x = [LinearGaussain.trans_len(len(_l.split())) for _l in f0]
-                y = [LinearGaussain.trans_len(len(_l.split())) for _l in f1]
+                # todo(warn): plus one for the <eos> tokens
+                x = [LinearGaussain.trans_len(len(_l.split())+1) for _l in f0]
+                y = [LinearGaussain.trans_len(len(_l.split())+1) for _l in f1]
             utils.zcheck_matched_length(x, y, _forced=True)
             ll = len(x)
             x1, y1 = np.array(x, dtype=np.float32).reshape((-1,1)), np.array(y, dtype=np.float32)

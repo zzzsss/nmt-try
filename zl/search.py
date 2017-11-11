@@ -80,13 +80,13 @@ class State(object):
     def reset_id():
         State._state_id = 0
 
-    def __init__(self, sg=None, action=None, prev=None, **kwargs):
+    def __init__(self, sg=None, action=None, prev=None):
         self.sg = sg
         self.action = action
         self.prev = prev        # previous state, if None then the start state
         self.length = 0         # length of the actions
         self.ended = False      # whether this state has been ended
-        self.values = kwargs    # additional values & information
+        self.values = {}        # additional values & information
         self._score_final = None
         self._score_partial = 0
         if prev is not None:
@@ -130,15 +130,14 @@ class State(object):
         utils.zcheck(self.ended, "Nonlegal final calculation for un-end states.")
         self._score_final = s
 
-    @property
-    def signature(self):
-        return -1
-
     def mark_end(self):
         self.ended = True
 
     def is_end(self):
         return self.ended
+
+    def set(self, k, v):
+        self.values[k] = v
 
     # whether this is the starting state
     def is_start(self):

@@ -20,33 +20,44 @@ def search_greedy(models, insts, target_dict, opts, normer):
     Model.new_graph()
     for _m in models:
         _m.refresh(False)
+    _m0 = models[0]     # maybe common for all models, todo(warn) this inhibit certain varieties of model diff
     bsize, finish_size = len(xs), 0
     opens = [State(sg=SearchGraph()) for _ in range(bsize)]
     ends = [None for _ in range(bsize)]
     yprev = [-1 for _ in range(bsize)]
     decode_maxlen = opts["decode_len"]
+    decode_maxratio = opts["decode_ratio"]
     caches = []
     eos_id = target_dict.eos
-    for step in range(decode_maxlen+1):
+    for step in range(decode_maxlen):
         one_cache = []
-        for mi, _m in enumerate(models):
-            if step==0:
+        if step==0:
+            for mi, _m in enumerate(models):
                 cc = _m.start(xs)
-            else:
+                one_cache.append(cc)
+            # todo(warn): for non-fixed maxlen
+            # todo(warn) init length-maxer here!! (after the first step) (NO NEED for normer and other pruners)
+            pred_lens = np.average([_m.predict_length(insts, cc=_c) for _m, _c in zip(models, one_cache)], axis=0)
+            pred_lens_sigma = np.average([_m.lg.get_real_sigma() for _m in models], axis=0)
+            maxlen_upper = pred_lens + opts["pr_len_khigh"] * pred_lens_sigma
+        else:
+            for mi, _m in enumerate(models):
                 cc = _m.step(caches[-1][mi], yprev)
-            one_cache.append(cc)
+                one_cache.append(cc)
         caches.append(one_cache)
         # prepare next steps
         results = layers.BK.average([one["results"] for one in one_cache])
         results_v = results.npvalue().reshape((layers.BK.dims(results)[0], bsize)).T
-        force_end = step >= decode_maxlen
         for j in range(bsize):
             rr = results_v[j]
             if ends[j] is None:
+                # cur off if one of the criteria says it is time to end.
+                # todo(warn): upper length pruner
+                force_end = ((step+1) >= min(decode_maxlen, maxlen_upper[j], len(xs[j])*decode_maxratio))
                 next_y = eos_id
                 if not force_end:
                     next_y = int(rr.argmax())
-                score = np.log(rr[next_y])
+                score = _m0.explain_result(rr[next_y])
                 # check eos
                 if next_y == eos_id:
                     ends[j] = State(prev=opens[j], action=Action(next_y, score))
@@ -61,10 +72,11 @@ def search_greedy(models, insts, target_dict, opts, normer):
     return [[s] for s in ends]
 
 def nargmax(v, n):
-    # return UNORDERED list of (id, value)
+    # return ORDERED list of (id, value)
     thres = max(-len(v), -n)
     ids = np.argpartition(v, thres)[thres:]
-    return [int(i) for i in ids]
+    ret = sorted([int(i) for i in ids], key=lambda x: v[x], reverse=True)
+    return ret
 
 class BatchedHelper(object):
     def __init__(self, opens):
@@ -114,15 +126,18 @@ class BatchedHelper(object):
         else:
             return None, None, new_ys
 
+# synchronized with y-steps
 def search_beam(models, insts, target_dict, opts, normer):
     xs = [i[0] for i in insts]
     Model.new_graph()
     for _m in models:
         _m.refresh(False)
+    _m0 = models[0]     # maybe common for all models, todo(warn) this inhibit certain varieties of model diff
     bsize = len(xs)
     esize_all = opts["beam_size"]
     esize_one = opts["beam_size"]
     decode_maxlen = opts["decode_len"]
+    decode_maxratio = opts["decode_ratio"]
     remain_sizes = [esize_all for _ in range(bsize)]
     opens = [[State(sg=SearchGraph())] for _ in range(bsize)]
     ends = [[] for _ in range(bsize)]
@@ -130,15 +145,17 @@ def search_beam(models, insts, target_dict, opts, normer):
     caches = []
     eos_id = target_dict.eos
     yprev = None
-    for step in range(decode_maxlen+1):
+    for step in range(decode_maxlen):
         one_cache = []
         if step==0:
             for mi, _m in enumerate(models):
                 cc = _m.start(xs)
                 one_cache.append(cc)
-            # todo(warn) init normer and pruner here!! (after the first step)
-            # todo(warn) only using the first model
-            pred_lens = models[0].predict_length(insts, cc=one_cache[0])     # (#insts, ) of real lengths
+            # todo(warn) init normer and pruner here!! (after the first step) # (#insts, ) of real lengths
+            pred_lens = np.average([_m.predict_length(insts, cc=_c) for _m, _c in zip(models, one_cache)], axis=0)
+            pred_lens_sigma = np.average([_m.lg.get_real_sigma() for _m in models], axis=0)
+            pr_len_upper = pred_lens + opts["pr_len_khigh"] * pred_lens_sigma
+            pr_len_lower = pred_lens - opts["pr_len_klow"] * pred_lens_sigma
         else:
             for mi, _m in enumerate(models):
                 cc = _m.step(caches[-1][mi], yprev)
@@ -146,10 +163,13 @@ def search_beam(models, insts, target_dict, opts, normer):
         # select cands
         results = layers.BK.average([one["results"] for one in one_cache])
         results_v0 = results.npvalue()
-        results_v = results_v0.reshape(layers.BK.dims(results)[0], layers.BK.bsize(results)).T
+        results_v1 = results_v0.reshape(layers.BK.dims(results)[0], layers.BK.bsize(results))
+        results_v = results_v1.T
         nexts = []
-        force_end = step >= decode_maxlen
         for i in range(bsize):
+            # cur off if one of the criteria says it is time to end.
+            # todo(warn): upper length pruner
+            force_end = ((step+1) >= min(decode_maxlen, pr_len_upper[i], len(xs[i])*decode_maxratio))
             # for each one in the batch
             r_start = bh.get_basis(i)
             prev_states = opens[i]
@@ -160,8 +180,9 @@ def search_beam(models, insts, target_dict, opts, normer):
                 # todo(warn): force end for the last step
                 one_cands = [eos_id] if force_end else nargmax(one_result, esize_one)
                 for idx in one_cands:
-                    # todo(warn): (prev-inner_dix)
-                    cur_cands.append((j, State(prev=prev_states[j], action=Action(idx, np.log(one_result[idx])))))
+                    # todo(warn): the structure is (prev-inner_dix, state)
+                    one_score_cur = _m0.explain_result(one_result[idx])
+                    cur_cands.append((j, State(prev=prev_states[j], action=Action(idx, one_score_cur))))
             # sorting them all
             cur_cands.sort(key=(lambda x: x[-1].score_partial), reverse=True)
             # append the next cands
@@ -169,15 +190,28 @@ def search_beam(models, insts, target_dict, opts, normer):
             # prepare for next steps
             cur_nexts = []
             opens[i] = []
+            pruned_ends = []        # the ended ones that are pruned away
             for prev_inner_idx, new_state in cur_cands:
                 action_id = new_state.action_code
                 if action_id == eos_id:
-                    ends[i].append(new_state)
                     new_state.mark_end()
-                    remain_sizes[i] -= 1
+                    # todo: pruning short ones
+                    if new_state.length <= pr_len_lower[i]:
+                        new_state.set("PRUNED", True)
+                        pruned_ends.append(new_state)
+                    else:
+                        ends[i].append(new_state)
+                        remain_sizes[i] -= 1
                 else:
                     opens[i].append(new_state)
                     cur_nexts.append((prev_inner_idx, action_id))
+            # what if we pruned away all of them -> add them back even though they are pruned
+            if len(ends[i])==0 and len(cur_nexts)==0:
+                for one in pruned_ends:
+                    one.set("PRUNED", False)
+                    ends[i].append(one)
+                    remain_sizes[i] -= 1
+            # append for one inst
             nexts.append(cur_nexts)
         # re-arrange for next step if not ending
         if sum(remain_sizes) <= 0:
@@ -190,5 +224,14 @@ def search_beam(models, insts, target_dict, opts, normer):
     normer(ends, pred_lens)
     final_list = [sorted(beam, key=lambda x: x.score_partial, reverse=True) for beam in ends]
     # data.Vocab.i2w(target_dict, final_list[0][0])
-    # final_list[0][0].sg.print_graph(target_dict)
+    # final_list[0][0].sg.show_graph(target_dict)
     return final_list
+
+def search_branch(models, insts, target_dict, opts, normer):
+    pass
+
+# todo-list
+# 0. n-best outputs and analysis
+# 1. for search_beam: local pruning, global pruning and combining
+# 2. search_branch
+# 3. rerank (& with gold)

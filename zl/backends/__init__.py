@@ -19,11 +19,12 @@ else:
     pass
 
 def init_bk(opts):
-    to_set = {}
-    for i in COMMON_CONFIG.values:
-        if i in opts:
-            to_set[i] = opts[i]
-    for k in to_set:
-        COMMON_CONFIG.values[k] = to_set[k]
-    utils.zlog("For inits: %s" % COMMON_CONFIG.values)
+    # todo(warn): not actived here currently
+    # to_set = {}
+    # for i in COMMON_CONFIG.values:
+    #     if i in opts:
+    #         to_set[i] = opts[i]
+    # for k in to_set:
+    #     COMMON_CONFIG.values[k] = to_set[k]
+    # utils.zlog("For inits: %s" % COMMON_CONFIG.values)
     BK.init(opts)

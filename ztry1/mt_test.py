@@ -9,8 +9,9 @@ def main():
     opts = mt_args.init("test")
     # 1. data
     source_dict, target_dict = Vocab.read(opts["dicts"][0]), Vocab.read(opts["dicts"][1])
-    # -- here no need for test[1], but for convenience ...
-    test_iter = get_arranger(opts["test"], [source_dict, target_dict], shuffling_corpus=False, shuflling_buckets=False, sort_prior=[0], batch_size=opts["test_batch_size"], maxibatch_size=-1, max_len=utils.Constants.MAX_V, min_len=0, one_len=opts["max_len"]+1)
+    # -- here usually no need for test[1], but for convenience ...
+    dicts = [source_dict] + [target_dict for _ in opts["test"][1:]]
+    test_iter = get_arranger(opts["test"], dicts, shuffling_corpus=False, shuflling_buckets=False, sort_prior=[0], batch_size=opts["test_batch_size"], maxibatch_size=-1, max_len=utils.Constants.MAX_V, min_len=0, one_len=opts["max_len"]+1)
     # 2. model
     mm = []
     for mn in opts["models"]:
@@ -23,7 +24,7 @@ def main():
     # 3. decode
     utils.zlog("=== Start to decode ===", func="info")
     with utils.Timer(tag="Decoding", print_date=True):
-        mt_decode(test_iter, mm, target_dict, opts, opts["output"])
+        mt_decode(opts["decode_way"], test_iter, mm, target_dict, opts, opts["output"])
     utils.zlog("=== End decoding, write to %s ===" % opts["output"], func="info")
     mt_eval.evaluate(opts["output"], opts["test"][1], opts["eval_metric"])
 

@@ -15,27 +15,50 @@ from .mt_length import get_normer
 # data helpers #
 def prepare_data(ys, dict, fix_len=0):
     # input: list of list of index (bsize, step),
-    # output: padded input (step, bsize), masks (1 for real words, 0 for paddings)
+    # output: padded input (step, bsize), masks (1 for real words, 0 for paddings, None for all 1)
     bsize, steps = len(ys), max([len(i) for i in ys])
     if fix_len > 0:
         steps = fix_len
     y = [[] for _ in range(steps)]
+    ym = [None for _ in range(steps)]
     lens = [len(i) for i in ys]
     eos, padding = dict.eos, dict.pad
     for s in range(steps):
+        _one_ym = []
+        _need_ym = False
         for b in range(bsize):
-            y[s].append(ys[b][s] if s<lens[b] else padding)
+            if s<lens[b]:
+                y[s].append(ys[b][s])
+                _one_ym.append(1.)
+            else:
+                y[s].append(padding)
+                _one_ym.append(0.)
+                _need_ym = True
+        if _need_ym:
+            ym[s] = _one_ym
     # check last step
     for b in range(bsize):
         if y[-1][b] not in [eos, padding]:
             y[-1][b] = eos
-    return y, [[(1. if len(one)>s else 0.) for one in ys] for s in range(steps)]
+    return y, ym
 
 def prepare_y_step(ys, i):
-    _mask = [1. if i<len(_y) else 0. for _y in ys]
-    ystep = [_y[i] if i<len(_y) else 0 for _y in ys]
-    mask_expr = layers.BK.inputVector(_mask)
-    mask_expr = layers.BK.reshape(mask_expr, (1, ), len(ys))
+    _need_mask = False
+    ystep = []
+    _mask = []
+    for _y in ys:
+        if i<len(_y):
+            ystep.append(_y[i])
+            _mask.append(1.)
+        else:
+            ystep.append(0)
+            _mask.append(0)
+            _need_mask = True
+    if _need_mask:
+        mask_expr = layers.BK.inputVector(_mask)
+        mask_expr = layers.BK.reshape(mask_expr, (1, ), len(ys))
+    else:
+        mask_expr = None
     return ystep, mask_expr
 
 # An typical example of a model, fixed architecture
@@ -58,6 +81,7 @@ class s2sModel(Model):
         # outputs
         self.out0 = layers.Linear(self.model, 2*opts["hidden_enc"]+opts["hidden_dec"]+opts["dim_word"], opts["hidden_out"])
         self.out1 = layers.Linear(self.model, opts["hidden_out"], len(target_dict), act="linear")
+        self.model_softmax = opts["model_softmax"]
         #
         # computation values
         # What is in the cache: S,V,summ/ ctx,att,/ out_s,results
@@ -142,13 +166,13 @@ class s2sModel(Model):
         cache = self.decode_start(x_encodes)
         start_embeds = self.get_start_yembs(bsize)
         output_score, output_hidden = self.get_scores(cache["ctx"], cache["hid"], start_embeds)
-        if softmax:
-            probs = layers.BK.softmax(output_score)
+        if softmax and self.model_softmax:
+            results = layers.BK.softmax(output_score)
         else:
-            probs = output_score
+            results = output_score
         # return
         cache["out_s"] = output_score
-        cache["results"] = probs
+        cache["results"] = results
         return cache
 
     def step(self, prev_val, inputs, softmax=True):
@@ -156,14 +180,21 @@ class s2sModel(Model):
         next_embeds = self.get_embeddings_step(inputs, self.embed_trg)
         cache = self.decode_step(x_encodes, next_embeds, prev_val)
         output_score, output_hidden = self.get_scores(cache["ctx"], cache["hid"], next_embeds)
-        if softmax:
-            probs = layers.BK.softmax(output_score)
+        if softmax and self.model_softmax:
+            results = layers.BK.softmax(output_score)
         else:
-            probs = output_score
+            results = output_score
         # return
         cache["out_s"] = output_score
-        cache["results"] = probs
+        cache["results"] = results
         return cache
+
+    # for the results
+    def explain_result(self, x):
+        if self.model_softmax:
+            return np.log(x)
+        else:
+            return x
 
     # training
     def fb(self, insts, training):
@@ -204,8 +235,8 @@ class s2sModel(Model):
             # new_opens = [State(prev=ss, action=Action(yy, 0.)) for ss, yy in zip(opens, ystep)]
             # opens = new_opens
         # -- final
-        loss = layers.BK.esum(losses)
-        loss_y = layers.BK.sum_batches(loss) / bsize
+        loss0 = layers.BK.esum(losses)
+        loss_y = layers.BK.sum_batches(loss0) / bsize
         if self.is_fitting_length:
             loss = loss_y + loss_len      # todo(warn): must be there
         else:
@@ -234,7 +265,8 @@ class s2sModel(Model):
 
 def _mle_loss_step(scores_exprs, ystep, mask_expr):
     one_loss = layers.BK.pickneglogsoftmax_batch(scores_exprs, ystep)
-    one_loss = one_loss * mask_expr
+    if mask_expr is not None:
+        one_loss = one_loss * mask_expr
     return one_loss
 
 ValidResult = list
@@ -266,7 +298,7 @@ class OnceRecorder(object):
     def state(self):
         one_time = self.timer.get_time()
         loss_per_sentence = "_".join(["%s:%.3f"%(k, self.loss[k]/self.sents) for k in sorted(self.loss.keys())])
-        loss_per_word = "_".join(["%s:%.3f"%(k, self.loss[k]/self.sents) for k in sorted(self.loss.keys())])
+        loss_per_word = "_".join(["%s:%.3f"%(k, self.loss[k]/self.words) for k in sorted(self.loss.keys())])
         sent_per_second = float(self.sents) / one_time
         word_per_second = float(self.words) / one_time
         return ("Recoder <%s>, %.3f(time)/%s(updates)/%.1f(sents)/%.1f(words)/%s(sl-loss)/%s(w-loss)/%.3f(s-sec)/%.3f(w-sec)" % (self.name, one_time, self.updates, self.sents, self.words, loss_per_sentence, loss_per_word, sent_per_second, word_per_second))
@@ -284,7 +316,6 @@ class MTTrainer(Trainer):
         loss = 0.
         with utils.Timer(tag="VALID-LEN", print_date=True) as et:
             utils.zlog("With lg as %s." % (self._mm.lg.obtain_params(),))
-            dev_iter.bsize(self.opts["valid_batch_size"])
             for insts in dev_iter.arrange_batches():
                 ys = [i[1] for i in insts]
                 ylens = np.asarray([len(_y) for _y in ys])
@@ -298,7 +329,6 @@ class MTTrainer(Trainer):
     def _validate_ll(self, dev_iter):
         # log likelihood
         one_recorder = self._get_recorder("VALID-LL")
-        dev_iter.bsize(self.opts["valid_batch_size"])
         for insts in dev_iter.arrange_batches():
             loss = self._mm.fb(insts, False)
             one_recorder.record(insts, loss, 0)
@@ -308,8 +338,8 @@ class MTTrainer(Trainer):
 
     def _validate_bleu(self, dev_iter):
         # bleu score
-        dev_iter.bsize(self.opts["test_batch_size"])    # todo(warn): here using decoding batch-size
-        mt_decode(dev_iter, [self._mm], self._mm.target_dict, self.opts, self.opts["dev_output"])
+        # todo(warn): force greedy validating here
+        mt_decode("greedy", dev_iter, [self._mm], self._mm.target_dict, self.opts, self.opts["dev_output"])
         # no restore specifies for the dev set
         s = mt_eval.evaluate(self.opts["dev_output"], self.opts["dev"][1], self.opts["eval_metric"], True)
         return s
@@ -328,7 +358,8 @@ class MTTrainer(Trainer):
     def _fb_once(self, insts):
         return self._mm.fb(insts, True)
 
-def mt_decode(test_iter, mms, target_dict, opts, outf):
+def mt_decode(decode_way, test_iter, mms, target_dict, opts, outf):
+    cur_searcher = {"greedy":mt_search.search_greedy, "beam":mt_search.search_beam}[decode_way]
     one_recorder = OnceRecorder("DECODE")
     num_sents = len(test_iter)
     cur_sents = 0.
@@ -336,9 +367,10 @@ def mt_decode(test_iter, mms, target_dict, opts, outf):
     results = []
     prev_point = 0
     # init normer
-    _lg_params = mms[0].lg.obtain_params()
-    utils.zlog("With lg as %s." % (_lg_params,))
-    _sigma = mms[0].lg.get_real_sigma()
+    for i, _m in enumerate(mms):
+        _lg_params = _m.lg.obtain_params()
+        utils.zlog("Model[%s] is with lg as %s." % (i, _lg_params,))
+    _sigma = np.average([_m.lg.get_real_sigma() for _m in mms], axis=0)
     normer = get_normer(opts["normalize_way"], opts["normalize_alpha"], _sigma)
     for insts in test_iter.arrange_batches():
         if opts["verbose"] and (cur_sents - prev_point) >= (opts["report_freq"]*test_iter.bsize()):
@@ -346,10 +378,7 @@ def mt_decode(test_iter, mms, target_dict, opts, outf):
             prev_point = cur_sents
         cur_sents += len(insts)
         mt_search.search_init()
-        if opts["beam_size"] == 1:
-            rs = mt_search.search_greedy(mms, insts, target_dict, opts, normer)
-        else:
-            rs = mt_search.search_beam(mms, insts, target_dict, opts, normer)
+        rs = cur_searcher(mms, insts, target_dict, opts, normer)
         results += [[int(x) for x in r[0].get_path("action")] for r in rs]
         one_recorder.record(insts, {}, 0)
     # restore from sorting by length

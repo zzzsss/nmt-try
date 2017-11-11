@@ -25,17 +25,16 @@ def init():
         # zmt home
         "--zmt": "..",
         # znmt style parameters
-        "--max_epochs": 100,
-        "--max_updates": 500000,
-        "--max_len": 50,
+        # "--max_epochs": 100,
+        # "--max_updates": 500000,
+        # "--max_len": 50,
         "--batch_size": 80,
-        "--valid_batch_width": 32,
-        "--report_freq": 1000,
-        "--normalize": 0.0,
-        "--dev_beam_size": 1,
+        "--valid_batch_width": 80,
+        # "--report_freq": 1000,
         "--valid_freq": 10000,
-        "--patience": 5,
-        "--anneal_restarts": 2,
+        # "--patience": 5,
+        # "--anneal_restarts": 2,
+        "--normalize": 0.0,
         "--test_beam_size": 5,
         # some extras
         "--extras": ""
@@ -61,6 +60,8 @@ def init():
     # assert len(fs)%2==0, "currently only support this kind of parameters"
     for i in range((len(fs)+1)//2):
         fs[i*2] = "--" + fs[i*2]
+    # todo<warn>: delete special token
+    fs = [_one for _one in fs if _one != "ZZ"]
     args["extras"] = " ".join(fs)
     # debugging or profile
     assert not (args["debug"] and args["profile"]), "cannot achieve both"

@@ -55,8 +55,44 @@ class Basic(object):
     def refresh(self, argv):
         raise NotImplementedError("No calling refresh from Basic.")
 
+    # def _add_parameters(self, shape, lookup=False, init="default"):
+    #     return BK.get_params(self.model, shape, lookup, init)
+
+    # todo(warn): use the original ztry0 version of init
     def _add_parameters(self, shape, lookup=False, init="default"):
-        return BK.get_params(self.model, shape, lookup, init)
+        def ortho_weight(ndim):
+            W = np.random.randn(ndim, ndim)
+            u, s, v = np.linalg.svd(W)
+            return u.astype(np.float)
+        def get_init(shape, init):
+            # shape is a tuple of dims
+            assert init in ["default", "const", "glorot", "ortho", "gaussian"], "Unknown init method %s" % init
+            if len(shape) == 1:     # set bias to 0
+                return dy.ConstInitializer(0.)
+            elif len(shape) == 2:
+                if init == "default" or init == "glorot":
+                    return dy.GlorotInitializer()
+                elif init == "gaussian":
+                    return dy.NormalInitializer(var=0.01*0.01)
+                elif init == "ortho":
+                    assert shape[0]%shape[1] == 0, "Bad shape %s for ortho_init" % shape
+                    num = shape[0] // shape[1]
+                    arr = ortho_weight(shape[1]) if num == 1 else\
+                          np.concatenate([ortho_weight(shape[1]) for _ in range(num)])
+                    return dy.NumpyInitializer(arr)
+            else:
+                raise NotImplementedError("Currently only support parameter dim <= 2.")
+        # first, if init is np-array
+        if isinstance(init, np.ndarray):
+            return self.model.add_parameters(shape, init=dy.NumpyInitializer(init))
+        # then ...
+        if lookup:
+            return self.model.add_lookup_parameters(shape)  # also default Glorot
+        # shape is a tuple of dims
+        if len(shape) == 1:     # set bias to 0
+            return self.model.add_parameters(shape, init=dy.ConstInitializer(0.))
+        else:
+            return self.model.add_parameters(shape, init=get_init(shape, init))
 
 # linear layer with selectable activation functions
 class Linear(Basic):
@@ -313,8 +349,8 @@ class Encoder(object):
         # embeds: list(step) of {(n_emb, ), batch_size}, using padding for batches
         b_size = bs(embeds[0])
         outputs = [embeds]
-        # todo(warn), disable masks for speeding up (although might not be critical)
-        masks = [None for _ in masks]
+        # # todo(warn), disable masks for speeding up (although might not be critical)
+        # masks = [None for _ in masks]
         for i, nn in zip(range(self.n_layers), self.nodes):
             init_hidden = dy.zeroes((self.n_hidden,), batch_size=b_size)
             tmp_f = []      # forward
