@@ -3,6 +3,7 @@
 from . import utils
 import json, os, sys
 import numpy as np
+from collections import Iterable
 
 # ========== Vocab ========== #
 # The class of vocabulary or dictionary: conventions: 0:zeros, 1->wordceil:words, then:special tokens
@@ -294,12 +295,24 @@ class TextInstanceLengthSorter(object):
 
 # read from files
 class TextFileReader(InstanceReader):
-    def __init__(self, files, vocabs, shuffling):
+    def __init__(self, files, vocabs, multis, shuffling):
         utils.zcheck_matched_length(files, vocabs, _forced=True)
+        utils.zcheck_matched_length(files, multis, _forced=True)
         self.files = files
         self.vocabs = vocabs
+        self.multis = multis
         self.shuffling = shuffling
         self.num_insts = -1
+        # weather reading multi lines
+        if shuffling and any(multis):
+            utils.zfatal("Not implemented for shuffling multi-line files.")
+        self._readers = [TextFileReader._read_one if what else TextFileReader._read_one_multi for what in multis]
+
+    def __len__(self):
+        # return num of instances (use cached value)
+        if self.num_insts < 0:
+            self.num_insts = sum([1 for _ in self.stream()])
+        return self.num_insts
 
     @staticmethod
     def shuffle_corpus(files):
@@ -323,11 +336,36 @@ class TextFileReader(InstanceReader):
         fds = [utils.zopen(_f) for _f in filenames_shuf]
         return fds
 
-    def __len__(self):
-        # return num of instances (use cached value)
-        if self.num_insts < 0:
-            self.num_insts = sum([1 for _ in self.stream()])
-        return self.num_insts
+    @staticmethod
+    def _read_one(fd, vv):
+        line = fd.readline()
+        if len(line) <= 0:
+            return None
+        else:
+            words = line.strip().split()
+            idxes = Vocab.w2i(vv, words, add_eos=True, use_factor=False)
+            return words, idxes
+
+    @staticmethod
+    def _read_one_multi(fd, vv):
+        # separated by multiple "\n"
+        words = None
+        while True:
+            line = fd.readline()
+            if len(line) <= 0:
+                return None
+            words = line.strip().split()
+            if len(words) > 0:
+                break
+        rets = ([], [])
+        while len(words) > 0:
+            rets[0].append(words)
+            rets[1].append(Vocab.w2i(vv, words, add_eos=True, use_factor=False))
+            line = fd.readline()
+            words = line.strip().split()
+            if len(line) <= 0 or len(words) <= 0:
+                break
+        return rets
 
     def stream(self):
         if self.shuffling:
@@ -337,31 +375,26 @@ class TextFileReader(InstanceReader):
         else:
             fds = [utils.zopen(one) for one in self.files]
         # read them and yield --- checking length
-        for idx, ss in enumerate(fds[0]):
+        idx = 0
+        while True:
+            insts = [self._readers[i](fds[i], self.vocabs[i]) for i in range(len(self.files))]
+            if any([_x is None for _x in insts]) and any([_x is not None for _x in insts]):
+                utils.zfatal("EOF unmatched for %s." % insts)
+            words = [_x[0] for _x in insts]
+            idxes = [_x[1] for _x in insts]
+            idx += 1
             self.num_insts = max(self.num_insts, idx)
-            # read them
-            insts = [ss]
-            if len(fds) > 1:
-                for ffd in fds[1:]:
-                    line = ffd.readline()
-                    utils.zcheck_ff(line, lambda x: len(x)>0, "EOF (unmatched) %s" % ffd, "warn", _forced=True)
-                    insts.append(line)
-            # split and lookup (this one with no factors)
-            words = [[x for x in one.strip().split()] for one in insts]
-            idxes = [Vocab.w2i(vv, ws, add_eos=True, use_factor=False) for vv, ws in zip(self.vocabs, words)]
             yield TextInstance(words, idxes)
         # close
-        # check unmatches
-        if len(fds) > 1:
-            for ffd in fds[1:]:
-                line = ffd.readline()
-                utils.zcheck_ff(line, lambda x: len(x)==0, "EOF (unmatched) %s" % ffd, "warn", _forced=True)
         for ffd in fds:
             ffd.close()
 
 # one call for convenience
-def get_arranger(files, vocabs, shuffling_corpus, shuflling_buckets, sort_prior, batch_size, maxibatch_size, max_len, min_len, one_len):
-    streamer = TextFileReader(files, vocabs, shuffling_corpus)
+def get_arranger(files, vocabs, multis, shuffling_corpus, shuflling_buckets, sort_prior, batch_size, maxibatch_size, max_len, min_len, one_len):
+    if not isinstance(multis, Iterable):
+        utils.zcheck_type(multis, bool, _forced=True)
+        multis = [multis for _ in range(len(files))]
+    streamer = TextFileReader(files, vocabs, multis, shuffling_corpus)
     tracking_order = True if maxibatch_size<=0 else False   # todo(warn): -1 for dev/test
     arranger = BatchArranger(streamer=streamer, batch_size=batch_size, maxibatch_size=maxibatch_size, outliers=[TextInstanceRangeOutlier(min_len, max_len)], single_outlier=TextInstanceRangeOutlier(min_len, one_len), sorting_keyer=TextInstanceLengthSorter(sort_prior), tracking_order=tracking_order,shuffling=shuflling_buckets)
     return arranger

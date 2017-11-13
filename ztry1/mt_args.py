@@ -1,5 +1,6 @@
 import argparse
 import zl
+import numpy as np
 
 # parse the arguments for main
 def init(phase):
@@ -166,8 +167,7 @@ def init(phase):
     decode.add_argument('--decode_way', type=str, default="beam", choices=["greedy", "beam"],
                          help="decoding method (default: %(default)s)")
     decode.add_argument('--beam_size', '-k', type=int, default=10, help="Beam size (default: %(default)s))")
-    # # todo: additive, gaussian
-    decode.add_argument('--decode_len', type=int, default=100, metavar='INT',
+    decode.add_argument('--decode_len', type=int, default=80, metavar='INT',
                          help="maximum decoding sequence length (default: %(default)s)")
     decode.add_argument('--decode_ratio', type=float, default=2.,
                          help="maximum decoding sequence length ratio compared with src (default: %(default)s)")
@@ -184,16 +184,22 @@ def init(phase):
     training2.add_argument('--train_scale_way', type=str, default="none", choices=["none", "norm", "google"],
                          help="(train2) how to norm length with score scales (default: %(default)s)")
     # length fitting for training
+    # todo(warn): these options are also used for decoding process
     training2.add_argument('--train_len_uidx', type=int, default=1000000,
                          help="start to fit len after this updates (default: %(default)s)")
+    training2.add_argument('--train_len_lambda', type=float, default=1.0, help="lambda for length loss (default: %(default)s)")
     training2.add_argument('--train_len_xadd', action='store_true', help="adding xsrc for length fitting")
     training2.add_argument('--train_len_xback', action='store_true', help="backprop of xsrc for length fitting")
     # -- training methods and output modeling
+    training2.add_argument('--no_show_loss', action='store_false', dest='show_loss',
+                         help="No obtaining training loss (if applicable)")
     training2.add_argument('--no_model_softmax', action='store_false', dest="model_softmax",
                          help="No adding softmax for vocab output (direct score)")
 
     # extra: for advanced decoding
     decode2 = parser.add_argument_group('decoding parameters section2')
+    # -- general
+    decode2.add_argument('--decode_output_kbest', action='store_true', help="Output special files with all outputs.")
     # -- norm
     # todo(warn): have to be cautious about parameters, some model specification is also needed to construct model for decoding
     # todo(warn): only using the first model if using gaussian
@@ -208,6 +214,10 @@ def init(phase):
     decode2.add_argument('--pr_len_klow', type=float, default=10., metavar="K_LOW",
                          help="Another max-len lower limit: (mu+k*si)")
     # --- local pruning
+    decode2.add_argument('--pr_local_expand', type=int, default=10, help="Most expansions for each state.")
+    decode2.add_argument('--pr_local_diff', type=float, default=np.log(10000.), help="Local pruning diff/thres (1/e**D if transferring to prob.)")
+    decode2.add_argument('--pr_local_penalty', type=float, default=0., help="penalize candidates from the same state.")
+    # -- global pruning
 
 
     a = parser.parse_args()

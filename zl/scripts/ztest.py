@@ -27,7 +27,7 @@ def _test_data_iter():
     files = ["utils.py", "utils.py"]
     vv = [data.Vocab(fname=f, fthres=1+i) for i, f in enumerate(files)]
     # get data
-    aa = data.get_arranger(files, vv, True, True, [0,1], 4, 5, 20, 2, 15)
+    aa = data.get_arranger(files, vv, False, True, True, [0,1], 4, 5, 20, 2, 15)
     for ds in aa.arrange_batches():
         utils.zlog(ds)
 

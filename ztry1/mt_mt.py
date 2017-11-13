@@ -82,6 +82,7 @@ class s2sModel(Model):
         self.out0 = layers.Linear(self.model, 2*opts["hidden_enc"]+opts["hidden_dec"]+opts["dim_word"], opts["hidden_out"])
         self.out1 = layers.Linear(self.model, opts["hidden_out"], len(target_dict), act="linear")
         self.model_softmax = opts["model_softmax"]
+        self.show_loss = opts["show_loss"]
         #
         # computation values
         # What is in the cache: S,V,summ/ ctx,att,/ out_s,results
@@ -94,6 +95,7 @@ class s2sModel(Model):
         utils.zlog("End of creating Model.")
         # !! advanced options (enabled by MTTrainer)
         self.is_fitting_length = False      # whether adding length loss for training
+        self.len_lambda = opts["train_len_lambda"]
 
     def rerange(self, c, bv_orders, bi_orders):
         new_c = {}
@@ -238,18 +240,21 @@ class s2sModel(Model):
         loss0 = layers.BK.esum(losses)
         loss_y = layers.BK.sum_batches(loss0) / bsize
         if self.is_fitting_length:
-            loss = loss_y + loss_len      # todo(warn): must be there
+            loss = loss_y + loss_len * self.len_lambda      # todo(warn): must be there
         else:
             loss = loss_y
         if training:
             layers.BK.forward(loss)
             layers.BK.backward(loss)
         # return value?
-        lossy_val = layers.BK.get_value_sca(loss_y)
-        loss_len_val = -1.
-        if self.is_fitting_length:
-            loss_len_val = layers.BK.get_value_sca(loss_len)
-        return {"y": lossy_val*bsize, "len": loss_len_val}
+        if self.show_loss:
+            lossy_val = layers.BK.get_value_sca(loss_y)
+            loss_len_val = -1.
+            if self.is_fitting_length:
+                loss_len_val = layers.BK.get_value_sca(loss_len)
+            return {"y": lossy_val*bsize, "len": loss_len_val}
+        else:
+            return {}
 
     def predict_length(self, insts, cc=None):
         # todo(warn): already inited graph
@@ -379,13 +384,21 @@ def mt_decode(decode_way, test_iter, mms, target_dict, opts, outf):
         cur_sents += len(insts)
         mt_search.search_init()
         rs = cur_searcher(mms, insts, target_dict, opts, normer)
-        results += [[int(x) for x in r[0].get_path("action")] for r in rs]
+        # return list(batch) of list(beam) of states
+        if opts["decode_output_kbest"]:
+            results += [[[int(x.get_path("action")) for x in z] for z in r] for r in rs]
+        else:
+            results += [[int(x) for x in r[0].get_path("action")] for r in rs]
         one_recorder.record(insts, {}, 0)
     # restore from sorting by length
     results = test_iter.restore_order(results)
     with utils.zopen(outf, "w") as f:
         for r in results:
-            best_seq = r
-            strs = data.Vocab.i2w(target_dict, best_seq)
-            f.write(" ".join(strs)+"\n")
+            if opts["decode_output_kbest"]:
+                strs = [" ".join(data.Vocab.i2w(target_dict, _z)) for _z in r]
+                f.write("\n".join(strs)+"\n")
+            else:
+                best_seq = r
+                strs = data.Vocab.i2w(target_dict, best_seq)
+                f.write(" ".join(strs)+"\n")
     one_recorder.report()

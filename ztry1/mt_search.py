@@ -14,7 +14,7 @@ def search_init():
     State.reset_id()
 
 # a padding version of greedy search
-# todo(warn) normer is not used when greedy decoding
+# todo(warn) normers and pruners are not used for this greedy decoding (mostly used for dev)
 def search_greedy(models, insts, target_dict, opts, normer):
     xs = [i[0] for i in insts]
     Model.new_graph()
@@ -35,11 +35,12 @@ def search_greedy(models, insts, target_dict, opts, normer):
             for mi, _m in enumerate(models):
                 cc = _m.start(xs)
                 one_cache.append(cc)
-            # todo(warn): for non-fixed maxlen
-            # todo(warn) init length-maxer here!! (after the first step) (NO NEED for normer and other pruners)
-            pred_lens = np.average([_m.predict_length(insts, cc=_c) for _m, _c in zip(models, one_cache)], axis=0)
-            pred_lens_sigma = np.average([_m.lg.get_real_sigma() for _m in models], axis=0)
-            maxlen_upper = pred_lens + opts["pr_len_khigh"] * pred_lens_sigma
+            # not here which is mainly for dev
+            # # todo(warn): for non-fixed maxlen
+            # # todo(warn) init length-maxer here!! (after the first step) (NO NEED for normer and other pruners)
+            # pred_lens = np.average([_m.predict_length(insts, cc=_c) for _m, _c in zip(models, one_cache)], axis=0)
+            # pred_lens_sigma = np.average([_m.lg.get_real_sigma() for _m in models], axis=0)
+            # maxlen_upper = pred_lens + opts["pr_len_khigh"] * pred_lens_sigma
         else:
             for mi, _m in enumerate(models):
                 cc = _m.step(caches[-1][mi], yprev)
@@ -53,7 +54,7 @@ def search_greedy(models, insts, target_dict, opts, normer):
             if ends[j] is None:
                 # cur off if one of the criteria says it is time to end.
                 # todo(warn): upper length pruner
-                force_end = ((step+1) >= min(decode_maxlen, maxlen_upper[j], len(xs[j])*decode_maxratio))
+                force_end = ((step+1) >= min(decode_maxlen, len(xs[j])*decode_maxratio))
                 next_y = eos_id
                 if not force_end:
                     next_y = int(rr.argmax())
@@ -179,6 +180,8 @@ def search_beam(models, insts, target_dict, opts, normer):
                 one_result = results_v[r_start+j]
                 # todo(warn): force end for the last step
                 one_cands = [eos_id] if force_end else nargmax(one_result, esize_one)
+                # local pruning
+
                 for idx in one_cands:
                     # todo(warn): the structure is (prev-inner_dix, state)
                     one_score_cur = _m0.explain_result(one_result[idx])
@@ -229,9 +232,3 @@ def search_beam(models, insts, target_dict, opts, normer):
 
 def search_branch(models, insts, target_dict, opts, normer):
     pass
-
-# todo-list
-# 0. n-best outputs and analysis
-# 1. for search_beam: local pruning, global pruning and combining
-# 2. search_branch
-# 3. rerank (& with gold)

@@ -29,8 +29,8 @@ def main():
             utils.zlog("Write dictionaries fail: %s, skip this step." % opts["dicts_final"], func="warn")
     # 2. corpus iterator
     sort_prior = {"src":[0], "trg":[1], "src-trg":[0,1], "trg-src":[1,0]}[opts["training_sort_type"]]
-    train_iter = get_arranger(opts["train"], [source_dict, target_dict], shuffling_corpus=opts["shuffle_training_data"], shuflling_buckets=opts["shuffle_training_data"], sort_prior=sort_prior, batch_size=opts["batch_size"], maxibatch_size=20, max_len=opts["max_len"]+1, min_len=2, one_len=opts["max_len"]+1)
-    dev_iter = get_arranger(opts["dev"], [source_dict, target_dict], shuffling_corpus=False, shuflling_buckets=False, sort_prior=[0], batch_size=opts["valid_batch_size"], maxibatch_size=-1, max_len=utils.Constants.MAX_V, min_len=0, one_len=opts["max_len"]+1)
+    train_iter = get_arranger(opts["train"], [source_dict, target_dict], multis=False, shuffling_corpus=opts["shuffle_training_data"], shuflling_buckets=opts["shuffle_training_data"], sort_prior=sort_prior, batch_size=opts["batch_size"], maxibatch_size=20, max_len=opts["max_len"]+1, min_len=2, one_len=opts["max_len"]+1)
+    dev_iter = get_arranger(opts["dev"], [source_dict, target_dict], multis=False, shuffling_corpus=False, shuflling_buckets=False, sort_prior=[0], batch_size=opts["valid_batch_size"], maxibatch_size=-1, max_len=utils.Constants.MAX_V, min_len=0, one_len=opts["max_len"]+1)
     # 3. about model & trainer
     # <special one> fit a gaussian first
     length_info = LinearGaussain.fit_once(opts["train"])   # todo: train or dev?
