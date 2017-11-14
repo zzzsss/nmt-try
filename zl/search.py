@@ -10,6 +10,7 @@ class SearchGraph(object):
     def __init__(self):
         self.ch_recs = defaultdict(list)
         self.root = None
+        self.ends = []
 
     def reg(self, state):
         if state.prev is not None:
@@ -19,6 +20,12 @@ class SearchGraph(object):
 
     def childs(self, state):
         return self.ch_recs[state.id]
+
+    def add_end(self, state):
+        self.ends.append(state)
+
+    def get_ends(self):
+        return self.ends
 
     def is_pruned(self, one):
         return not one.is_end() and len(self.childs(one)) == 0
@@ -80,13 +87,13 @@ class State(object):
     def reset_id():
         State._state_id = 0
 
-    def __init__(self, sg=None, action=None, prev=None):
+    def __init__(self, sg=None, action=None, prev=None, **kwargs):
         self.sg = sg
         self.action = action
         self.prev = prev        # previous state, if None then the start state
         self.length = 0         # length of the actions
         self.ended = False      # whether this state has been ended
-        self.values = {}        # additional values & information
+        self.values = kwargs    # additional values & information
         self._score_final = None
         self._score_partial = 0
         if prev is not None:
@@ -122,9 +129,15 @@ class State(object):
     def score_final(self):
         return self._score_final
 
+    # for the actions
     @property
     def action_code(self):
         return int(self.action)
+
+    def action_score(self, s=None):
+        if s is not None:
+            self.action.score = s
+        return self.action.score
 
     def set_score_final(self, s):
         utils.zcheck(self.ended, "Nonlegal final calculation for un-end states.")
@@ -132,24 +145,42 @@ class State(object):
 
     def mark_end(self):
         self.ended = True
+        self.sg.add_end(self)
 
     def is_end(self):
         return self.ended
 
-    def set(self, k, v):
-        self.values[k] = v
-
     # whether this is the starting state
     def is_start(self):
         return self.prev is None
+
+    # about values
+    def set(self, k, v):
+        self.values[k] = v
+
+    def add_list(self, k, v):
+        if k not in self.values:
+            self.values[k] = []
+        utils.zcheck_type(self.values[k], list)
+        self.values[k].append(v)
+
+    def transfer_values(self, other, ruler=lambda x: str.islower(x[0])):
+        # todo(warn): specific rules, default start with lowercase
+        r = {}
+        for k in self.values:
+            if ruler(k):
+                r[k] = self.values[k]
+        other.values = r
 
     def get(self, which=None):
         if which is None:
             return self
         elif self.values and which in self.values:
             return self.values[which]
-        else:
+        elif hasattr(self, which):
             return getattr(self, which)
+        else:
+            return None
 
     def get_path(self, which=None):
         if self.prev is None:

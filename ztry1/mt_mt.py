@@ -10,6 +10,7 @@ import numpy as np
 
 from . import mt_layers as layers
 from .mt_length import get_normer
+from .mt_outputter import Outputter
 
 # herlpers
 # data helpers #
@@ -118,7 +119,7 @@ class s2sModel(Model):
         self.dec.refresh({"idrop":_gd(opts["idrop_dec"]), "gdrop":_gd(opts["gdrop_dec"]), "hdrop":_gd(opts["drop_hidden"])})
         self.out0.refresh({"hdrop":_gd(opts["drop_hidden"])})
         self.out1.refresh({})
-        self.lg.refresh({})
+        self.lg.refresh({"idrop":_gd(opts["drop_hidden"])})
 
     def update_schedule(self, uidx):
         # todo, change mode while training (before #num updates)
@@ -383,22 +384,23 @@ def mt_decode(decode_way, test_iter, mms, target_dict, opts, outf):
             prev_point = cur_sents
         cur_sents += len(insts)
         mt_search.search_init()
-        rs = cur_searcher(mms, insts, target_dict, opts, normer)
         # return list(batch) of list(beam) of states
-        if opts["decode_output_kbest"]:
-            results += [[[int(x.get_path("action")) for x in z] for z in r] for r in rs]
-        else:
-            results += [[int(x) for x in r[0].get_path("action")] for r in rs]
+        rs = cur_searcher(mms, insts, target_dict, opts, normer)
+        results += rs
         one_recorder.record(insts, {}, 0)
+    one_recorder.report()
     # restore from sorting by length
     results = test_iter.restore_order(results)
+    # output
+    ot = Outputter(opts)
+    # -- write one best
     with utils.zopen(outf, "w") as f:
         for r in results:
-            if opts["decode_output_kbest"]:
-                strs = [" ".join(data.Vocab.i2w(target_dict, _z)) for _z in r]
-                f.write("\n".join(strs)+"\n")
-            else:
-                best_seq = r
-                strs = data.Vocab.i2w(target_dict, best_seq)
-                f.write(" ".join(strs)+"\n")
-    one_recorder.report()
+            f.write(ot.format(r, target_dict, False, False))
+    # -- write k-best
+    output_kbest, output_score = opts["decode_output_kbest"], opts["decode_output_score"]
+    if output_kbest:
+        # todo(warn): specified file name
+        with utils.zopen(outf+".nbest") as f:
+            for r in results:
+                f.write(ot.format(r, target_dict, True, output_score))

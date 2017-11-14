@@ -92,6 +92,10 @@ def get_value_sca(expr):
     expr.forward()
     return expr.scalar_value()
 
+def get_value_np(expr):
+    expr.forward()
+    return expr.npvalue()
+
 def get_params(model, shape, lookup=False, init="default"):
     if isinstance(init, np.ndarray):    # pass it directly
         arr = init

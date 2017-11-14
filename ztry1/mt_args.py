@@ -148,12 +148,17 @@ def init(phase):
 
     # common
     common = parser.add_argument_group('common')
+    # -- dynet
     common.add_argument("--dynet-mem", type=str, default="4", dest="dynet-mem")
     common.add_argument("--dynet-devices", type=str, default="CPU", dest="dynet-devices")
     common.add_argument("--dynet-autobatch", type=str, default="0", dest="dynet-autobatch")
     common.add_argument("--dynet-seed", type=str, default="12345", dest="dynet-seed")    # default will be of no use, need to specify it
     common.add_argument("--dynet-immed", action='store_true', dest="dynet-immed")
-    # common.add_argument("--bk_init_nl", type=str, default="glorot", )
+    # -- bk init
+    common.add_argument("--bk_init_enabled", action='store_true')
+    common.add_argument("--bk_init_nl", type=str)
+    common.add_argument("--bk_init_l", type=str)
+    # -- others
     common.add_argument("--debug", action='store_true')
     common.add_argument("--verbose", "-v", action='store_true')
     common.add_argument("--log", type=str, default=zl.utils.Logger.MAGIC_CODE, help="logger for the process")
@@ -169,7 +174,7 @@ def init(phase):
     decode.add_argument('--beam_size', '-k', type=int, default=10, help="Beam size (default: %(default)s))")
     decode.add_argument('--decode_len', type=int, default=80, metavar='INT',
                          help="maximum decoding sequence length (default: %(default)s)")
-    decode.add_argument('--decode_ratio', type=float, default=2.,
+    decode.add_argument('--decode_ratio', type=float, default=5.,
                          help="maximum decoding sequence length ratio compared with src (default: %(default)s)")
     decode.add_argument('--eval_metric', type=str, default="bleu", choices=["bleu", "nist"],
                          help="type of metric for evaluation (default: %(default)s)")
@@ -199,7 +204,12 @@ def init(phase):
     # extra: for advanced decoding
     decode2 = parser.add_argument_group('decoding parameters section2')
     # -- general
-    decode2.add_argument('--decode_output_kbest', action='store_true', help="Output special files with all outputs.")
+    decode2.add_argument('--no_output_kbest', action='store_false', help="Output special files with all outputs.", dest="decode_output_kbest")
+    decode2.add_argument('--no_output_score', action='store_false', help="Output scores with the outputs.", dest="decode_output_score")
+    decode2.add_argument('--decode_replace_unk', action='store_true', help="Copy max-attention src for UNK.")
+    decode2.add_argument('--decode_latnbest', action='store_true', help="Re-generate n-best from lattice.")
+    decode2.add_argument('--decode_latnbest_nalpha', type=float, default=0.0, help="Length normalizer for lattice n-best.")
+    decode2.add_argument('--decode_latnbest_lreward', type=float, default=0.0, help="Length reward for lattice n-best.")
     # -- norm
     # todo(warn): have to be cautious about parameters, some model specification is also needed to construct model for decoding
     # todo(warn): only using the first model if using gaussian
@@ -217,8 +227,13 @@ def init(phase):
     decode2.add_argument('--pr_local_expand', type=int, default=10, help="Most expansions for each state.")
     decode2.add_argument('--pr_local_diff', type=float, default=np.log(10000.), help="Local pruning diff/thres (1/e**D if transferring to prob.)")
     decode2.add_argument('--pr_local_penalty', type=float, default=0., help="penalize candidates from the same state.")
-    # -- global pruning
-
+    # -- global pruning ("currently only tailing n-grams")
+    decode2.add_argument('--pr_global_expand', type=int, default=10, help="How many states could survive in one global-beam.")
+    decode2.add_argument('--pr_global_diff', type=float, default=np.log(10000.), help="Global pruning normalized diff/thres (1/e**D if transferring to prob.)")
+    decode2.add_argument('--pr_global_penalty', type=float, default=0., help="penalize candidates from the same sig.")
+    # --- specific tailing ngram params
+    decode2.add_argument('--pr_tngram_n', type=int, default=5, help="Nth tailing ngram sig for pruning.")
+    decode2.add_argument('--pr_tngram_range', type=int, default=0, help="Number of the range of history for tngram, 0 for none.")
 
     a = parser.parse_args()
 
@@ -247,3 +262,4 @@ def check_options(args):
     # about length
     if args["normalize_way"] == "xgaussian":
         assert args["train_len_xadd"]
+    # decode

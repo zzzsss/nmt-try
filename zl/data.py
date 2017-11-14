@@ -8,7 +8,7 @@ from collections import Iterable
 # ========== Vocab ========== #
 # The class of vocabulary or dictionary: conventions: 0:zeros, 1->wordceil:words, then:special tokens
 class Vocab(object):
-    SPECIAL_TOKENS = ["<unk>", "<bos>", "<eos>", "<pad>", ]    # PLUS <non>: 0
+    SPECIAL_TOKENS = ["<unk>", "<bos>", "<eos>", "<pad>", "<err>"]    # PLUS <non>: 0
     NON_TOKEN = "<non>"
 
     @staticmethod
@@ -76,6 +76,7 @@ class Vocab(object):
     def get_wordceil(self):
         return self.d["<unk>"]+1      # excluding special tokens except unk
 
+    # special tokens
     @property
     def non(self):
         return 0
@@ -96,6 +97,11 @@ class Vocab(object):
     def bos(self):
         return self.d["<bos>"]
 
+    @property
+    def err(self):
+        return self.d["<err>"]
+
+    # getting them
     def getw(self, index):
         return self.v[index]
 
@@ -306,7 +312,7 @@ class TextFileReader(InstanceReader):
         # weather reading multi lines
         if shuffling and any(multis):
             utils.zfatal("Not implemented for shuffling multi-line files.")
-        self._readers = [TextFileReader._read_one if what else TextFileReader._read_one_multi for what in multis]
+        self._readers = [TextFileReader._read_one if not m else TextFileReader._read_one_multi for m in multis]
 
     def __len__(self):
         # return num of instances (use cached value)
@@ -380,6 +386,8 @@ class TextFileReader(InstanceReader):
             insts = [self._readers[i](fds[i], self.vocabs[i]) for i in range(len(self.files))]
             if any([_x is None for _x in insts]) and any([_x is not None for _x in insts]):
                 utils.zfatal("EOF unmatched for %s." % insts)
+            if insts[0] is None:
+                break
             words = [_x[0] for _x in insts]
             idxes = [_x[1] for _x in insts]
             idx += 1

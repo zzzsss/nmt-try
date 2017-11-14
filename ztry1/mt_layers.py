@@ -55,11 +55,18 @@ class Basic(object):
     def refresh(self, argv):
         raise NotImplementedError("No calling refresh from Basic.")
 
-    # def _add_parameters(self, shape, lookup=False, init="default"):
-    #     return BK.get_params(self.model, shape, lookup, init)
+    # todo(warn), here two kinds of init
+    def _add_parameters(self, shape, lookup=False, init="default"):
+        if BK.COMMON_CONFIG.enabled:
+            return self._add_parameters1(shape, lookup, init)
+        else:
+            return self._add_parameters0(shape, lookup, init)
+
+    def _add_parameters1(self, shape, lookup=False, init="default"):
+        return BK.get_params(self.model, shape, lookup, init)
 
     # todo(warn): use the original ztry0 version of init
-    def _add_parameters(self, shape, lookup=False, init="default"):
+    def _add_parameters0(self, shape, lookup=False, init="default"):
         def ortho_weight(ndim):
             W = np.random.randn(ndim, ndim)
             u, s, v = np.linalg.svd(W)

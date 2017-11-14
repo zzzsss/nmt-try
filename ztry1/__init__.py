@@ -5,4 +5,4 @@
 # 1. for search_beam: local pruning, global pruning and combining
 # 2. search_branch
 # 3. rerank (& with gold)
-# 4. analysis of the bleus
+# 4. analysis of the bleus and the searchings: how many steps diverge

@@ -93,6 +93,8 @@ class LinearGaussain(BasicLayer):
         # forward
         input_list = [self.iparams["B"], self.iparams["A"], xe]
         if self.xadd:
+            if self.idrop > 0.:
+                xsrc = BK.dropout(xsrc, self.idrop)
             if self.xback:
                 source = xsrc
             else:
@@ -124,7 +126,7 @@ def get_normer(method, alpha, gaussian_sigma):
     if method in ["none", "norm", "google"]:
         return ScaleLengthNormer(method, alpha)
     elif method == "add":
-        return AdderNormer(method, alpha)
+        return AdderNormer(alpha, gaussian_sigma)
     else:
         assert method in ["gaussian", "xgaussian"]
         return GaussianNormer(alpha, gaussian_sigma)

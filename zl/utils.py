@@ -258,7 +258,7 @@ class Random(object):
         if task not in Random._seeds:
             one = 1
             for t in task:
-                one = one * ord(t) // (2**31)
+                one = one * ord(t) % (2**30)
             one += 1
             Random._seeds[task] = np.random.RandomState(one)
         return Random._seeds[task]
@@ -282,7 +282,7 @@ class Random(object):
 
     @staticmethod
     def ortho_weight(ndim, type):
-        W = Random._function("randn", type, ndim, ndim)
+        W = Random.randn_clip((ndim, ndim), type)
         u, s, v = np.linalg.svd(W)
         return u.astype(np.float)
 
@@ -291,8 +291,10 @@ class Random(object):
         return Random._function("rand", type, *dims)
 
     @staticmethod
-    def randn(dims, type):
-        return Random._function("randn", type, *dims)
+    def randn_clip(dims, type):
+        w = Random._function("randn", type, *dims)
+        w.clip(-2, 2)   # clip [-2*si, 2*si]
+        return w
 
 # convenience for basic classes like lists and dicts
 class Helper(object):
