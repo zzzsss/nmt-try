@@ -108,8 +108,7 @@ class State(object):
     # @property: action, prev, id, length
 
     def __repr__(self):
-        fs = -1. if self._score_final is None else self._score_final
-        return "ID=%s|PID=%s|LEN=%s|SS=%.3f(%.3f)|ACT=%s" % (self.id, self.pid, self.length, self._score_partial, fs, self.action)
+        return "ID=%s|PID=%s|LEN=%s|SS=%.3f(%.3f)|ACT=%s" % (self.id, self.pid, self.length, self._score_partial, self.score_final, self.action)
 
     def __str__(self):
         return self.__repr__()
@@ -127,7 +126,7 @@ class State(object):
 
     @property
     def score_final(self):
-        return self._score_final
+        return utils.Constants.MIN_V if self._score_final is None else self._score_final
 
     # for the actions
     @property

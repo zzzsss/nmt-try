@@ -401,6 +401,6 @@ def mt_decode(decode_way, test_iter, mms, target_dict, opts, outf):
     output_kbest, output_score = opts["decode_output_kbest"], opts["decode_output_score"]
     if output_kbest:
         # todo(warn): specified file name
-        with utils.zopen(outf+".nbest") as f:
+        with utils.zopen(outf+".nbest", "w") as f:
             for r in results:
                 f.write(ot.format(r, target_dict, True, output_score))

@@ -4,18 +4,17 @@ import subprocess
 from zl import utils
 from . import mt_args
 
-
 def evaluate(output, gold, metric, process_gold=False):
     eva = {"bleu":_eval_bleu, "nist":_eval_nist}[metric]
     return eva(output, gold, process_gold)
 
 def _get_lang(gold_fn):
     # current:
-    cands = ["en", "fr", "de"]
+    cands = ["en", "fr", "de", "zh"]
     for c in cands:
         if c in gold_fn:
             return c
-    utils.zlog("Unknown target language for evaluating!!", func="warn")
+    utils.zlog("Unknown target languages for evaluating!!", func="warn")
     return "en"
 
 def _eval_bleu(output, gold, process_gold):
@@ -24,7 +23,11 @@ def _eval_bleu(output, gold, process_gold):
     script_name = os.path.join(dir_name, "..", "scripts", "moses", "multi-bleu.perl")
     # zmt_name = os.path.join(dir_name, "..")  # todo(warn) need to find mosesdecoder for restore: default $ZMT is znmt/../
     # maybe preprocess
-    if process_gold:
+    # todo: special treatment for files with multiple references
+    if str.isnumeric(gold[-1]):
+        utils.zlog("Evaluating instead on %s to deal with multiple references of original %s." % (gold[:-1], gold), func="warn")
+        gold = gold[:-1]
+    elif process_gold:
         gold_res = "temp.somekindofhelpless.gold.restore"
         os.system("bash %s < %s > %s" % (restore_name, gold, gold_res))
         gold = gold_res

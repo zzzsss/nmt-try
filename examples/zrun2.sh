@@ -44,5 +44,7 @@ python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t 
 # 17.11.20 (run basic ones for EN_DE,JA-EN,ZH-EN
 # x46
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-de_z5/ -t znmt --batch_size 80 --valid_batch_width 80 --extras "dim_word 500 hidden_att 500 rnn_type gru2 gdrop_rec 0.4 idrop_embedding 0.4 drop_hidden 0.4 drop_embedding 0.4" -z 6 -p 4
-python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en_de_data_z5/ -t znmt --batch_size 80 --valid_batch_width 80 --extras "dim_word 500 hidden_att 500 rnn_type gru2 gdrop_rec 0.4 idrop_embedding 0.4 drop_hidden 0.4 drop_embedding 0.4" -z 6 -p 7
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../en_de_data_z5/ -t znmt --batch_size 80 --valid_batch_width 80 --extras "dim_word 500 hidden_att 500 rnn_type gru2 gdrop_rec 0.4 idrop_embedding 0.4 drop_hidden 0.4 drop_embedding 0.4" -z 6 -p 7
 # x47
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../ja_en_data_z5/no_bpe/ -t znmt --batch_size 80 --valid_batch_width 80 --extras "dim_word 500 hidden_att 500 rnn_type gru2 gdrop_rec 0.4 idrop_embedding 0.4 drop_hidden 0.4 drop_embedding 0.4 dicts_rthres 30000" -z 6 -p 1
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "dim_word 500 hidden_att 500 rnn_type gru2 gdrop_rec 0.4 idrop_embedding 0.4 drop_hidden 0.4 drop_embedding 0.4 dicts_rthres 30000" -z 6 -p 3

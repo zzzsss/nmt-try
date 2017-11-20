@@ -10,7 +10,7 @@ import sys
 def init():
     print(" ".join(sys.argv))
     p = argparse.ArgumentParser()
-    p.add_argument("--tool", "-t", type=str, required=True, choices=["nematus", "xnmt", "znmt", "opennmt"])
+    p.add_argument("--tool", "-t", type=str, required=True, choices=["nematus", "xnmt", "znmt", "opennmt", "znmt_zh"])
     p.add_argument("--device", "-p", type=int, required=True, help="-1:cpu >0:gpu")
     p.add_argument("--datadir", "-d", type=str, required=True)
     p.add_argument("--rundir", type=str)    # None means current one (pwd)
@@ -49,7 +49,7 @@ def init():
         args["rundir"] = "../%s" % bn
     if args["src"] is None or args["trg"] is None:
         # inferring from datadir-name
-        LANGS = ["en", "de", "fr", "cn", "ja"]
+        LANGS = ["en", "de", "fr", "zh", "ja", ]
         fs = re.findall("|".join(LANGS), args["datadir"])
         if len(fs) == 2:
             args["src"], args["trg"] = fs[0], fs[1]
@@ -126,6 +126,9 @@ def main():
         ],
         "znmt": [
             ["run_znmt.sh", "_test.sh", args, {}]
+        ],
+        "znmt_zh": [
+            ["run_znmt_zh.sh", "_test.sh", args, {}]
         ],
         "opennmt": [
             ["run_opennmt.sh", "_test.sh", args, {"_opennmt_device":("-gpuid %s"%args["gpuid"] if is_gpu else ""), "_opennmt_test_device":("-gpu %s"%args["gpuid"] if is_gpu else "")}]
