@@ -406,3 +406,12 @@ def get_arranger(files, vocabs, multis, shuffling_corpus, shuflling_buckets, sor
     tracking_order = True if maxibatch_size<=0 else False   # todo(warn): -1 for dev/test
     arranger = BatchArranger(streamer=streamer, batch_size=batch_size, maxibatch_size=maxibatch_size, outliers=[TextInstanceRangeOutlier(min_len, max_len)], single_outlier=TextInstanceRangeOutlier(min_len, one_len), sorting_keyer=TextInstanceLengthSorter(sort_prior), tracking_order=tracking_order,shuffling=shuflling_buckets)
     return arranger
+
+def get_arranger_simple(files, vocabs, multis, batch_size):
+    if not isinstance(multis, Iterable):
+        utils.zcheck_type(multis, bool, _forced=True)
+        multis = [multis for _ in range(len(files))]
+    streamer = TextFileReader(files, vocabs, multis, False)
+    tracking_order = False
+    arranger = BatchArranger(streamer=streamer, batch_size=batch_size, maxibatch_size=1, outliers=None, single_outlier=None, sorting_keyer=None, tracking_order=tracking_order,shuffling=False)
+    return arranger

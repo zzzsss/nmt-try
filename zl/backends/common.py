@@ -7,7 +7,7 @@ class COMMON_CONFIG(object):
     enabled = False
     values = {
         "bk_init_nl": "glorot", "bk_init_l": "glorot",
-        "bk_init_scale_nl": 0.01, "bk_init_scale_l": 0.1
+        "bk_init_scale_nl": 0.01, "bk_init_scale_l": 0.01
     }
 
 # first init params with np: return is C-order as the default of numpy

@@ -63,8 +63,13 @@ class TrainingProgress(object):
         return if_best, if_anneal
 
     def report(self):
+        def _getv(z):
+            return utils.Constants.MIN_V if z is None else z[0]
         for k in sorted(self.__dict__):
             utils.zlog("Training progress results: %s = %s." % (k, self.__dict__[k]), func="score")
+        # ranking
+        sortings = sorted([(_1, _getv(_2)) for _1,_2 in zip(self.hist_points, self.hist_scores)], key=lambda x: x[-1], reverse=True)[:10]
+        utils.zlog("Ranking top10 is: %s" % sortings)
 
 # class ValidScore(object):
 #     pass

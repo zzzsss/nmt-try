@@ -35,7 +35,8 @@ class LinearGaussain(BasicLayer):
     @staticmethod
     def log_gaussian(one, mu, si):
         _c = si ** 2
-        r = - (one-mu)**2/2*_c - 0.5*np.log(2*np.pi*_c)
+        # r = - (one-mu)**2/(2*_c) - 0.5*np.log(2*np.pi*_c)
+        r = - (one-mu)**2/(2*_c)
         return r
 
     @staticmethod
@@ -140,7 +141,7 @@ class ScaleLengthNormer(object):
     def __call__(self, states, pad):
         for beam in states:
             for one in beam:
-                one.set_score_final(one.score_partial / self._ff(one.length))
+                one.set_score_final(one.score_partial * self._ff(one.length))
 
 class AdderNormer(object):
     def __init__(self, alpha, sigma):

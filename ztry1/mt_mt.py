@@ -2,10 +2,11 @@
 
 from zl.model import Model
 from zl.trainer import Trainer
+from zl.search2 import StateStater
 from zl import utils, data
 from . import mt_search, mt_eval
 from .mt_length import MTLengther, LinearGaussain
-from collections import defaultdict
+from collections import defaultdict, Iterable
 import numpy as np
 
 from . import mt_layers as layers
@@ -109,6 +110,13 @@ class s2sModel(Model):
                     new_c[n] = c[n]
         return new_c
 
+    def recombine(self, clist, idxlist):
+        new_c = {}
+        for names in (self.names_bv, self.names_bi):
+            for n in names:
+                new_c[n] = layers.BK.recombine_cache([_c[n] for _c in clist], idxlist)
+        return new_c
+
     def refresh(self, training):
         def _gd(drop):  # get dropout
             return drop if training else 0.
@@ -159,12 +167,12 @@ class s2sModel(Model):
         return self.dec.feed_one(x_encodes, inputs, caches)
 
     # main routines #
-    def start(self, xs, repeat=1, softmax=True):
+    def start(self, xs, repeat_time=1, softmax=True):
         # encode
         bsize = len(xs)
         xx, xm = prepare_data(xs, self.source_dict)
         x_encodes = self.encode(xx, xm)
-        x_encodes = [layers.BK.batch_repeat(one, repeat) for one in x_encodes]
+        x_encodes = [layers.BK.batch_repeat(one, repeat_time) for one in x_encodes]
         # init decode
         cache = self.decode_start(x_encodes)
         start_embeds = self.get_start_yembs(bsize)
@@ -365,10 +373,12 @@ class MTTrainer(Trainer):
         return self._mm.fb(insts, True)
 
 def mt_decode(decode_way, test_iter, mms, target_dict, opts, outf):
-    cur_searcher = {"greedy":mt_search.search_greedy, "beam":mt_search.search_beam}[decode_way]
+    cur_searcher = {"greedy":mt_search.search_greedy, "beam":mt_search.search_beam,
+                    "sample":mt_search.search_sample, "branch":mt_search.search_branch}[decode_way]
     one_recorder = OnceRecorder("DECODE")
     num_sents = len(test_iter)
     cur_sents = 0.
+    sstater = StateStater()
     # decoding them all
     results = []
     prev_point = 0
@@ -378,29 +388,44 @@ def mt_decode(decode_way, test_iter, mms, target_dict, opts, outf):
         utils.zlog("Model[%s] is with lg as %s." % (i, _lg_params,))
     _sigma = np.average([_m.lg.get_real_sigma() for _m in mms], axis=0)
     normer = get_normer(opts["normalize_way"], opts["normalize_alpha"], _sigma)
-    for insts in test_iter.arrange_batches():
-        if opts["verbose"] and (cur_sents - prev_point) >= (opts["report_freq"]*test_iter.bsize()):
-            utils.zlog("Decoding process: %.2f%%" % (cur_sents / num_sents * 100))
-            prev_point = cur_sents
-        cur_sents += len(insts)
-        mt_search.search_init()
-        # return list(batch) of list(beam) of states
-        rs = cur_searcher(mms, insts, target_dict, opts, normer)
+    # todo: ugly code here
+    if isinstance(test_iter, Iterable):
+        rs = cur_searcher(mms, test_iter, target_dict, opts, normer, sstater)
         results += rs
-        one_recorder.record(insts, {}, 0)
-    one_recorder.report()
-    # restore from sorting by length
-    results = test_iter.restore_order(results)
+    else:
+        for insts in test_iter.arrange_batches():
+            if opts["verbose"] and (cur_sents - prev_point) >= (opts["report_freq"]*test_iter.bsize()):
+                utils.zlog("Decoding process: %.2f%%" % (cur_sents / num_sents * 100))
+                prev_point = cur_sents
+            cur_sents += len(insts)
+            mt_search.search_init()
+            # return list(batch) of list(beam) of states
+            rs = cur_searcher(mms, insts, target_dict, opts, normer, sstater)
+            results += rs
+            one_recorder.record(insts, {}, 0)
+        one_recorder.report()
+        # restore from sorting by length
+        results = test_iter.restore_order(results)
     # output
-    ot = Outputter(opts)
+    sstater.report()
     # -- write one best
     with utils.zopen(outf, "w") as f:
+        ot = Outputter(opts)
         for r in results:
             f.write(ot.format(r, target_dict, False, False))
     # -- write k-best
-    output_kbest, output_score = opts["decode_output_kbest"], opts["decode_output_score"]
+    output_kbest = opts["decode_output_kbest"]
     if output_kbest:
-        # todo(warn): specified file name
+        # todo(warn): specified file names
         with utils.zopen(outf+".nbest", "w") as f:
+            ot = Outputter(opts)
             for r in results:
-                f.write(ot.format(r, target_dict, True, output_score))
+                f.write(ot.format(r, target_dict, True, False))
+        with utils.zopen(outf+".nbests", "w") as f:
+            ot = Outputter(opts)
+            for r in results:
+                f.write(ot.format(r, target_dict, True, True))
+        with utils.zopen(outf+".nbestg", "w") as f:
+            for i, r in enumerate(results):
+                f.write("# znumber%s\n%s\n" % (i, r[0].sg.show_graph(target_dict, False)))
+    return results

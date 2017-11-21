@@ -38,6 +38,7 @@ mean_batches = dy.mean_batches
 nobackprop = dy.nobackprop
 pickneglogsoftmax_batch = dy.pickneglogsoftmax_batch
 pick_batch_elems = dy.pick_batch_elems
+pick_batch_elem = dy.pick_batch_elem
 pick_range = dy.pick_range
 reshape = dy.reshape
 softmax = dy.softmax
@@ -190,3 +191,19 @@ def rearrange_cache(cache, order):
         return None
     else:
         return batch_rearrange_one(cache, order)
+
+def recombine_cache(caches, indexes):
+    # input lists, output combine one. todo: to be more efficient
+    c0 = caches[0]
+    if isinstance(c0, dict):
+        ret = {}
+        for n in c0:
+            ret[n] = recombine_cache([_c[n] for _c in caches], indexes)
+        return ret
+    elif isinstance(c0, list):
+        return [recombine_cache([_c[_i] for _c in caches], indexes) for _i in range(len(c0))]
+    elif isinstance(c0, type(None)):
+        return None
+    else:
+        them = [pick_batch_elem(_c, _i) for _c, _i in zip(caches, indexes)]
+        return concatenate_to_batch(them)

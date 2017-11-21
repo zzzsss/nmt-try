@@ -5,7 +5,7 @@ from zl import utils
 from . import mt_args
 
 def evaluate(output, gold, metric, process_gold=False):
-    eva = {"bleu":_eval_bleu, "nist":_eval_nist}[metric]
+    eva = {"bleu":_eval_bleu,"ibleu":lambda _1,_2,_3:_eval_bleu(_1,_2,_3,True), "nist":_eval_nist}[metric]
     return eva(output, gold, process_gold)
 
 def _get_lang(gold_fn):
@@ -17,7 +17,7 @@ def _get_lang(gold_fn):
     utils.zlog("Unknown target languages for evaluating!!", func="warn")
     return "en"
 
-def _eval_bleu(output, gold, process_gold):
+def _eval_bleu(output, gold, process_gold, lowercase=False):
     dir_name = os.path.dirname(os.path.abspath(__file__))
     restore_name = os.path.join(dir_name, "..", "scripts", "restore.sh")
     script_name = os.path.join(dir_name, "..", "scripts", "moses", "multi-bleu.perl")
@@ -31,7 +31,8 @@ def _eval_bleu(output, gold, process_gold):
         gold_res = "temp.somekindofhelpless.gold.restore"
         os.system("bash %s < %s > %s" % (restore_name, gold, gold_res))
         gold = gold_res
-    p = subprocess.Popen("bash %s < %s | perl %s %s" % (restore_name, output, script_name, gold), shell=True, stdout=subprocess.PIPE)
+    maybe_lc = "-lc" if lowercase else ""
+    p = subprocess.Popen("bash %s < %s | perl %s %s %s" % (restore_name, output, maybe_lc, script_name, gold), shell=True, stdout=subprocess.PIPE)
     line = p.stdout.readlines()
     utils.zlog("Evaluating %s to %s." % (output, gold), func="info")
     utils.zlog(str(line), func="score")

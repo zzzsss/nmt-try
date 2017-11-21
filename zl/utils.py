@@ -296,6 +296,12 @@ class Random(object):
         w.clip(-2, 2)   # clip [-2*si, 2*si]
         return w
 
+    @staticmethod
+    def multinomial_select(probs, type):
+        # once selection
+        x = Random._function("multinomial", type, 1, probs, 1)
+        return int(np.argmax(x[0]))
+
 # convenience for basic classes like lists and dicts
 class Helper(object):
     @staticmethod
@@ -323,6 +329,22 @@ class Helper(object):
                     yield y
         else:
             yield obj
+
+    @staticmethod
+    def repeat_list(l, time):
+        ret = []
+        for one in l:
+            for i in range(time):
+                ret.append(one)
+        return ret
+
+    @staticmethod
+    def shrink_list(l, time):
+        ret = []
+        zcheck(len(l)%time==0, "Unlegal shrink")
+        for i in range(len(l)//time):
+            ret.append(l[i*time])
+        return ret
 
 # constants
 class Constants(object):

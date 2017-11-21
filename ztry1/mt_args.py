@@ -34,16 +34,17 @@ def init(phase):
                              help="don't reload training progress (only used if --reload is enabled)")
         data.add_argument('--no_overwrite', action='store_false', dest='overwrite',
                              help="don't write all models to same file")
-    elif phase == "test":
+    elif phase == "test" or phase == "rerank":
         # data, dictionary, model
         data.add_argument('--test', '-t', type=str, required=True, metavar='PATH', nargs="+",
-                             help="parallel testing corpus (source and target)")
+                             help="parallel testing corpus, maybe multiple targets for reranking (source and target)")
         data.add_argument('--output', '-o', type=str, default='output.txt', metavar='PATH', help="output target corpus")
-        # data.add_argument('--gold', type=str, metavar='PATH', help="gold target corpus (for eval)") # test[1]
+        data.add_argument('--gold', type=str, metavar='PATH', help="gold target corpus (for eval)", nargs="+")
         data.add_argument('--dicts', '-d', type=str, default=["src.v", "trg.v"], metavar='PATH', nargs="+",
                           help="final dictionaries (source / target)")
         data.add_argument('--models', '-m', type=str, default=["zbest.model"], metavar='PATHs', nargs="*",
                              help="model file names (ensemble if >1)")
+        data.add_argument("--loop", action='store_true', help="Entering looping mode, reading from std-inputs.")
         ## no use, just for convenience
         data.add_argument('--dicts_rthres', type=int, default=50000, metavar='INT', help="NON-USED OPTION")
         data.add_argument('--dicts_fthres', type=int, default=1, metavar='INT', help="NON-USED OPTION")
@@ -131,7 +132,7 @@ def init(phase):
                          help="validation frequency (default: %(default)s)")
     validation.add_argument('--valid_batch_size', '--valid_batch_width', type=int, default=40, metavar='INT',
                          help="validating minibatch-size (default: %(default)s)")
-    validation.add_argument('--patience', type=int, default=5, metavar='INT',
+    validation.add_argument('--patience', type=int, default=4, metavar='INT',
                          help="early stopping patience (default: %(default)s)")
     validation.add_argument('--anneal_restarts', type=int, default=2, metavar='INT',
                          help="when patience runs out, restart training INT times with annealed learning rate (default: %(default)s)")
@@ -169,14 +170,14 @@ def init(phase):
     decode = parser.add_argument_group('decode')
     # decode.add_argument('--decode_type', '--decode_mode', type=str, default="decode", choices=["decode", "decode_gold", "test1", "test2", "loop"],
     #                      help="type/mode of testing (decode, test, loop)")
-    decode.add_argument('--decode_way', type=str, default="beam", choices=["greedy", "beam"],
+    decode.add_argument('--decode_way', type=str, default="beam", choices=["greedy", "beam", "sample", "branch"],
                          help="decoding method (default: %(default)s)")
     decode.add_argument('--beam_size', '-k', type=int, default=10, help="Beam size (default: %(default)s))")
     decode.add_argument('--decode_len', type=int, default=80, metavar='INT',
                          help="maximum decoding sequence length (default: %(default)s)")
     decode.add_argument('--decode_ratio', type=float, default=5.,
                          help="maximum decoding sequence length ratio compared with src (default: %(default)s)")
-    decode.add_argument('--eval_metric', type=str, default="bleu", choices=["bleu", "nist"],
+    decode.add_argument('--eval_metric', type=str, default="bleu", choices=["bleu", "iblue", "nist"],
                          help="type of metric for evaluation (default: %(default)s)")
     decode.add_argument('--test_batch_size', type=int, default=8, metavar='INT',
                          help="testing minibatch-size(default: %(default)s)")
@@ -205,11 +206,12 @@ def init(phase):
     decode2 = parser.add_argument_group('decoding parameters section2')
     # -- general
     decode2.add_argument('--no_output_kbest', action='store_false', help="Output special files with all outputs.", dest="decode_output_kbest")
-    decode2.add_argument('--no_output_score', action='store_false', help="Output scores with the outputs.", dest="decode_output_score")
+    # decode2.add_argument('--no_output_score', action='store_false', help="Output scores with the outputs.", dest="decode_output_score")
     decode2.add_argument('--decode_replace_unk', action='store_true', help="Copy max-attention src for UNK.")
     decode2.add_argument('--decode_latnbest', action='store_true', help="Re-generate n-best from lattice.")
     decode2.add_argument('--decode_latnbest_nalpha', type=float, default=0.0, help="Length normalizer for lattice n-best.")
     decode2.add_argument('--decode_latnbest_lreward', type=float, default=0.0, help="Length reward for lattice n-best.")
+    decode2.add_argument('--decode_latnbest_rtimes', type=int, default=1, help="Maximum repeating times of link in the stack.")
     # -- norm
     # todo(warn): have to be cautious about parameters, some model specification is also needed to construct model for decoding
     # todo(warn): only using the first model if using gaussian
@@ -224,16 +226,21 @@ def init(phase):
     decode2.add_argument('--pr_len_klow', type=float, default=10., metavar="K_LOW",
                          help="Another max-len lower limit: (mu+k*si)")
     # --- local pruning
-    decode2.add_argument('--pr_local_expand', type=int, default=10, help="Most expansions for each state.")
-    decode2.add_argument('--pr_local_diff', type=float, default=np.log(10000.), help="Local pruning diff/thres (1/e**D if transferring to prob.)")
+    decode2.add_argument('--pr_local_expand', type=int, default=100, help="Most expansions for each state.")
+    decode2.add_argument('--pr_local_diff', type=float, default=100., help="Local pruning diff/thres (1/e**D if transferring to prob.)")
     decode2.add_argument('--pr_local_penalty', type=float, default=0., help="penalize candidates from the same state.")
     # -- global pruning ("currently only tailing n-grams")
-    decode2.add_argument('--pr_global_expand', type=int, default=10, help="How many states could survive in one global-beam.")
-    decode2.add_argument('--pr_global_diff', type=float, default=np.log(10000.), help="Global pruning normalized diff/thres (1/e**D if transferring to prob.)")
+    decode2.add_argument('--pr_global_expand', type=int, default=100, help="How many states could survive in one global-beam.")
+    decode2.add_argument('--pr_global_diff', type=float, default=100., help="Global pruning normalized diff/thres (1/e**D if transferring to prob.)")
     decode2.add_argument('--pr_global_penalty', type=float, default=0., help="penalize candidates from the same sig.")
     # --- specific tailing ngram params
     decode2.add_argument('--pr_tngram_n', type=int, default=5, help="Nth tailing ngram sig for pruning.")
     decode2.add_argument('--pr_tngram_range', type=int, default=0, help="Number of the range of history for tngram, 0 for none.")
+
+    # specific for re-ranking & analyzing
+    if phase == "rerank":
+        rerank = parser.add_argument_group('options for reranking and analysing')
+        #
 
     a = parser.parse_args()
 

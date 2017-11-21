@@ -7,11 +7,22 @@ class Outputter(object):
     def __init__(self, opts):
         self.opts = opts
         self.unk_rep = opts["decode_replace_unk"]
+        self.count = 0
 
-    def format(self, states, target_dict, kbest, output_score):
+    def transform_src(self, w):
+        if all(str.isalnum(z) or z=="." for z in w):
+            return w
+        else:
+            return "<unkown>"
+
+    def format(self, states, target_dict, kbest, verbose):
         ret = ""
         if not kbest:
             states = [states[0]]
+        if verbose:
+            ret += "# znumber%s" % self.count + "\n"
+            # ret += states[0].sg.show_graph(target_dict, False) + "\n"
+        self.count += 1
         for s in states:
             # list of states including eos
             paths = s.get_path()
@@ -28,20 +39,21 @@ class Outputter(object):
                     xidx = np.argmax(one.get("attention_weights"))
                     if xidx >= len(xwords):
                         utils.zcheck(False, "attention out of range", func="warn")
-                        ret += "<out-of-range>"
+                        rrw = "<out-of-range>"
                     else:
-                        ret += xwords[xidx]
-                if output_score:
+                        rrw = xwords[xidx]
+                    ret += self.transform_src(rrw)
+                if verbose:
                     if unk_replace:
                         ret += "<UNK>"
                     ret += ("(%.3f)" % one.action_score())
                 ret += " "
             # last one
-            if output_score:
+            if verbose:
                 one = paths[-1]
                 ret += target_dict.getw(one.action_code)
                 ret += ("(%.3f)" % one.action_score())
-                ret += " -> (OVERALL:%.3f,%.3f)" % (one.score_partial, one.score_final)
+                ret += " -> (OVERALL:%.3f,%.3f,%d)" % (one.score_partial, one.score_final, one.length)
             ret += "\n"
         if kbest:
             ret += "\n"

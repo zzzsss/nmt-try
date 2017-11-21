@@ -7,7 +7,9 @@ from . import utils, data
 
 # the searching graph (tracking the relations between states)
 class SearchGraph(object):
-    def __init__(self):
+    def __init__(self, target_dict=None, src_info=None):
+        self.target_dict = target_dict
+        self.src_info = src_info
         self.ch_recs = defaultdict(list)
         self.root = None
         self.ends = []
@@ -49,32 +51,28 @@ class SearchGraph(object):
             currents = nexts
         return ret
 
-    def show_graph(self, td):
+    def show_graph(self, td=None, print=True):
+        if td is None:
+            td = self.target_dict
         s = "\n"
         currents = [self.root]
         while len(currents) > 0:
             nexts = []
             for one in currents:
-                head = "id=%s|pid=%s|s=%.3f|(%s)" % (one.id, one.pid, one.score_partial, " ".join(data.Vocab.i2w(td, one.get_path("action_code"))))
+                head = "## id=%s|pid=%s|s=%.3f|%s|(%s)" % (one.id, one.pid, one.score_partial, one.state(), " ".join(data.Vocab.i2w(td, one.get_path("action_code"))))
                 expands = self.childs(one)
                 exp_strs = []
                 for z in sorted(expands, key=lambda x: x.score_partial, reverse=True):
-                    if self.is_pruned(z):
-                        pr_str = "PR"
-                    else:
-                        pr_str = "ST"
+                    if not self.is_pruned(z):
                         nexts.append(z)
-                    exp_strs.append("id=%s|w=%s|s=%.3f(%.3f)|%s" % (z.id, td.getw(z.action_code), z.action.score, np.exp(z.action.score), pr_str))
+                    exp_strs.append("id=%s|w=%s|s=%.3f(%.3f)|%s" % (z.id, td.getw(z.action_code), z.action.score, np.exp(z.action.score), z.state()))
                 head2 = "\n-> " + ", ".join(exp_strs) + "\n"
                 s += head + head2
             s += "\n"
             currents = nexts
-        utils.zlog(s)
-
-    def analyze(self):
-        # return statistics
-        stat = {}
-        return stat
+        if print:
+            utils.zlog(s)
+        return s
 
 # the states in the searching graph (should be kept small)
 class State(object):
@@ -94,8 +92,10 @@ class State(object):
         self.length = 0         # length of the actions
         self.ended = False      # whether this state has been ended
         self.values = kwargs    # additional values & information
+        self.caches = {}
         self._score_final = None
         self._score_partial = 0
+        self._state = "NAN"     # nan, expand, end, pr*
         if prev is not None:
             self.length = prev.length + 1
             self._score_partial = action.score + prev._score_partial
@@ -112,6 +112,17 @@ class State(object):
 
     def __str__(self):
         return self.__repr__()
+
+    def show_words(self, td=None, print=True):
+        if td is None:
+            td = self.sg.target_dict
+        s = []
+        paths = self.get_path()
+        for one in paths:
+            s.append("%s(%s|%.3f)" % (td.getw(one.action_code), one.action, one.score_partial))
+        if print:
+            utils.zlog("; ".join(s))
+        return s
 
     @property
     def pid(self):
@@ -135,16 +146,25 @@ class State(object):
 
     def action_score(self, s=None):
         if s is not None:
+            # also change accumulate scores
+            self._score_partial += (s-self.action.score)
             self.action.score = s
         return self.action.score
+
+    def state(self, s=None):
+        if s is not None:
+            self._state = s
+        return self._state
 
     def set_score_final(self, s):
         utils.zcheck(self.ended, "Nonlegal final calculation for un-end states.")
         self._score_final = s
 
     def mark_end(self):
+        self.state("END")   # also note state here
         self.ended = True
-        self.sg.add_end(self)
+        if self.sg is not None:
+            self.sg.add_end(self)
 
     def is_end(self):
         return self.ended
@@ -163,7 +183,7 @@ class State(object):
         utils.zcheck_type(self.values[k], list)
         self.values[k].append(v)
 
-    def transfer_values(self, other, ruler=lambda x: str.islower(x[0])):
+    def transfer_values(self, other, ruler=lambda x: str.islower(str(x)[0])):
         # todo(warn): specific rules, default start with lowercase
         r = {}
         for k in self.values:
@@ -181,18 +201,43 @@ class State(object):
         else:
             return None
 
-    def get_path(self, which=None):
+    def get_path(self, which=None, maxlen=-1):
+        # todo(warn): negative trick
+        if maxlen == 0:
+            return []
         if self.prev is None:
             l = []
         else:
-            l = self.prev.get_path(which)
+            l = self.prev.get_path(which, maxlen-1)
             v = self.get(which)
             l.append(v)
         return l
 
+    # signatures
+    def sig_ngram_list(self, n):
+        if n not in self.values:
+            # calculate it on the fly
+            if self.is_start():
+                self.values[n] = [""]*n
+            else:
+                pp = self.prev.sig_ngram_list(n)
+                self.values[n] = [str(self.action_code)] + pp[:-1]
+        return self.values[n]
+
+    def sig_ngram(self, n):
+        if n not in self.caches:
+            ll = self.sig_ngram_list(n)
+            self.caches[n] = "|".join(ll)
+        return self.caches[n]
+
+    def sig_idlink(self):
+        if "_il" not in self.caches:
+            self.caches["_il"] = "%s|%s" % (self.id, self.pid)
+        return self.caches["_il"]
+
 # action
 class Action(object):
-    def __init__(self, action_code, score,):
+    def __init__(self, action_code, score):
         self.action_code = action_code
         self.score = score
         # self.values = kwargs
