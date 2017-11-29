@@ -267,6 +267,10 @@ class TextInstance(Instance):
     def __str__(self):
         return self.__repr__()
 
+    def __len__(self):
+        # how many instances
+        return len(self.idxes)
+
     def __getitem__(self, item):
         return self.idxes[item]
 
@@ -275,6 +279,27 @@ class TextInstance(Instance):
 
     def get_origin(self, i):
         return self.words[i]
+
+    # for evaluating and analysing
+    def set(self, k, v):
+        if "values" not in self.__dict__:
+            setattr(self, "values", {})
+        self.values[k] = v
+
+    def get(self, k):
+        if k not in self.values:
+            return None
+        return self.values[k]
+
+    def extract(self):
+        ret = []
+        for i in range(len(self)):
+            # todo(warn): bad discrimination criteria
+            if isinstance(self.idxes[i][0], Iterable):
+                ret.append(TextInstance(self.words[i], self.idxes[i]))
+            else:   # just one
+                ret.append(TextInstance([self.words[i]], [self.idxes[i]]))
+        return ret
 
 class TextInstanceRangeOutlier(object):
     # detect outlier, return True if outlier detected
@@ -303,7 +328,11 @@ class TextInstanceLengthSorter(object):
 class TextFileReader(InstanceReader):
     def __init__(self, files, vocabs, multis, shuffling):
         utils.zcheck_matched_length(files, vocabs, _forced=True)
-        utils.zcheck_matched_length(files, multis, _forced=True)
+        if not isinstance(multis, Iterable):
+            utils.zcheck_type(multis, bool, _forced=True)
+            multis = [multis for _ in range(len(files))]
+        else:
+            utils.zcheck_matched_length(files, multis, _forced=True)
         self.files = files
         self.vocabs = vocabs
         self.multis = multis
@@ -391,6 +420,10 @@ class TextFileReader(InstanceReader):
             words = [_x[0] for _x in insts]
             idxes = [_x[1] for _x in insts]
             idx += 1
+            # todo(warn): DEBUG
+            # print(words)
+            # if len(words[1])<10:
+            #     print("oh no")
             self.num_insts = max(self.num_insts, idx)
             yield TextInstance(words, idxes)
         # close
@@ -399,18 +432,12 @@ class TextFileReader(InstanceReader):
 
 # one call for convenience
 def get_arranger(files, vocabs, multis, shuffling_corpus, shuflling_buckets, sort_prior, batch_size, maxibatch_size, max_len, min_len, one_len):
-    if not isinstance(multis, Iterable):
-        utils.zcheck_type(multis, bool, _forced=True)
-        multis = [multis for _ in range(len(files))]
     streamer = TextFileReader(files, vocabs, multis, shuffling_corpus)
     tracking_order = True if maxibatch_size<=0 else False   # todo(warn): -1 for dev/test
     arranger = BatchArranger(streamer=streamer, batch_size=batch_size, maxibatch_size=maxibatch_size, outliers=[TextInstanceRangeOutlier(min_len, max_len)], single_outlier=TextInstanceRangeOutlier(min_len, one_len), sorting_keyer=TextInstanceLengthSorter(sort_prior), tracking_order=tracking_order,shuffling=shuflling_buckets)
     return arranger
 
 def get_arranger_simple(files, vocabs, multis, batch_size):
-    if not isinstance(multis, Iterable):
-        utils.zcheck_type(multis, bool, _forced=True)
-        multis = [multis for _ in range(len(files))]
     streamer = TextFileReader(files, vocabs, multis, False)
     tracking_order = False
     arranger = BatchArranger(streamer=streamer, batch_size=batch_size, maxibatch_size=1, outliers=None, single_outlier=None, sorting_keyer=None, tracking_order=tracking_order,shuffling=False)

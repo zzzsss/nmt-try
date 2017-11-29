@@ -58,3 +58,17 @@ def concat_wrapper(ff):
         else:
             return ff(xs, *args)
     return _ff
+
+# Row-Major value
+class Value(object):
+    def __init__(self, data, sizes, bsize):
+        self.data = data
+        self.bsize = bsize
+        self.sizes = sizes
+        utils.zcheck(len(sizes)==1, "Currently only support this much dimension.")
+        self.batch_dim = np.prod(sizes)
+
+    def __getitem__(self, item):
+        a = item*self.batch_dim
+        b = a + self.batch_dim
+        return np.asarray(self.data[a:b])

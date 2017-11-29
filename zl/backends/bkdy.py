@@ -93,9 +93,13 @@ def get_value_sca(expr):
     expr.forward()
     return expr.scalar_value()
 
-def get_value_np(expr):
-    expr.forward()
-    return expr.npvalue()
+# def get_value_np(expr):
+#     expr.forward()
+#     return expr.npvalue()
+
+def get_value_v(expr):
+    data = get_value_vec(expr)
+    return Value(data, list(reversed(dims(expr))), bsize(expr))
 
 def get_params(model, shape, lookup=False, init="default"):
     if isinstance(init, np.ndarray):    # pass it directly

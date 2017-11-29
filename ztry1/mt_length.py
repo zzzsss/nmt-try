@@ -1,7 +1,10 @@
 # about the length of output sentence
 import numpy as np
 from zl import utils
-from sklearn import linear_model
+try:
+    from sklearn import linear_model
+except:
+    pass
 
 from .mt_layers import Basic as BasicLayer
 from zl.layers import BK
@@ -52,9 +55,12 @@ class LinearGaussain(BasicLayer):
             ll = len(x)
             x1, y1 = np.array(x, dtype=np.float32).reshape((-1,1)), np.array(y, dtype=np.float32)
             # 2. fit linear model
-            regr = linear_model.LinearRegression()
-            regr.fit(x1, y1)
-            a, b = float(regr.coef_[0]), float(regr.intercept_)
+            try:    # todo(warn)
+                regr = linear_model.LinearRegression()
+                regr.fit(x1, y1)
+                a, b = float(regr.coef_[0]), float(regr.intercept_)
+            except:
+                a, b = 1., 0.
             # 3. fit sigma
             x1 = x1.reshape((-1,))
             errors = a*x1+b - y1

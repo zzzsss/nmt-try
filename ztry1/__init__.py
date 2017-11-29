@@ -11,7 +11,16 @@
 
 # * how to analysis (for n-best, n=1,2,...,k and maybe for each length bin of sentences)
 # 1. one file: oracle
-# 2. one file: inner bleu
-# 3. one file: ranking of the worst sent-BLEU
+# 2*(leave out). one file: inner bleu
+# 3. one file: ranking of the worst sent-BLEU, which ones are the problems
 # 4. two files: equal, difference(better or worse)
 # 5. multiple files: equal, best for which sentences
+
+# todo-list (17.12.04)
+# 1. searching
+# 1.1 analyse
+# 1.2 re-rank(& with gold & l2r+r2l)
+# 1.3 n-gram instead of RNN
+# 2. training
+# 2.1 error states
+# 2.2 recombine

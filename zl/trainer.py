@@ -1,7 +1,6 @@
 from . import utils
 from .layers import BK
 import json
-from .data import Instance
 
 class TrainingProgress(object):
     # Object used to store, serialize and deserialize pure python variables that change during training and should be preserved in order to properly restart the training process
@@ -28,6 +27,8 @@ class TrainingProgress(object):
         # states
         self.patience = patience
         self.anneal_restarts_cap = anneal_restarts
+        #
+        self.sortings = []
 
     @property
     def num_anneals(self):
@@ -68,8 +69,13 @@ class TrainingProgress(object):
         for k in sorted(self.__dict__):
             utils.zlog("Training progress results: %s = %s." % (k, self.__dict__[k]), func="score")
         # ranking
-        sortings = sorted([(_1, _getv(_2)) for _1,_2 in zip(self.hist_points, self.hist_scores)], key=lambda x: x[-1], reverse=True)[:10]
-        utils.zlog("Ranking top10 is: %s" % sortings)
+        self.sortings = sorted([(_1, _getv(_2)) for _1,_2 in zip(self.hist_points, self.hist_scores)], key=lambda x: x[-1], reverse=True)[:10]
+        utils.zlog("Ranking top10 is: %s" % self.sortings)
+
+    def link_bests(self, basename):
+        utils.Helper.system("rm ztop_model.*")
+        for i, pair in enumerate(self.sortings):
+            utils.Helper.system("ln -s %s.%s ztop_model%s" % (basename, pair[0], i), print=True)
 
 # class ValidScore(object):
 #     pass
@@ -171,6 +177,7 @@ class Trainer(object):
                     self.load(Trainer.BEST_PREFIX+self.opts["model"], False)   # load model, but not process
                 self._set_trainer(self.opts["anneal_renew_trainer"])
         self._tp.report()
+        self._tp.link_bests(self.opts["model"])
         utils.zlog("", func="info")     # to see it more clearly
 
     # main training

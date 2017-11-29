@@ -112,7 +112,7 @@ def init(phase):
                          help="minibatch size (default: %(default)s)")
     training.add_argument('--rand_skip', type=float, default=0., metavar='INT',
                          help="randomly skip batches for training (default: %(default)s)")
-    training.add_argument('--max_epochs', type=int, default=100, metavar='INT',
+    training.add_argument('--max_epochs', type=int, default=150, metavar='INT',
                          help="maximum number of epochs (default: %(default)s)")
     training.add_argument('--max_updates', type=int, default=500000, metavar='INT',
                          help="maximum number of updates (minibatches) (default: %(default)s)")
@@ -132,7 +132,7 @@ def init(phase):
                          help="validation frequency (default: %(default)s)")
     validation.add_argument('--valid_batch_size', '--valid_batch_width', type=int, default=40, metavar='INT',
                          help="validating minibatch-size (default: %(default)s)")
-    validation.add_argument('--patience', type=int, default=4, metavar='INT',
+    validation.add_argument('--patience', type=int, default=3, metavar='INT',
                          help="early stopping patience (default: %(default)s)")
     validation.add_argument('--anneal_restarts', type=int, default=2, metavar='INT',
                          help="when patience runs out, restart training INT times with annealed learning rate (default: %(default)s)")
@@ -177,7 +177,7 @@ def init(phase):
                          help="maximum decoding sequence length (default: %(default)s)")
     decode.add_argument('--decode_ratio', type=float, default=5.,
                          help="maximum decoding sequence length ratio compared with src (default: %(default)s)")
-    decode.add_argument('--eval_metric', type=str, default="bleu", choices=["bleu", "iblue", "nist"],
+    decode.add_argument('--eval_metric', type=str, default="bleu", choices=["bleu", "ibleu", "nist"],
                          help="type of metric for evaluation (default: %(default)s)")
     decode.add_argument('--test_batch_size', type=int, default=8, metavar='INT',
                          help="testing minibatch-size(default: %(default)s)")
@@ -236,11 +236,17 @@ def init(phase):
     # --- specific tailing ngram params
     decode2.add_argument('--pr_tngram_n', type=int, default=5, help="Nth tailing ngram sig for pruning.")
     decode2.add_argument('--pr_tngram_range', type=int, default=0, help="Number of the range of history for tngram, 0 for none.")
+    #
+    decode2.add_argument('--branching_criterion', type=str, default="absolute", choices=["absolute", "relative"],
+                         help="When select next branches, based on which criterion.")
+    decode2.add_argument('--branching_expand2', action="store_true", help="Whether consider other branchings on later paths.")
 
     # specific for re-ranking & analyzing
     if phase == "rerank":
         rerank = parser.add_argument_group('options for reranking and analysing')
         #
+        # rerank.add_argument('--rr_mode', type=str, default="rerank", choices=["rerank", "analyze"], help="Reranking mode.")
+        rerank.add_argument('--rr_analysis_kbests', type=int, default=[10,1], nargs="+", help="Analysing kbests")
 
     a = parser.parse_args()
 

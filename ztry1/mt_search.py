@@ -20,6 +20,7 @@ def search_init():
 # todo(warn) normers and pruners are not used for this greedy decoding (mostly used for dev)
 def search_greedy(models, insts, target_dict, opts, normer, sstater):
     xs = [i[0] for i in insts]
+    xwords = [i.get_origin(0) for i in insts]
     Model.new_graph()
     for _m in models:
         _m.refresh(False)
@@ -30,6 +31,8 @@ def search_greedy(models, insts, target_dict, opts, normer, sstater):
     yprev = [-1 for _ in range(bsize)]
     decode_maxlen = opts["decode_len"]
     decode_maxratio = opts["decode_ratio"]
+    # if need to get att-weights (todo(warn))
+    need_att = opts["decode_replace_unk"]
     caches = []
     eos_id = target_dict.eos
     for step in range(decode_maxlen):
@@ -45,10 +48,16 @@ def search_greedy(models, insts, target_dict, opts, normer, sstater):
         caches.append(one_cache)
         # prepare next steps
         results = layers.BK.average([one["results"] for one in one_cache])
-        results_v0 = layers.BK.get_value_np(results)
-        results_v = results_v0.reshape((layers.BK.dims(results)[0], bsize)).T
+        results_v = layers.BK.get_value_v(results)
+        if need_att:
+            atts_e = layers.BK.average([one["att"] for one in one_cache])
+            atts_v = layers.BK.get_value_v(atts_e)
+        else:
+            atts_v = [None for _ in range(bsize)]
         for j in range(bsize):
+            cur_xsrc = xwords[j] if need_att else None
             rr = results_v[j]
+            one_attv = atts_v[j]
             if ends[j] is None:
                 # cur off if one of the criteria says it is time to end.
                 # todo(warn): upper length pruner
@@ -60,11 +69,11 @@ def search_greedy(models, insts, target_dict, opts, normer, sstater):
                 score = _m0.explain_result(rr[next_y]) if not force_end else 0.
                 # check eos
                 if next_y == eos_id:
-                    ends[j] = State(prev=opens[j], action=Action(next_y, score))
+                    ends[j] = State(prev=opens[j], action=Action(next_y, score), attention_weights=one_attv, attention_src=cur_xsrc)
                     ends[j].mark_end()
                     finish_size += 1
                 else:
-                    opens[j] = State(prev=opens[j], action=Action(next_y, score))
+                    opens[j] = State(prev=opens[j], action=Action(next_y, score), attention_weights=one_attv, attention_src=cur_xsrc)
             else:
                 next_y = 0
             yprev[j] = next_y
@@ -119,9 +128,8 @@ def search_sample(models, insts, target_dict, opts, normer, sstater):
         caches.append(one_cache)
         # prepare next steps
         results = layers.BK.average([one["results"] for one in one_cache])
-        results_v0 = layers.BK.get_value_np(results)
-        results_v1 = results_v0.reshape((layers.BK.dims(results)[0], bsize*sample_size)).T
-        results_v = _m0.explain_result(results_v1)      # todo(warn): maybe changed to log here
+        results_v0 = layers.BK.get_value_v(results)
+        results_v = _m0.explain_result(results_v0)      # todo(warn): maybe changed to log here
         for i in range(bsize):
             force_end = ((step+1) >= min(decode_maxlen, len(xs[i])*decode_maxratio))
             for j in range(sample_size):
@@ -264,12 +272,10 @@ def search_beam(models, insts, target_dict, opts, normer, sstater):
         # select cands
         results = layers.BK.average([one["results"] for one in one_cache])
         this_bsize = layers.BK.bsize(results)
-        results_v0 = layers.BK.get_value_np(results)
-        results_v1 = results_v0.reshape(-1, this_bsize)
-        results_v = results_v1.T
+        results_v = layers.BK.get_value_v(results)
         if need_att:
             atts_e = layers.BK.average([one["att"] for one in one_cache])
-            atts_v = layers.BK.get_value_np(atts_e).reshape(-1, this_bsize).T
+            atts_v = layers.BK.get_value_v(atts_e)
         else:
             atts_v = [None for _ in range(this_bsize)]
         nexts = []
@@ -475,6 +481,8 @@ def search_branch(models, insts, target_dict, opts, normer, sstater):
     pr_tngram_n = opts["pr_tngram_n"]
     pr_tngram_range = opts["pr_tngram_range"]
     #
+    branching_criter = {"absolute": lambda best, current:0-current, "relative": lambda best, current:best-current}[opts["branching_criterion"]]
+    branching_expand2 = opts["branching_expand2"]
     # 0. preparations for the whole batch
     # -- opens are one for each batch, but ends are not
     opens = [State(sg=SearchGraph(target_dict=target_dict, src_info=insts[_nn])) for _nn in range(bsize)]
@@ -531,12 +539,10 @@ def search_branch(models, insts, target_dict, opts, normer, sstater):
             # get results
             results = layers.BK.average([one["results"] for one in one_cache])
             this_bsize = layers.BK.bsize(results)
-            results_v0 = layers.BK.get_value_np(results)
-            results_v1 = results_v0.reshape(-1, this_bsize)
-            results_v = results_v1.T
+            results_v = layers.BK.get_value_v(results)
             if need_att:
                 atts_e = layers.BK.average([one["att"] for one in one_cache])
-                atts_v = layers.BK.get_value_np(atts_e).reshape(-1, this_bsize).T
+                atts_v = layers.BK.get_value_v(atts_e)
             else:
                 atts_v = [None for _ in range(this_bsize)]
             # select cands and record branching points
@@ -553,10 +559,10 @@ def search_branch(models, insts, target_dict, opts, normer, sstater):
                     prev_state = opens[i]
                     one_result = results_v[batched_results_base]
                     one_attv = atts_v[batched_results_base]
-                    # todo(warn): only record branching points for the first run
+                    # todo(warn): whether expand on later runs
                     if force_end:
                         one_cands = [eos_id]
-                    elif num_run==0:
+                    elif num_run==0 or branching_expand2:
                         one_cands = nargmax(one_result, pr_local_expand)    # prune beforehand
                     else:
                         one_cands = nargmax(one_result, 1)
@@ -568,9 +574,10 @@ def search_branch(models, insts, target_dict, opts, normer, sstater):
                         cand_states.append(State(prev=prev_state, action=Action(idx, _tmp_score), attention_weights=one_attv, attention_src=cur_xsrc, _tmp_prev_idx=batched_results_base, _tmp_prev_cache=one_cache))
                     survive_local_cands = Pruner.local_prune(cand_states, pr_local_expand, pr_local_diff, pr_local_penalty)
                     # record branching points, could only for the first run with more than 1 expansions
+                    survive_best_score = survive_local_cands[0].action_score()
                     for rest_one in survive_local_cands[1:]:
-                        # todo(warn): sorted on what (id for breaking equal)
-                        branching_points[i].put((-1*rest_one.action_score(), rest_one.id, rest_one))
+                        # todo(warn): sorted(small to large for PriorityQueue) on what (id for breaking equal)
+                        branching_points[i].put((branching_criter(survive_best_score, rest_one.action_score()), rest_one.id, rest_one))
                     # prepare the greedy one and record
                     new_state = cand_states[0]
                     action_id = new_state.action_code

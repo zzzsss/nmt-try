@@ -21,13 +21,7 @@ ZMT=${zmt} bash ${zmt}/znmt/scripts/restore.sh <${output} | perl ${zmt}/znmt/scr
 if [ -r stat.prof ]; then mv stat.prof _test.prof; fi
 
 # some extras with specific normalizations
-python3.5 ${py_args} ${zmt}/znmt/test.py -v --report_freq 125 -t ${datadir}/test.final.{${src},${trg}.restore} -d ${rundir}/{"src","trg"}.v -m ${rundir}/zbest.model -n 0.0 -o ${output} --dynet-devices ${_dy_device} --beam_size ${test_beam_size} ${extras}
-ZMT=${zmt} bash ${zmt}/znmt/scripts/restore.sh <${output} | perl ${zmt}/znmt/scripts/multi-bleu.perl ${datadir}/test.final.${trg}.restore
-
 python3.5 ${py_args} ${zmt}/znmt/test.py -v --report_freq 125 -t ${datadir}/test.final.{${src},${trg}.restore} -d ${rundir}/{"src","trg"}.v -m ${rundir}/zbest.model -n 1.0 --normalize_way norm -o ${output} --dynet-devices ${_dy_device} --beam_size ${test_beam_size} ${extras}
-ZMT=${zmt} bash ${zmt}/znmt/scripts/restore.sh <${output} | perl ${zmt}/znmt/scripts/multi-bleu.perl ${datadir}/test.final.${trg}.restore
-
-python3.5 ${py_args} ${zmt}/znmt/test.py -v --report_freq 125 -t ${datadir}/test.final.{${src},${trg}.restore} -d ${rundir}/{"src","trg"}.v -m ${rundir}/zbest.model -n 1.0 --normalize_way google -o ${output} --dynet-devices ${_dy_device} --beam_size ${test_beam_size} ${extras}
 ZMT=${zmt} bash ${zmt}/znmt/scripts/restore.sh <${output} | perl ${zmt}/znmt/scripts/multi-bleu.perl ${datadir}/test.final.${trg}.restore
 
 # timeout for another two days

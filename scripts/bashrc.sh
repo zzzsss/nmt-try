@@ -61,3 +61,5 @@ function seg-ch
 {
 bash $ZZ/mt/tools/stanford-seg/segment.sh ctb $1 UTF-8 0 2>/dev/null;
 }
+
+alias vim2='vim -O +"windo set scb"'

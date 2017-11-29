@@ -346,6 +346,30 @@ class Helper(object):
             ret.append(l[i*time])
         return ret
 
+    @staticmethod
+    def add_inplace_list(a, b, mu=1):
+        # a += b
+        zcheck_matched_length(a, b)
+        for i in range(len(a)):
+            a[i] += mu*b[i]
+
+    @staticmethod
+    def system(cmd, popen=False, print=False, check=False):
+        if print:
+            zlog("Executing cmd: %s" % cmd)
+        if popen:
+            p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+            n = p.wait()
+            output = p.stdout.read()
+            if print:
+                zlog("Output is: %s" % output)
+        else:
+            n = os.system(cmd)
+            output = None
+        if check:
+            assert n==0
+        return output
+
 # constants
 class Constants(object):
     MAX_V = 12345678

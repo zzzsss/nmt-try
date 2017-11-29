@@ -413,6 +413,7 @@ def mt_decode(decode_way, test_iter, mms, target_dict, opts, outf):
         ot = Outputter(opts)
         for r in results:
             f.write(ot.format(r, target_dict, False, False))
+        ot.report()
     # -- write k-best
     output_kbest = opts["decode_output_kbest"]
     if output_kbest:
@@ -421,11 +422,14 @@ def mt_decode(decode_way, test_iter, mms, target_dict, opts, outf):
             ot = Outputter(opts)
             for r in results:
                 f.write(ot.format(r, target_dict, True, False))
+            ot.report()
         with utils.zopen(outf+".nbests", "w") as f:
             ot = Outputter(opts)
             for r in results:
                 f.write(ot.format(r, target_dict, True, True))
+            ot.report()
         with utils.zopen(outf+".nbestg", "w") as f:
             for i, r in enumerate(results):
                 f.write("# znumber%s\n%s\n" % (i, r[0].sg.show_graph(target_dict, False)))
+        # todo: maybe dump sg
     return results
