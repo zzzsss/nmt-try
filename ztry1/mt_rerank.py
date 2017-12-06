@@ -4,6 +4,7 @@ from . import mt_args, mt_eval, mt_mt
 from zl.data import Vocab, get_arranger_simple
 from zl import utils
 from .mt_rerank_analysis import BleuCalculator as Analyzer
+from .mt_misc import mt_decode
 
 def main():
     # init
@@ -44,7 +45,10 @@ def main():
     # 4. rerank
     else:
         utils.zlog("=== Start to rerank ===", func="info")
-        pass
+        with utils.Timer(tag="Reranking", print_date=True):
+            mt_decode(None, test_iter, mm, target_dict, opts, opts["output"], gold_iter=gold_iter)
+        utils.zlog("=== End reranking, write to %s ===" % opts["output"], func="info")
+        mt_eval.evaluate(opts["output"], opts["gold"][0], opts["eval_metric"])
 
 if __name__ == '__main__':
     main()

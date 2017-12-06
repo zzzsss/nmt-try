@@ -6,10 +6,12 @@ class TrainingProgress(object):
     # Object used to store, serialize and deserialize pure python variables that change during training and should be preserved in order to properly restart the training process
     # for score, the larger the better
     def load_from_json(self, file_name):
-        self.__dict__.update(json.load(utils.zopen(file_name, 'r')))
+        with utils.zopen(file_name, 'r') as fd:
+            self.__dict__.update(json.load(fd))
 
     def save_to_json(self, file_name):
-        json.dump(self.__dict__, utils.zopen(file_name, 'w'), indent=2)
+        with utils.zopen(file_name, 'w') as fd:
+            json.dump(self.__dict__, fd, indent=2)
 
     def __init__(self, patience, anneal_restarts):
         self.bad_counter = 0
@@ -73,9 +75,9 @@ class TrainingProgress(object):
         utils.zlog("Ranking top10 is: %s" % self.sortings)
 
     def link_bests(self, basename):
-        utils.Helper.system("rm ztop_model.*")
+        utils.Helper.system("rm ztop_model*")
         for i, pair in enumerate(self.sortings):
-            utils.Helper.system("ln -s %s.%s ztop_model%s" % (basename, pair[0], i), print=True)
+            utils.Helper.system("ln -s %s%s ztop_model%s" % (basename, pair[0], i), print=True)
 
 # class ValidScore(object):
 #     pass

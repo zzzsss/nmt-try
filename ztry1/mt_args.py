@@ -197,10 +197,8 @@ def init(phase):
     training2.add_argument('--train_len_xadd', action='store_true', help="adding xsrc for length fitting")
     training2.add_argument('--train_len_xback', action='store_true', help="backprop of xsrc for length fitting")
     # -- training methods and output modeling
-    training2.add_argument('--no_show_loss', action='store_false', dest='show_loss',
-                         help="No obtaining training loss (if applicable)")
-    training2.add_argument('--no_model_softmax', action='store_false', dest="model_softmax",
-                         help="No adding softmax for vocab output (direct score)")
+    training2.add_argument('--no_model_softmax', action='store_true', help="No adding softmax for vocab output (direct score)")
+    training2.add_argument('--train_r2l', action='store_true', help="training right to left model")
 
     # extra: for advanced decoding
     decode2 = parser.add_argument_group('decoding parameters section2')
@@ -212,6 +210,7 @@ def init(phase):
     decode2.add_argument('--decode_latnbest_nalpha', type=float, default=0.0, help="Length normalizer for lattice n-best.")
     decode2.add_argument('--decode_latnbest_lreward', type=float, default=0.0, help="Length reward for lattice n-best.")
     decode2.add_argument('--decode_latnbest_rtimes', type=int, default=1, help="Maximum repeating times of link in the stack.")
+    decode2.add_argument('--decode_output_r2l', action='store_true', help="r2l model")
     # -- norm
     # todo(warn): have to be cautious about parameters, some model specification is also needed to construct model for decoding
     # todo(warn): only using the first model if using gaussian
@@ -219,6 +218,7 @@ def init(phase):
                          help="how to norm length (default: %(default)s)")
     decode2.add_argument('--normalize_alpha', '-n', type=float, default=0.0, metavar="ALPHA",
                          help="Normalize scores by sentence length or lambda for gaussian.")
+    decode2.add_argument('--penalize_eos', type=float, default=0.0, help="Directly penalizing scores when decoding of EOS & '.'.")
     # -- pruning
     # --- length (the default ones should be enough)
     decode2.add_argument('--pr_len_khigh', type=float, default=10., metavar="K_HIGH",
@@ -237,15 +237,16 @@ def init(phase):
     decode2.add_argument('--pr_tngram_n', type=int, default=5, help="Nth tailing ngram sig for pruning.")
     decode2.add_argument('--pr_tngram_range', type=int, default=0, help="Number of the range of history for tngram, 0 for none.")
     #
-    decode2.add_argument('--branching_criterion', type=str, default="absolute", choices=["absolute", "relative"],
+    decode2.add_argument('--branching_fullfill_ratio', type=float, default=1., help="How many states to visit according to the length of first greedy one.")
+    decode2.add_argument('--branching_criterion', type=str, default="abs", choices=["abs", "rel", "b_abs", "b_rel"],
                          help="When select next branches, based on which criterion.")
-    decode2.add_argument('--branching_expand2', action="store_true", help="Whether consider other branchings on later paths.")
+    decode2.add_argument('--branching_expand_run', type=int, default=1, help="How many runs to consider other branchings on later paths.")
 
     # specific for re-ranking & analyzing
     if phase == "rerank":
         rerank = parser.add_argument_group('options for reranking and analysing')
         #
-        # rerank.add_argument('--rr_mode', type=str, default="rerank", choices=["rerank", "analyze"], help="Reranking mode.")
+        rerank.add_argument('--rr_mode', type=str, default="rerank", choices=["rerank", "gold"], help="Reranking mode.")
         rerank.add_argument('--rr_analysis_kbests', type=int, default=[10,1], nargs="+", help="Analysing kbests")
 
     a = parser.parse_args()
@@ -267,6 +268,9 @@ def check_options(args):
             n0, n1 = prefix+n, prefix+"rec"
             if args[n0] is None:
                 args[n0] = args[n1]
+    # train
+    if args["train_r2l"]:
+        assert args["decode_output_r2l"]
     # validation
     VALID_OPTIONS = ["ll", "bleu", "len"]
     s = args["valid_metrics"].split(",")

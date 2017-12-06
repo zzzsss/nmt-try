@@ -77,6 +77,12 @@ class Vocab(object):
         return self.d["<unk>"]+1      # excluding special tokens except unk
 
     # special tokens
+    def get_ending_tokens(self):
+        rr = [self.eos]
+        if '.' in self.d:
+            rr.append(self.d['.'])
+        return rr
+
     @property
     def non(self):
         return 0
@@ -236,7 +242,9 @@ class BatchArranger(object):
 
     def restore_order(self, x):
         # rearrange back according to self.tracking_list (caused by sorting and shuffling)
-        utils.zcheck(self.tracking_order, "Tracking function has not been opened", _forced=True)
+        if not self.tracking_order:
+            return x
+        # utils.zcheck(self.tracking_order, "Tracking function has not been opened", _forced=True)
         utils.zcheck_matched_length(self.tracking_list, x, _forced=True)
         ret = [None for _ in x]
         for idx, one in zip(self.tracking_list, x):
@@ -262,7 +270,7 @@ class TextInstance(Instance):
         self.idxes = idxes
 
     def __repr__(self):
-        return "||".join([" ".join(one) for one in self.words])
+        return "||".join([" ".join(one) if isinstance(one[0],str) else str(len(one)) for one in self.words])
 
     def __str__(self):
         return self.__repr__()
@@ -274,11 +282,11 @@ class TextInstance(Instance):
     def __getitem__(self, item):
         return self.idxes[item]
 
+    def get_words(self, i):
+        return self.words[i]
+
     def get_lens(self):
         return [len(ww) for ww in self.words]
-
-    def get_origin(self, i):
-        return self.words[i]
 
     # for evaluating and analysing
     def set(self, k, v):

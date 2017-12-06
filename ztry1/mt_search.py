@@ -20,7 +20,7 @@ def search_init():
 # todo(warn) normers and pruners are not used for this greedy decoding (mostly used for dev)
 def search_greedy(models, insts, target_dict, opts, normer, sstater):
     xs = [i[0] for i in insts]
-    xwords = [i.get_origin(0) for i in insts]
+    xwords = [i.get_words(0) for i in insts]
     Model.new_graph()
     for _m in models:
         _m.refresh(False)
@@ -66,7 +66,7 @@ def search_greedy(models, insts, target_dict, opts, normer, sstater):
                 if not force_end:
                     next_y = int(rr.argmax())
                 # todo(warn) ignore eos score for force_end
-                score = _m0.explain_result(rr[next_y]) if not force_end else 0.
+                score = _m0.explain_result(rr[next_y], one_idx=next_y) if not force_end else 0.
                 # check eos
                 if next_y == eos_id:
                     ends[j] = State(prev=opens[j], action=Action(next_y, score), attention_weights=one_attv, attention_src=cur_xsrc)
@@ -224,7 +224,7 @@ class BatchedHelper(object):
 # synchronized with y-steps
 def search_beam(models, insts, target_dict, opts, normer, sstater):
     xs = [i[0] for i in insts]
-    xwords = [i.get_origin(0) for i in insts]
+    xwords = [i.get_words(0) for i in insts]
     Model.new_graph()
     for _m in models:
         _m.refresh(False)
@@ -301,7 +301,7 @@ def search_beam(models, insts, target_dict, opts, normer, sstater):
                 cand_states = []
                 for idx in one_cands:
                     # todo(warn): ignore eos score
-                    _tmp_score = _m0.explain_result(one_result[idx]) if not force_end else 0.
+                    _tmp_score = _m0.explain_result(one_result[idx], one_idx=idx) if not force_end else 0.
                     cand_states.append(State(prev=prev_states[j], action=Action(idx, _tmp_score), attention_weights=one_attv, attention_src=cur_xsrc, _tmp_prev_idx=j))
                 survive_local_cands = Pruner.local_prune(cand_states, pr_local_expand, pr_local_diff, pr_local_penalty)
                 cur_cands += survive_local_cands
@@ -458,7 +458,7 @@ def search_branch(models, insts, target_dict, opts, normer, sstater):
     # todo(warn) currently only one pass
     _get_score_f = (lambda x: x.score_partial/x.length)
     xs = [i[0] for i in insts]
-    xwords = [i.get_origin(0) for i in insts]
+    xwords = [i.get_words(0) for i in insts]
     Model.new_graph()
     for _m in models:
         _m.refresh(False)
@@ -480,9 +480,10 @@ def search_branch(models, insts, target_dict, opts, normer, sstater):
     pr_global_penalty = opts["pr_global_penalty"]
     pr_tngram_n = opts["pr_tngram_n"]
     pr_tngram_range = opts["pr_tngram_range"]
-    #
-    branching_criter = {"absolute": lambda best, current:0-current, "relative": lambda best, current:best-current}[opts["branching_criterion"]]
-    branching_expand2 = opts["branching_expand2"]
+    # how to select which branches to go
+    branching_criter = {"abs": lambda best, current:0-current, "rel": lambda best, current:best-current,
+        "b_abs": lambda best, current: (best, 0-current), "b_rel": lambda best, current: (best, best-current)}[opts["branching_criterion"]]
+    branching_expand_run = opts["branching_expand_run"]
     # 0. preparations for the whole batch
     # -- opens are one for each batch, but ends are not
     opens = [State(sg=SearchGraph(target_dict=target_dict, src_info=insts[_nn])) for _nn in range(bsize)]
@@ -494,13 +495,20 @@ def search_branch(models, insts, target_dict, opts, normer, sstater):
     sig_ngram_allnum = [[defaultdict(int) for _z in range(decode_maxlen+1)] for _ in range(bsize)]
     branching_points = [PriorityQueue() for _ in range(bsize)]
     # first go for a greedy run and then for several branching greedy runs
-    for num_run in range(esize_all):
+    # how to end
+    branching_fullfill_ratio = opts["branching_fullfill_ratio"]
+    num_run = 0
+    num_newstates = [[] for _ in range(bsize)]
+    # todo(warn): not fine-grained enough for ratios
+    while num_run < esize_all or any([sum(z)<branching_fullfill_ratio*z[0] for z in num_newstates]):
         run_caches = []
         run_yprev = []
         run_unfinished = [[1 for _ in range(bsize)]]   # checking the batching information
         for false_step in range(decode_maxlen):
             one_cache = []
             if false_step==0 and num_run==0:
+                for tmp_i in range(bsize):  # count: init state
+                    num_newstates[tmp_i].append(1)
                 for mi, _m in enumerate(models):
                     cc = _m.start(xs)
                     one_cache.append(cc)
@@ -515,9 +523,10 @@ def search_branch(models, insts, target_dict, opts, normer, sstater):
                     combine_caches, combine_indexes = [[] for _ in models], []
                     for i in range(bsize):
                         if branching_points[i].empty():
-                            run_unfinished[i] = 0   # no this much branching points
+                            run_unfinished[-1][i] = 0   # no this much branching points
                             opens[i] = None
                         else:
+                            num_newstates[i].append(1)  # count: init state for branching points
                             new_state = branching_points[i].get()[-1]
                             opens[i] = new_state
                             prev_cache = new_state.get("_tmp_prev_cache")
@@ -530,6 +539,9 @@ def search_branch(models, insts, target_dict, opts, normer, sstater):
                     # select and combine
                     if len(run_yprev) > 0:
                         run_caches.append([_m.recombine(_c, combine_indexes) for _m, _c in zip(models, combine_caches)])
+                else:
+                    for i in range(bsize):
+                        num_newstates[i][-1] += run_unfinished[-1][i]   # count: continue state for branching points
                 if len(run_yprev) > 0:
                     for mi, _m in enumerate(models):
                         cc = _m.step(run_caches[-1][mi], run_yprev)
@@ -562,7 +574,7 @@ def search_branch(models, insts, target_dict, opts, normer, sstater):
                     # todo(warn): whether expand on later runs
                     if force_end:
                         one_cands = [eos_id]
-                    elif num_run==0 or branching_expand2:
+                    elif num_run < branching_expand_run:
                         one_cands = nargmax(one_result, pr_local_expand)    # prune beforehand
                     else:
                         one_cands = nargmax(one_result, 1)
@@ -570,7 +582,7 @@ def search_branch(models, insts, target_dict, opts, normer, sstater):
                     cand_states = []
                     for idx in one_cands:
                         # todo(warn): ignore eos score
-                        _tmp_score = _m0.explain_result(one_result[idx]) if not force_end else 0.
+                        _tmp_score = _m0.explain_result(one_result[idx], one_idx=idx) if not force_end else 0.
                         cand_states.append(State(prev=prev_state, action=Action(idx, _tmp_score), attention_weights=one_attv, attention_src=cur_xsrc, _tmp_prev_idx=batched_results_base, _tmp_prev_cache=one_cache))
                     survive_local_cands = Pruner.local_prune(cand_states, pr_local_expand, pr_local_diff, pr_local_penalty)
                     # record branching points, could only for the first run with more than 1 expansions
@@ -654,6 +666,7 @@ def search_branch(models, insts, target_dict, opts, normer, sstater):
                 run_caches.append([_m.rerange(_c, next_reorders, next_reorders) for _c, _m in zip(one_cache, models)])
             run_unfinished.append(next_unfinished)
             run_yprev = next_yids
+        num_run += 1
     # re-pick if all pruned out by short
     # todo(warn): will there be any self-pruning?
     for i in range(bsize):
@@ -670,4 +683,60 @@ def search_branch(models, insts, target_dict, opts, normer, sstater):
         ends = [extract_nbest(ol[0].sg, esize_all, length_reward=opts["decode_latnbest_lreward"], normalizing_alpha=opts["decode_latnbest_nalpha"], max_repeat_times=opts["decode_latnbest_rtimes"]) for ol in ends]
     normer(ends, pred_lens)
     final_list = [sorted(beam, key=lambda x: x.score_final, reverse=True) for beam in ends]
+    return final_list
+
+def search_rerank(models, inst_pairs, target_dict, opts, normer, sstater):
+    # inst_pairs -> (x, ys(multis), ...), golds
+    adding_gold = (opts["rr_mode"] == "gold")
+    Model.new_graph()
+    for _m in models:
+        _m.refresh(False)
+    # enforce batch-size == 1
+    final_list = []
+    for origin_ins, gold_ins in zip(inst_pairs[0], inst_pairs[1]):
+        # construct the insts
+        x_idxes = origin_ins[0]
+        x_words = origin_ins.get_words(0)
+        insts = []
+        mappings = []
+        for i in range(1, len(origin_ins)):
+            ys_idxes, ys_words = origin_ins[i], origin_ins.get_words(i)
+            tmp_count = 0
+            for one_idx, one_ws in zip(ys_idxes, ys_words):
+                insts.append(data.TextInstance([x_words, one_ws], [x_idxes, one_idx]))
+                mappings.append("y%s-%s"%(i-1, tmp_count))
+                tmp_count += 1
+        if adding_gold:
+            for i in range(len(gold_ins)):
+                g_idx, g_ws = gold_ins[i], gold_ins.get_words(i)
+                insts.append(data.TextInstance([x_words, g_ws], [x_idxes, g_idx]))
+                mappings.append("g%s"%(i-1))
+        # calculations
+        all_losses = []
+        pred_lens = np.average([_m.predict_length(insts) for _m in models], axis=0)
+        for _m in models:
+            losses = _m.fb(insts, False, ret_value="losses", new_graph=False)    # by default, loss is the score: log(p)
+            all_losses.append(losses)
+        # construct states
+        sg = SearchGraph(target_dict=target_dict, src_info=[origin_ins, gold_ins])
+        start_state = State(sg=sg)
+        ends = []
+        for i, ins in enumerate(insts):
+            file_tag = mappings[i]
+            cur_state = start_state
+            for j, widx in enumerate(ins[1]):
+                # todo(warn): -1 * neg-log
+                scores = [-1*one_losses[i][j] for one_losses in all_losses]
+                avg_score = np.average(scores)
+                cur_state = State(prev=cur_state, action=Action(widx, avg_score), all_scores=scores, file_tag=file_tag)
+            utils.zcheck(cur_state.action_code == target_dict.eos, "Not scientific ends.")
+            cur_state.mark_end()
+            ends.append(cur_state)
+        # normer
+        normer([ends], pred_lens)
+        ends_sorted = sorted(ends, key=lambda x: x.score_final, reverse=True)
+        final_list.append(ends_sorted)
+        # record
+        ends_sorted[0].state(ends_sorted[0].get("file_tag"))
+        sstater.record(sg)
     return final_list

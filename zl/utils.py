@@ -16,7 +16,7 @@ def zlog(s, func="plain", flush=True):
 class Logger(object):
     _instance = None
     _logger_heads = {
-        "plain":"-- ", "time":"## ", "io":"== ", "info":"** ", "score":"%% ",
+        "plain":"-- ", "details":">> ", "time":"## ", "io":"== ", "info":"** ", "score":"%% ",
         "warn":"!! ", "fatal":"KI ", "debug":"DE ", "none":"**INVALID-CODE**"
     }
     @staticmethod

@@ -28,7 +28,12 @@ class BleuCalculator(object):
 
     # step1: count (add hit countf to each instance: "stat"->[[near-length, 1, 2, 3, 4]])
     @staticmethod
-    def add_clipped_counts(golds, preds, n):
+    def add_clipped_counts(golds, preds, n, on_words=False):
+        if on_words:
+            get_list_ff = lambda x, i: x.get_words(i)
+        else:
+            # remember to remove EOS
+            get_list_ff = lambda x, i: x[i][:-1]
         # preds is list of TextInstance(multi), golds is list of TextInstance as the References
         for ones in preds:
             utils.zcheck_matched_length(ones, golds)
@@ -40,7 +45,7 @@ class BleuCalculator(object):
                 ngrams_gold = [defaultdict(int) for _ in range(n)]
                 lengths_gold = []
                 for i in range(l_gold):
-                    one_list = one_gold[i][:-1]     # remember to remove EOS
+                    one_list = get_list_ff(one_gold, i)
                     lengths_gold.append(len(one_list))
                     ngrams_one_gold = BleuCalculator.count_ngrams(one_list, n)
                     for onegram_gold, onegram_one_gold in zip(ngrams_gold, ngrams_one_gold):
@@ -49,7 +54,7 @@ class BleuCalculator(object):
                 # count pred ngrams and store
                 infos, infos2, sbs = [], [], []
                 for i in range(l_pred):
-                    one_list = one_pred[i][:-1]     # remember to remove EOS
+                    one_list = get_list_ff(one_pred, i)
                     ngrams_one_pred = BleuCalculator.count_ngrams(one_list, n)
                     # the informations to be collected (0:nearest length, 1,2,3,4, ngram-match-count)
                     crl = BleuCalculator.closest_ref_length(lengths_gold, len(one_list))
@@ -106,16 +111,17 @@ class BleuCalculator(object):
         ss = "BLEU = %.2f, %.1f/%.1f/%.1f/%.1f (BP=%.3f, hyp_len=%d, ref_len=%d)" \
                   % (them["bleu"]*100, them[0]*100, them[1]*100, them[2]*100, them[3]*100, bp, length_pred, length_gold)
         if report:
+            # utils.zlog("BLEU4-Counts: %s-%s" % (counts_hit, counts_all))
             utils.zlog(ss)
         return bleu, ss
 
     @staticmethod
-    def _argmax_list(ll, amount=10, cfs=(lambda x: x[0]>1e-5, lambda x: x[0]<=1e-5 and x[0]>=-1e-5, lambda x: x[0]<-1e-5), buckets=(0, 10, 30, 50, 1000), golds_len0=None):
+    def _argmax_list(ll, amount=10, cfs=(lambda x: x[0]>1e-5, lambda x: x[0]<=1e-5 and x[0]>=-1e-5, lambda x: x[0]<-1e-5), buckets=(0, 15, 30, 50, 1000), golds_len0=None):
         def _sort_and_report(_l2):
             rankings = sorted(_l2, key=lambda x: x[-1], reverse=True)
             for i in range(min(r, amount)):
                 idx, content = rankings[i][0], rankings[i][1]
-                utils.zlog("#%d Max-ranking, index is %s, content is %s." % (i, idx, content))
+                utils.zlog("#%d Max-ranking, index is %s, content is %s." % (i, idx, content), func="details")
         # --
         r = len(ll)
         rs = []
@@ -134,7 +140,7 @@ class BleuCalculator(object):
             for i, one in enumerate(ll):
                 if _rf(golds_len0[i]):
                     ll2.append((i, one))
-            utils.zlog("Range [%d, %d): %d/%d/%.3f" % (a, b, len(ll2), r, len(ll2)/r))
+            utils.zlog("Range [%d, %d): %d/%d/%.3f" % (a, b, len(ll2), r, len(ll2)/r), func="details")
             _sort_and_report(ll2)
 
     @staticmethod
@@ -320,9 +326,9 @@ class BleuCalculator(object):
 
     # out
     @staticmethod
-    def analyse(srcs, golds, preds, kbests, n=4):
+    def analyse(srcs, golds, preds, kbests, n=4, on_words=True):
         # mainly two goals: compare pred/oracle/gold & compare between preds
-        BleuCalculator.add_clipped_counts(golds, preds, n)
+        BleuCalculator.add_clipped_counts(golds, preds, n, on_words=on_words)
         for curk in kbests:
             utils.zlog("Start for kbest: k==%s" % curk, func="time")
             for i, pred in enumerate(preds):

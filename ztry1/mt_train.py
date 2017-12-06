@@ -1,7 +1,8 @@
 from . import mt_args
 from zl import utils
 from zl.data import Vocab, get_arranger
-from .mt_mt import s2sModel, MTTrainer
+from .mt_mt import s2sModel
+from .mt_misc import MTTrainer
 from .mt_length import LinearGaussain
 import os
 

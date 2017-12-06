@@ -54,10 +54,11 @@ class SearchGraph(object):
     def show_graph(self, td=None, print=True):
         if td is None:
             td = self.target_dict
-        s = "\n"
+        s = ""
         currents = [self.root]
         while len(currents) > 0:
             nexts = []
+            currents.sort(key=lambda x: x.score_partial, reverse=True)
             for one in currents:
                 head = "## id=%s|pid=%s|s=%.3f|%s|(%s)" % (one.id, one.pid, one.score_partial, one.state(), " ".join(data.Vocab.i2w(td, one.get_path("action_code"))))
                 expands = self.childs(one)
@@ -68,7 +69,7 @@ class SearchGraph(object):
                     exp_strs.append("id=%s|w=%s|s=%.3f(%.3f)|%s" % (z.id, td.getw(z.action_code), z.action.score, np.exp(z.action.score), z.state()))
                 head2 = "\n-> " + ", ".join(exp_strs) + "\n"
                 s += head + head2
-            s += "\n"
+            s += "-----\n"
             currents = nexts
         if print:
             utils.zlog(s)

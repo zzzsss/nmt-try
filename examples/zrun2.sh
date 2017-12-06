@@ -94,11 +94,14 @@ python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh -
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../en_de_data_z5/ -t znmt --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2" -z 6 -p 2
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../en_de_data_z5/ -t znmt --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.4 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2" -z 6 -p 3
 
-# ---------------- (not finished or killed until 12.04-noon)
 # x46 (1202)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../en_de_data_z5/ -t znmt --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.1 drop_hidden 0.2 drop_embedding 0.1" -z 6 -p 7
-# x45 (1202)
+
+# ---------------- (not finished or killed until ?)
+# x45 (1202) (dev 19.67)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../en_de_data_z5/ -t znmt --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 lrate 0.0002" -z 6 -p 0
+# x45 (1208)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../en_de_data_z5/ -t znmt --batch_size 128 --valid_batch_width 128 --extras "gdrop_rec 0.2 idrop_embedding 0.1 drop_hidden 0.2 drop_embedding 0.1 lrate 0.0002" -z 6 -p 0
 
 # 17.12.04/05: final tuning on zh_en and en_de
 # x48:
@@ -106,6 +109,8 @@ python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh -
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.1 drop_hidden 0.2 drop_embedding 0.1 dicts_rthres 30000 lrate 0.0001" -z 6 -p 5
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002" -z 6 -p 6
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.1 drop_hidden 0.2 drop_embedding 0.1 dicts_rthres 30000 lrate 0.0002" -z 6 -p 7
+# x47 (ch-r2l)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002" -z 6 -p 7
 # x47:
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../en_de_data_z5/ -t znmt --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 lrate 0.0001" -z 6 -p 0
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../en_de_data_z5/ -t znmt --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.1 drop_hidden 0.2 drop_embedding 0.1 lrate 0.0001" -z 6 -p 1

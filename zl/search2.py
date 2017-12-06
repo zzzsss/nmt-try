@@ -62,6 +62,7 @@ def _set_recusively_one(one, sg, n, sort_k, stack_map, max_repeat_times):
             one.set(_TMP_KEY, v)    # not on pruned states
 
 # record
+# todo(1. how many non-best actions, 2. expands (effective) rate and more analysis, 3. extract merging points)
 class StateStater(object):
     def __init__(self):
         self.rr = defaultdict(int)

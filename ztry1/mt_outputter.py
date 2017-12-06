@@ -35,7 +35,7 @@ class Outputter(object):
         else:
             return "<unkown>"
 
-    def format(self, states, target_dict, kbest, verbose):
+    def format(self, states, target_dict, kbest, verbose, reverse=False):
         ret = ""
         if not kbest:
             states = [states[0]]
@@ -52,6 +52,8 @@ class Outputter(object):
             if kbest and len(out_list)==0:
                 # todo(warn): avoid empty line for kbest outputs
                 out_list = paths
+            if reverse:
+                out_list = reversed(out_list)
             for one in out_list:
                 tmp_code = one.action_code
                 unk_replace = False

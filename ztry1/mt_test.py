@@ -2,7 +2,8 @@ import sys
 from . import mt_args, mt_search, mt_eval
 from zl import utils
 from zl.data import Vocab, get_arranger, TextInstance
-from .mt_mt import s2sModel, mt_decode
+from .mt_mt import s2sModel
+from .mt_misc import mt_decode
 from .mt_outputter import Outputter
 
 def main():
