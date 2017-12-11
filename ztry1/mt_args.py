@@ -55,11 +55,12 @@ def init(phase):
     network = parser.add_argument_group('network parameters')
     network.add_argument('--dim_word', type=int, default=512, metavar='INT',
                          help="embedding layer size (default: %(default)s)")
-    network.add_argument('--dec_type', type=str, default="nematus", choices=["att", "nematus"],
+    network.add_argument('--dec_type', type=str, default="nematus", choices=["att", "nematus", "ngram"],
                          help="decoder type (default: %(default)s)")
+    network.add_argument('--dec_ngram_n', type=int, default=5, help="Ngram if using ngram-decoder (default: %(default)s)")
     network.add_argument('--att_type', type=str, default="ff", choices=["ff", "biaff", "dummy"],
                          help="attention type (default: %(default)s)")
-    network.add_argument('--rnn_type', type=str, default="gru", choices=["gru", "gru2", "lstm", "dummy"],
+    network.add_argument('--rnn_type', type=str, default="gru", choices=["gru", "gru2"],
                          help="recurrent node type (default: %(default)s)")
     network.add_argument('--summ_type', type=str, default="ends", choices=["avg", "fend", "bend", "ends"],
                          help="decoder's starting summarizing type (default: %(default)s)")
@@ -199,6 +200,9 @@ def init(phase):
     # -- training methods and output modeling
     training2.add_argument('--no_model_softmax', action='store_true', help="No adding softmax for vocab output (direct score)")
     training2.add_argument('--train_r2l', action='store_true', help="training right to left model")
+    training2.add_argument('--train_mode', type=str, default="std2", help="which training process?")
+    training2.add_argument('--train_local_loss', type=str, default="mle", choices=["mle", "mlev", "hinge_max", "hinge_avg", "hinge_sum"], help="Training objective.")
+    training2.add_argument('--train_margin', type=float, default=0., help="The margin for margin-training.")
 
     # extra: for advanced decoding
     decode2 = parser.add_argument_group('decoding parameters section2')
@@ -253,12 +257,15 @@ def init(phase):
 
     # check options and some processing
     args = vars(a)
-    check_options(args)
+    check_options(args, phase)
     # init them
     zl.init_all(args)
     return args
 
-def check_options(args):
+def check_options(args, phase):
+    def _warn_ifnot(ff, ss):
+        if not ff:
+            print("Warning for %s" % ss)
     # network
     assert args["enc_depth"] >= 1
     assert args["dec_depth"] >= 1
@@ -268,9 +275,6 @@ def check_options(args):
             n0, n1 = prefix+n, prefix+"rec"
             if args[n0] is None:
                 args[n0] = args[n1]
-    # train
-    if args["train_r2l"]:
-        assert args["decode_output_r2l"]
     # validation
     VALID_OPTIONS = ["ll", "bleu", "len"]
     s = args["valid_metrics"].split(",")
@@ -279,4 +283,17 @@ def check_options(args):
     # about length
     if args["normalize_way"] == "xgaussian":
         assert args["train_len_xadd"]
-    # decode
+    # train
+    if phase == "train":
+        if args["train_r2l"]:
+            # assert args["decode_output_r2l"]
+            _warn_ifnot(args["decode_output_r2l"], "decode_output_r2l")
+            args["decode_output_r2l"] = True
+        if args["dec_type"] == "ngram":
+            assert args["train_mode"] != "std"
+        if args["train_local_loss"].startswith("hinge"):
+            # assert args["no_model_softmax"]
+            _warn_ifnot(args["no_model_softmax"], "no_model_softmax")
+            args["no_model_softmax"] = True
+        # if args["train_local_loss"] == "hinge_avg":
+        #     args["dynet-mem"] = "11111"

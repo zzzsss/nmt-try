@@ -76,8 +76,8 @@ class Model(object):
         utils.zlog("Change prop %s from %s to %s." % (k, v0, v))
 
     # main routines #
-    def start(self, xs, repeat_time):
+    def start(self, **kwargs):
         raise NotImplementedError("Should specify this in specific models!")
 
-    def step(self, prev_val, inputs):
+    def step(self, **kwargs):
         raise NotImplementedError("Should specify this in specific models!")

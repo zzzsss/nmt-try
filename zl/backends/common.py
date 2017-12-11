@@ -68,6 +68,9 @@ class Value(object):
         utils.zcheck(len(sizes)==1, "Currently only support this much dimension.")
         self.batch_dim = np.prod(sizes)
 
+    def __len__(self):
+        return self.bsize
+
     def __getitem__(self, item):
         a = item*self.batch_dim
         b = a + self.batch_dim

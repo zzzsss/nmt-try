@@ -30,20 +30,25 @@ concatenate_to_batch = concat_wrapper(dy.concatenate_to_batch)
 dropout = dy.dropout
 esum = dy.esum
 log = dy.log
+hinge_batch = dy.hinge_batch
 inputTensor = dy.inputTensor
 inputVector = dy.inputVector
 logistic = dy.logistic
 lookup_batch = dy.lookup_batch
+max_dim = dy.max_dim
 mean_batches = dy.mean_batches
 nobackprop = dy.nobackprop
 pickneglogsoftmax_batch = dy.pickneglogsoftmax_batch
 pick_batch_elems = dy.pick_batch_elems
 pick_batch_elem = dy.pick_batch_elem
+pick_batch = dy.pick_batch
 pick_range = dy.pick_range
+rectify = dy.rectify
 reshape = dy.reshape
 softmax = dy.softmax
 square = dy.square
 sum_batches = dy.sum_batches
+sum_elems = dy.sum_elems
 tanh = dy.tanh
 transpose = dy.transpose
 zeros = dy.zeros
@@ -211,3 +216,31 @@ def recombine_cache(caches, indexes):
     else:
         them = [pick_batch_elem(_c, _i) for _c, _i in zip(caches, indexes)]
         return concatenate_to_batch(them)
+
+# ------
+def add_margin(bexpr, yidxs, margin):
+    dd, bs = dims(bexpr), bsize(bexpr)
+    utils.zcheck(bs == len(yidxs), "Unmatched bsize for margin adding.")
+    utils.zcheck(len(dd) == 1, "Currently only support dim=1.")
+    # reverse, adding margin except the correct ones
+    adding = dy.sparse_inputTensor((yidxs, [i for i in range(bs)]), [0. for _ in yidxs], shape=(dd[0], bs), batched=True, defval=margin)
+    bexpr2 = bexpr + adding
+    return bexpr2
+
+# def count_nonzero(expr):
+#     TMP_MUL = 1000
+#     dd, bs = dims(expr), bsize(expr)
+#     utils.zcheck(len(dd) == 1, "Currently only support dim=1.")
+#     thresh_expr = dy.constant((dd[0],), 1/TMP_MUL, batch_size=bs)
+#     min_expr = dy.bmin(expr, thresh_expr)
+#     count_expr = dy.sum_elems(min_expr) * TMP_MUL
+#     return nobackprop(count_expr)
+
+def topk(expr, k):
+    assert k==1, "only support k==1"
+    tv = expr.tensor_value()
+    max_idx = tv.argmax()
+    idxs = max_idx.as_numpy()
+    max_exprs = pick_batch(expr, idxs[0])
+    max_val = get_value_vec(max_exprs)
+    return idxs, max_val

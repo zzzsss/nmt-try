@@ -120,6 +120,35 @@ class Linear(Basic):
             x = dy.dropout(x, self.hdrop)
         return x
 
+# linear layer with multi inputs
+class LinearMulti(Basic):
+    def __init__(self, model, n_ins, n_out, act="tanh"):
+        super(LinearMulti, self).__init__(model)
+        for i, n_in in enumerate(n_ins):
+            self.params["W%s"%i] = self._add_parameters((n_out, n_in))
+        self.params["B"] = self._add_parameters((n_out,))
+        self.act = {"tanh":dy.tanh, "softmax":dy.softmax, "linear":None}[act]
+        self._pattern = []
+        self.n_num = len(n_ins)
+
+    def refresh(self, argv):
+        self._ingraph(argv)
+        # prepare calculation list
+        self._pattern = [self.iparams["B"]]
+        for i in range(self.n_num):
+            self._pattern += [self.iparams["W%s"%i], None]
+
+    def __call__(self, input_exps):
+        assert len(input_exps) == self.n_num
+        for i in range(self.n_num):
+            self._pattern[2*i+2] = input_exps[i]
+        x = dy.affine_transform(self._pattern)
+        if self.act is not None:
+            x = self.act(x)
+        if self.hdrop > 0.:
+            x = dy.dropout(x, self.hdrop)
+        return x
+
 # embedding layer
 class Embedding(Basic):
     def __init__(self, model, n_words, n_dim, dropout_wordceil=None, npvec=None):
@@ -145,7 +174,9 @@ class Embedding(Basic):
             input_exp = [input_exp]
         # input dropouts
         if self.idrop > 0:
-            input_exp = [(0 if (v<=0 and i>=self.dropout_wordceil) else i) for i,v in zip(input_exp, np.random.binomial(1, 1-self.idrop, len(input_exp)))]
+            # todo
+            # input_exp = [(0 if (v<=0 and i>=self.dropout_wordceil) else i) for i,v in zip(input_exp, np.random.binomial(1, 1-self.idrop, len(input_exp)))]
+            input_exp = [(0 if (v>0.5 and i<self.dropout_wordceil) else i) for i,v in zip(input_exp, np.random.binomial(1, self.idrop, len(input_exp)))]
         x = dy.lookup_batch(self.params["_E"], input_exp, self.update)
         if self.hdrop > 0:
             x = dy.dropout(x, self.hdrop)
@@ -433,11 +464,11 @@ class Decoder(object):
         caches["hid"] = inits
         return caches
 
-    def feed_one(self, s, inputs, caches):
+    def feed_one(self, s, inputs, caches, prev_embeds=None):
         assert bs(caches["hid"][0]["H"]) == bs(inputs), "Unmatched batch_size"
-        return self._feed_one(s, inputs, caches)
+        return self._feed_one(s, inputs, caches, prev_embeds)
 
-    def _feed_one(self, s, inputs, caches):
+    def _feed_one(self, s, inputs, caches, prev_embeds):
         raise NotImplementedError("Decoder should be inherited!")
 
 # normal attention decoder
@@ -451,7 +482,7 @@ class AttDecoder(Decoder):
         for gnod in self.gnodes:
             self.all_nodes.append(gnod)
 
-    def _feed_one(self, s, inputs, caches):
+    def _feed_one(self, s, inputs, caches, prev_embeds):
         # first layer with attetion
         next_caches = self.anode(s, caches["hid"][0]["H"], caches)
         g_input = dy.concatenate([inputs, next_caches["ctx"]])
@@ -477,7 +508,7 @@ class NematusDecoder(Decoder):
         for gnod in self.gnodes:
             self.all_nodes.append(gnod)
 
-    def _feed_one(self, s, inputs, caches):
+    def _feed_one(self, s, inputs, caches, prev_embeds):
         # first layer with attetion, gru1 -> att -> gru2
         s1 = self.gnodes[0](inputs, caches["hid"][0])
         next_caches = self.anode(s, s1["H"], caches)
@@ -490,3 +521,31 @@ class NematusDecoder(Decoder):
         # append and return
         next_caches["hid"] = this_hiddens
         return next_caches
+
+# as the name suggests, like a feed-forward NN
+class NgramDecoder(Decoder):
+    def __init__(self, model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden, att_type, rnn_type, summ_type, ngram):
+        super(NgramDecoder, self).__init__(model, n_input, n_hidden, n_layers, dim_src, dim_att_hidden, att_type, rnn_type, summ_type)
+        self.ngram = ngram      # todo(warn) include the most recent one, with redundancy but for attention
+        self.layers = [LinearMulti(model, [n_input]*ngram, n_hidden)]
+        for i in range(n_layers-1):
+            self.layers.append(Linear(model, n_hidden, n_hidden))
+        self.all_nodes += self.layers
+
+    def _feed_one(self, s, inputs, caches, prev_embeds):
+        # todo(warn) prev_embeds are prepared by up-layers and only utilized here in Ngram-Decoder,
+        # -- attention not in the calculation of "hid"
+        # ignore previous hidden & inputs
+        ihidd = self.layers[0](prev_embeds)
+        for i in range(1, self.n_layers):
+            ihidd = self.layers[i](ihidd)
+        next_caches = self.anode(s, ihidd, caches)
+        # append and return
+        next_caches["hid"] = [{'H': ihidd}]      # todo(warn): ugly
+        return next_caches
+
+    def refresh(self, argv):
+        super(NgramDecoder, self).refresh(argv)
+        # todo(warn): special setting with gdrop to make it similar to RnnDecoder
+        for one in self.layers:
+            one.hdrop = max(one.hdrop, one.gdrop)

@@ -1,3 +1,6 @@
+##### legacy of 2017.11 #####
+##### ================= #####
+
 from zl.model import Model
 from zl.trainer import Trainer
 from zl import layers, utils, data
@@ -821,3 +824,62 @@ class MTSearcher(Searcher):
 
 # b ztry1/mt_search:262
 # p ends[0][0].sg.bfs()
+
+##### legacy of 2017.12 #####
+##### ================= #####
+
+# loss functions
+
+    # def _hinge_loss_step(self, scores_exprs, ystep, mask_expr, loss_max):
+    #     if self.margin_ > 0.:
+    #         scores_exprs = layers.BK.add_margin(scores_exprs, ystep, self.margin_)
+    #     gold_expr = layers.BK.pick_batch(scores_exprs, ystep)
+    #     scores_exprs -= gold_expr
+    #     hinge_expr = layers.BK.rectify(scores_exprs)
+    #     if loss_max:
+    #         one_loss = layers.BK.max_dim(hinge_expr)
+    #     else:
+    #         sum_expr = layers.BK.esum(hinge_expr)
+    #         count_expr = layers.BK.count_nonzero(hinge_expr)
+    #         one_loss = layers.BK.cdiv(sum_expr, count_expr)
+    #     if mask_expr is not None:
+    #         one_loss = one_loss * mask_expr
+    #     return one_loss
+
+    def _hinge_max_loss_step(self, scores_exprs, ystep, mask_expr):
+        scores_val = layers.BK.get_value_v(scores_exprs)
+        # max(s+margin_)
+        max_idxs = []
+        for i in range(len(scores_val)):
+            scores_val_one = scores_val[i]
+            scores_val_one[ystep[i]] -= self.margin_
+            one_idx = scores_val_one.argmax()
+            max_idxs.append(one_idx)
+        # get loss
+        one_loss = layers.BK.pick_batch(scores_exprs, max_idxs) - layers.BK.pick_batch(scores_exprs, ystep)
+        if mask_expr is not None:
+            one_loss = one_loss * mask_expr
+        return one_loss
+
+# def count_nonzero(expr):
+#     TMP_MUL = 1000
+#     dd, bs = dims(expr), bsize(expr)
+#     utils.zcheck(len(dd) == 1, "Currently only support dim=1.")
+#     count_expr = esum(dy.bmin(expr*TMP_MUL, dy.ones((dd[0],), batch_size=bs)))
+#     return nobackprop(count_expr)       # todo(warn): only for its value
+
+def _hinge_avg_loss_step(self, scores_exprs, ystep, mask_expr):
+        one_loss_all = layers.BK.hinge_batch(scores_exprs, ystep)
+        scores_val = layers.BK.get_value_v(scores_exprs)
+        lengths = []
+        for i in range(len(scores_val)):
+            scores_val_one = scores_val[i]
+            thresh = scores_val_one[ystep[i]] - self.margin_ + 1e-3     # todo(warn): slightly larger
+            count = (scores_val_one>thresh).sum()
+            lengths.append(count)
+        # get loss
+        length_np = np.asarray(lengths).reshape((1, -1))
+        one_loss = layers.BK.cdiv(one_loss_all, layers.BK.inputTensor(length_np, True))
+        if mask_expr is not None:
+            one_loss = one_loss * mask_expr
+        return one_loss

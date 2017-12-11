@@ -225,6 +225,17 @@ class State(object):
                 self.values[n] = [str(self.action_code)] + pp[:-1]
         return self.values[n]
 
+    def sig_ngram_tlist(self, n, pad):
+        v = -n     # todo(warn) ...
+        if v not in self.values:
+            # calculate it on the fly
+            if self.is_start():
+                self.values[v] = [pad]*n
+            else:
+                pp = self.prev.sig_ngram_tlist(n, pad)
+                self.values[v] = [self.action_code] + pp[:-1]
+        return self.values[v]
+
     def sig_ngram(self, n):
         if n not in self.caches:
             ll = self.sig_ngram_list(n)

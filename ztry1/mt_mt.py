@@ -5,6 +5,7 @@ from zl import utils, data
 from .mt_length import MTLengther, LinearGaussain
 import numpy as np
 from . import mt_layers as layers
+from zl.search import State, SearchGraph, Action
 
 # herlpers
 # data helpers #
@@ -71,8 +72,13 @@ class s2sModel(Model):
         self.embed_trg = layers.Embedding(self.model, len(target_dict), opts["dim_word"], dropout_wordceil=target_dict.get_wordceil())
         # enc-dec
         self.enc = layers.Encoder(self.model, opts["dim_word"], opts["hidden_enc"], opts["enc_depth"], opts["rnn_type"])
-        self.dec = layers.NematusDecoder(self.model, opts["dim_word"], opts["hidden_dec"], opts["dec_depth"], 2*opts["hidden_enc"],
-                    opts["hidden_att"], opts["att_type"], opts["rnn_type"], opts["summ_type"])
+        self.dec_ngram_n = opts["dec_ngram_n"]
+        if opts["dec_type"] == "ngram":
+            self.dec = layers.NgramDecoder(self.model, opts["dim_word"], opts["hidden_dec"], opts["dec_depth"], 2*opts["hidden_enc"],
+                    opts["hidden_att"], opts["att_type"], opts["rnn_type"], opts["summ_type"], self.dec_ngram_n)
+        else:
+            self.dec = layers.NematusDecoder(self.model, opts["dim_word"], opts["hidden_dec"], opts["dec_depth"], 2*opts["hidden_enc"],
+                        opts["hidden_att"], opts["att_type"], opts["rnn_type"], opts["summ_type"])
         # outputs
         self.out0 = layers.Linear(self.model, 2*opts["hidden_enc"]+opts["hidden_dec"]+opts["dim_word"], opts["hidden_out"])
         self.out1 = layers.Linear(self.model, opts["hidden_out"], len(target_dict), act="linear")
@@ -94,7 +100,12 @@ class s2sModel(Model):
             self.set_prop("r2l", True)
         if opts["no_model_softmax"]:
             self.set_prop("no_model_softmax", True)
-        self.fber_ = self.fb_standard_
+        self.fber_ = {"std":self.fb_standard_, "std2":self.fb_standard2_}[opts["train_mode"]]
+        self.losser_ = {"mle":self._mle_loss_step, "mlev":self._mlev_loss_step, "hinge_max":self._hinge_max_loss_step,
+                        "hinge_avg":self._hinge_avg_loss_step, "hinge_sum":self._hinge_sum_loss_step}[opts["train_local_loss"]]
+        self.margin_ = opts["train_margin"]
+        utils.zlog("For the training process %s, using %s; loss is %s, using %s; margin is %s"
+                   % (opts["train_mode"], self.fber_, opts["train_local_loss"], self.losser_, self.margin_))
         #
         self.penalize_eos = opts["penalize_eos"]
         self.penalize_list = self.target_dict.get_ending_tokens()
@@ -142,7 +153,8 @@ class s2sModel(Model):
         return embed(tokens)
 
     def get_start_yembs(self, bsize):
-        return self.get_embeddings_step([self.target_dict.bos for _ in range(bsize)], self.embed_trg)
+        bos = self.target_dict.bos
+        return self.get_embeddings_step([bos for _ in range(bsize)], self.embed_trg)
 
     def get_scores(self, at, hi, ye):
         real_hi = hi[-1]["H"]
@@ -162,9 +174,9 @@ class s2sModel(Model):
         # start the first step of decoding
         return self.dec.start_one(x_encodes)
 
-    def decode_step(self, x_encodes, inputs, caches):
+    def decode_step(self, x_encodes, inputs, caches, prev_embeds):
         # feed one step
-        return self.dec.feed_one(x_encodes, inputs, caches)
+        return self.dec.feed_one(x_encodes, inputs, caches, prev_embeds)
 
     # main routines #
     def start(self, xs, repeat_time=1, softmax=True):
@@ -186,10 +198,17 @@ class s2sModel(Model):
         cache["results"] = results
         return cache
 
-    def step(self, prev_val, inputs, softmax=True):
+    def step(self, prev_val, inputs, cur_states=None, softmax=True):
         x_encodes, hiddens = None, prev_val["hid"]
         next_embeds = self.get_embeddings_step(inputs, self.embed_trg)
-        cache = self.decode_step(x_encodes, next_embeds, prev_val)
+        # prepare prev_embeds
+        if self.opts["dec_type"] == "ngram":
+            bos = self.target_dict.bos
+            prev_tokens = [s.sig_ngram_tlist(self.dec_ngram_n, bos) for s in cur_states]
+            prev_embeds = [self.get_embeddings_step([p[step] for p in prev_tokens], self.embed_trg) for step in range(self.dec_ngram_n)]
+        else:
+            prev_embeds = None
+        cache = self.decode_step(x_encodes, next_embeds, prev_val, prev_embeds)
         output_score, output_hidden = self.get_scores(cache["ctx"], cache["hid"], next_embeds)
         if softmax and not self.get_prop("no_model_softmax"):
             results = layers.BK.softmax(output_score)
@@ -265,7 +284,7 @@ class s2sModel(Model):
             yprev = ystep
             # build loss
             scores_exprs = cc["out_s"]
-            loss = _mle_loss_step(scores_exprs, ystep, mask_expr)
+            loss = self.losser_(scores_exprs, ystep, mask_expr)
             if self.scaler is not None:
                 len_scales = [self.scaler(len(_y)) for _y in ys]
                 np.asarray(len_scales).reshape((1, -1))
@@ -302,12 +321,114 @@ class s2sModel(Model):
         else:
             return {}
 
-# ----- losses -----
+    def fb_standard2_(self, insts, training, ret_value="loss"):
+        # similar to standard1, but record states and no training for lengths
+        xs = [i[0] for i in insts]
+        if self.get_prop("r2l"):
+            # right to left modeling, be careful about eos
+            ys = [list(reversed(i[1][:-1]))+[i[1][-1]] for i in insts]
+        else:
+            ys = [i[1] for i in insts]
+        bsize = len(xs)
+        opens = [State(sg=SearchGraph(target_dict=self.target_dict)) for _ in range(bsize)]     # with only one init state
+        # xlens = [len(_x) for _x in xs]
+        ylens = [len(_y) for _y in ys]
+        cur_maxlen = max(ylens)
+        losses = []
+        caches = []
+        yprev = None
+        for i in range(cur_maxlen):
+            # forward
+            ystep, mask_expr = prepare_y_step(ys, i)
+            if i==0:
+                cc = self.start(xs, softmax=False)
+            else:
+                cc = self.step(caches[-1], yprev, opens, softmax=False)
+            caches.append(cc)
+            yprev = ystep
+            # build loss
+            scores_exprs = cc["out_s"]
+            loss = self.losser_(scores_exprs, ystep, mask_expr)
+            if self.scaler is not None:
+                len_scales = [self.scaler(len(_y)) for _y in ys]
+                np.asarray(len_scales).reshape((1, -1))
+                len_scalue_e = layers.BK.inputTensor(len_scales, True)
+                loss = loss * len_scalue_e
+            losses.append(loss)
+            # prepare next steps: only following gold
+            new_opens = [State(prev=ss, action=Action(yy, 0.)) for ss, yy in zip(opens, ystep)]
+            opens = new_opens
+        # -- final
+        loss0 = layers.BK.esum(losses)
+        loss = layers.BK.sum_batches(loss0) / bsize
+        if training:
+            layers.BK.forward(loss)
+            layers.BK.backward(loss)
+        # return value?
+        if ret_value == "loss":
+            lossy_val = layers.BK.get_value_sca(loss)
+            return {"y": lossy_val*bsize}
+        elif ret_value == "losses":
+            # return token-wise loss
+            origin_values = [layers.BK.get_value_vec(i) for i in losses]
+            reshaped_values = [[origin_values[j][i] for j in range(yl)] for i, yl in enumerate(ylens)]
+            if self.get_prop("r2l"):
+                reshaped_values = [list(reversed(one[:-1]))+[one[-1]] for one in reshaped_values]
+            return reshaped_values
+        else:
+            return {}
 
-def _mle_loss_step(scores_exprs, ystep, mask_expr):
-    one_loss = layers.BK.pickneglogsoftmax_batch(scores_exprs, ystep)
-    if mask_expr is not None:
-        one_loss = one_loss * mask_expr
-    return one_loss
+    # ----- losses -----
 
-# ----- losses -----
+    def _mlev_loss_step(self, scores_exprs, ystep, mask_expr):
+        # (wasted) getting values to test speed
+        gold_exprs = layers.BK.pick_batch(scores_exprs, ystep)
+        gold_vals = layers.BK.get_value_vec(gold_exprs)
+        # max_exprs = layers.BK.max_dim(scores_exprs)
+        # scores_exprs.forward()
+        # max_tenidx0 = scores_exprs.tensor_value()
+        # zz = max_tenidx0.argmax()
+        # max_tenidx = scores_exprs.tensor_value().argmax()
+        # pp = layers.BK.topk(scores_exprs, 1)
+        return self._mle_loss_step(scores_exprs, ystep, mask_expr)
+
+    def _mle_loss_step(self, scores_exprs, ystep, mask_expr):
+        if self.margin_ > 0.:
+            scores_exprs = layers.BK.add_margin(scores_exprs, ystep, self.margin_)
+        one_loss = layers.BK.pickneglogsoftmax_batch(scores_exprs, ystep)
+        if mask_expr is not None:
+            one_loss = one_loss * mask_expr
+        return one_loss
+
+    def _hinge_max_loss_step(self, scores_exprs, ystep, mask_expr):
+        if self.margin_ > 0.:
+            scores_exprs = layers.BK.add_margin(scores_exprs, ystep, self.margin_)
+        max_exprs = layers.BK.max_dim(scores_exprs)
+        gold_exprs = layers.BK.pick_batch(scores_exprs, ystep)
+        # get loss
+        one_loss = max_exprs - gold_exprs
+        if mask_expr is not None:
+            one_loss = one_loss * mask_expr
+        return one_loss
+
+    def _hinge_avg_loss_step(self, scores_exprs, ystep, mask_expr):
+        one_loss_all = layers.BK.hinge_batch(scores_exprs, ystep, self.margin_)
+        ## todo: approximate counting code here (-3 for squeezing negatives, +1 for smoothing)
+        # -- still out of memory on 12g gpu, maybe need smaller bs
+        gold_exprs = layers.BK.pick_batch(scores_exprs, ystep)
+        gold_exprs -= (self.margin_ - 3)    # to get to zero for sigmoid
+        scores_exprs -= gold_exprs
+        count_exprs = layers.BK.sum_elems(layers.BK.logistic(scores_exprs))
+        count_exprs = layers.BK.nobackprop(count_exprs)
+        one_loss = layers.BK.cdiv(one_loss_all, count_exprs+1)
+        if mask_expr is not None:
+            one_loss = one_loss * mask_expr
+        return one_loss
+
+    def _hinge_sum_loss_step(self, scores_exprs, ystep, mask_expr):
+        one_loss = layers.BK.hinge_batch(scores_exprs, ystep, self.margin_)
+        if mask_expr is not None:
+            one_loss = one_loss * mask_expr
+        return one_loss
+
+    # ----- losses -----

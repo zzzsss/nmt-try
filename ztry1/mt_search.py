@@ -43,7 +43,7 @@ def search_greedy(models, insts, target_dict, opts, normer, sstater):
                 one_cache.append(cc)
         else:
             for mi, _m in enumerate(models):
-                cc = _m.step(caches[-1][mi], yprev)
+                cc = _m.step(caches[-1][mi], yprev, utils.Helper.stream_rec(opens))
                 one_cache.append(cc)
         caches.append(one_cache)
         # prepare next steps
@@ -123,7 +123,7 @@ def search_sample(models, insts, target_dict, opts, normer, sstater):
             pred_lens = utils.Helper.shrink_list(_tmp_pred_lens, sample_size)
         else:
             for mi, _m in enumerate(models):
-                cc = _m.step(caches[-1][mi], yprev)
+                cc = _m.step(caches[-1][mi], yprev, utils.Helper.stream_rec(opens))
                 one_cache.append(cc)
         caches.append(one_cache)
         # prepare next steps
@@ -267,7 +267,7 @@ def search_beam(models, insts, target_dict, opts, normer, sstater):
             pr_len_lower = pred_lens - opts["pr_len_klow"] * pred_lens_sigma
         else:
             for mi, _m in enumerate(models):
-                cc = _m.step(caches[-1][mi], yprev)
+                cc = _m.step(caches[-1][mi], yprev, utils.Helper.stream_rec(opens))
                 one_cache.append(cc)
         # select cands
         results = layers.BK.average([one["results"] for one in one_cache])
@@ -499,8 +499,20 @@ def search_branch(models, insts, target_dict, opts, normer, sstater):
     branching_fullfill_ratio = opts["branching_fullfill_ratio"]
     num_run = 0
     num_newstates = [[] for _ in range(bsize)]
-    # todo(warn): not fine-grained enough for ratios
-    while num_run < esize_all or any([sum(z)<branching_fullfill_ratio*z[0] for z in num_newstates]):
+    while True:
+        # whether to end looping
+        if num_run >= esize_all:
+            break_flag = True
+            for tmp_idx in range(bsize):
+                tmp_newstates = num_newstates[tmp_idx]
+                if sum(tmp_newstates) >= branching_fullfill_ratio*tmp_newstates[0]:
+                    branching_points[tmp_idx] = PriorityQueue()      # clear
+                else:
+                    if not branching_points[tmp_idx].empty():
+                        break_flag = False
+            if break_flag:
+                break
+        # start a new loop
         run_caches = []
         run_yprev = []
         run_unfinished = [[1 for _ in range(bsize)]]   # checking the batching information
@@ -544,7 +556,7 @@ def search_branch(models, insts, target_dict, opts, normer, sstater):
                         num_newstates[i][-1] += run_unfinished[-1][i]   # count: continue state for branching points
                 if len(run_yprev) > 0:
                     for mi, _m in enumerate(models):
-                        cc = _m.step(run_caches[-1][mi], run_yprev)
+                        cc = _m.step(run_caches[-1][mi], run_yprev, utils.Helper.stream_rec(opens))
                         one_cache.append(cc)
                 if len(run_yprev) <= 0:     # not enough for all of them
                     break
