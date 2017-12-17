@@ -128,6 +128,34 @@ python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh -
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.4 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 dec_type ngram dec_depth 2" -z 6 -p 1
 # x47
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 train_margin 1.0" -z 6 -p 0
+# ============= change these ones
+# -- (scores too small and could not distinguish)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 train_margin 1.0 train_local_loss hinge_max" -z 6 -p 1
+# -> seems reasonable
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 train_margin 1.0 train_local_loss hinge_avg batch_size 64" -z 6 -p 2
+# -- (maybe lrate too much and too large score-diff; uncontrolled loss)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 train_margin 1.0 train_local_loss hinge_sum" -z 6 -p 3
+#
+#
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.1 trainer_type sgd train_margin 2.0" -z 6 -p 1
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.1 trainer_type sgd train_margin 2.0 train_local_loss hinge_max" -z 6 -p 2
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.1 trainer_type sgd train_margin 2.0 train_local_loss hinge_avg batch_size 64" -z 6 -p 3
+
+# not good with n-gram or others(re-run)
+
+# 17.12.17
+# after the bug, should set idrop_embedding to 0.
+# x45
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../en_de_data_z5/ -t znmt --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 lrate 0.0002" -z 10 -p 0
+# x46
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002" -z 6 -p 7
+# x47
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 1.0 trainer_type sgd train_margin 2.0" -z 6 -p 0
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 1.0 trainer_type sgd train_margin 2.0 train_local_loss hinge_max" -z 6 -p 2
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 1.0 trainer_type sgd train_margin 2.0 train_local_loss hinge_avg batch_size 64" -z 6 -p 3
+# x48
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 dec_type ngram hidden_dec 500 dec_ngram_n 6" -z 6 -p 3
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 dec_type ngram hidden_dec 500 dec_ngram_n 8" -z 6 -p 4
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.4 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 dec_type ngram hidden_dec 500 dec_ngram_n 10" -z 6 -p 5
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 dec_type ngram hidden_dec 500 dec_ngram_n 12" -z 6 -p 6
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.4 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 dec_type ngram hidden_dec 500 dec_ngram_n 14" -z 6 -p 7

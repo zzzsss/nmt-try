@@ -4,21 +4,6 @@ import sys
 
 import _dynet as dy
 
-class DY_CONFIG:
-    immediate_compute = False
-
-def init(opts):
-    # todo: manipulating sys.argv
-    utils.zlog("Using BACKEND of DYNET.")
-    params = dy.DynetParams()
-    temp = sys.argv
-    sys.argv = [temp[0], "--dynet-mem", opts["dynet-mem"], "--dynet-autobatch", opts["dynet-autobatch"],
-                "--dynet-devices", opts["dynet-devices"], "--dynet-seed", opts["dynet-seed"]]
-    DY_CONFIG.immediate_compute = opts["dynet-immed"]
-    params.from_args(None)
-    params.init()
-    sys.argv = temp
-
 affine = dy.affine_transform
 average = concat_wrapper(dy.average)
 cmult = dy.cmult
@@ -98,13 +83,18 @@ def get_value_sca(expr):
     expr.forward()
     return expr.scalar_value()
 
+def get_value_np(expr):
+    v = get_value_vec(expr)
+    shape = [bsize(expr)] + list(reversed(dims(expr)))
+    return np.asarray(v).reshape(shape)
+
 # def get_value_np(expr):
 #     expr.forward()
 #     return expr.npvalue()
 
-def get_value_v(expr):
-    data = get_value_vec(expr)
-    return Value(data, list(reversed(dims(expr))), bsize(expr))
+# def get_value_v(expr):
+#     data = get_value_vec(expr)
+#     return Value(data, list(reversed(dims(expr))), bsize(expr))
 
 def get_params(model, shape, lookup=False, init="default"):
     if isinstance(init, np.ndarray):    # pass it directly
@@ -236,11 +226,69 @@ def add_margin(bexpr, yidxs, margin):
 #     count_expr = dy.sum_elems(min_expr) * TMP_MUL
 #     return nobackprop(count_expr)
 
-def topk(expr, k):
-    assert k==1, "only support k==1"
+# def topk(expr, k):
+#     assert k==1, "only support k==1"
+#     tv = expr.tensor_value()
+#     max_idx = tv.argmax()
+#     idxs = max_idx.as_numpy()
+#     max_exprs = pick_batch(expr, idxs[0])
+#     max_val = get_value_vec(max_exprs)
+#     return idxs, max_val
+
+def NEVER_KNOWN_LOCAL_nargmax(v, n):
+    # return ORDERED list of (id, value)
+    thres = max(-len(v), -n)
+    ids = np.argpartition(v, thres)[thres:]
+    ret = sorted([int(i) for i in ids], key=lambda x: v[x], reverse=True)
+    return ret
+
+def topk_cpu(expr, k, prepare=True):
+    value_np = get_value_np(expr)
+    idxs, vals = [], []
+    for vip in value_np:
+        one_idxs = NEVER_KNOWN_LOCAL_nargmax(vip, k)
+        one_vals = vip[one_idxs]
+        idxs += one_idxs
+        vals += one_vals.tolist()
+    pp = (idxs, vals)
+    if prepare:
+        return ResultTopk.prepare_results(pp, k)
+    else:
+        return pp
+
+def topk_gpu(expr, k, prepare=True):
+    # get the k-argmax_and_max of an expr, return a list(BATCH) of list(K) of pairs
+    # -- only for batched-dim0
+    # todo(warn): guarantee sorted
     tv = expr.tensor_value()
-    max_idx = tv.argmax()
-    idxs = max_idx.as_numpy()
-    max_exprs = pick_batch(expr, idxs[0])
-    max_val = get_value_vec(max_exprs)
-    return idxs, max_val
+    pp = tv.max_and_argmax(0, k)
+    # debug
+    # if True:
+    #     ppc = topk_cpu(expr, k, False)
+    #     utils.zcheck(ppc[0]==pp[0], "Error on topk.")
+    if prepare:
+        return ResultTopk.prepare_results(pp, k)
+    else:
+        return pp
+
+topk = topk_gpu
+
+# ------------- CONFIGS -------------
+class DY_CONFIG:
+    immediate_compute = False
+
+def init(opts):
+    # todo: manipulating sys.argv
+    utils.zlog("Using BACKEND of DYNET on %s." % (opts["dynet-devices"],))
+    params = dy.DynetParams()
+    temp = sys.argv
+    sys.argv = [temp[0], "--dynet-mem", opts["dynet-mem"], "--dynet-autobatch", opts["dynet-autobatch"],
+                "--dynet-devices", opts["dynet-devices"], "--dynet-seed", opts["dynet-seed"]]
+    DY_CONFIG.immediate_compute = opts["dynet-immed"]
+    params.from_args(None)
+    params.init()
+    sys.argv = temp
+    if "GPU" not in opts["dynet-devices"]:
+        global topk
+        topk = topk_cpu
+        utils.zlog("Currently using numpy for topk_cpu.")

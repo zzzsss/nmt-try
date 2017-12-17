@@ -25,6 +25,8 @@ python3.5 ${py_args} ${zmt}/znmt/test.py -v --report_freq 125 --eval_metric ible
 perl ${zmt}/znmt/scripts/multi-bleu.perl $CH_EN_DATADIR/$EVAL_SUBDIR/$dataname/$dataname.ref < ${output}.$dataname.n1
 done
 
+# PYTHONPATH=$DY_ZROOT/cbuild/python python3.5 -m pdb ../../znmt/test.py -v --report_freq 125 --eval_metric ibleu -t ../../zh_en_data/Dev-set/nist_2002.{src,ref0} -d ../z1126_3/{"src","trg"}.v -n 1.0 -o output.txt --decode_way greedy --test_batch_size 1 -m ?
+
 # timeout for another two days
 if echo ${_dy_device} | grep "GPU";
 then

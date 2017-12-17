@@ -7,6 +7,10 @@ import numpy as np
 from . import mt_layers as layers
 from zl.search import State, SearchGraph, Action
 
+from zl.backends.common import ResultTopk
+IDX_DIM = ResultTopk.IDX_DIM
+VAL_DIM = ResultTopk.VAL_DIM
+
 # herlpers
 # data helpers #
 def prepare_data(ys, dict, fix_len=0):
@@ -231,21 +235,22 @@ class s2sModel(Model):
         ret = LinearGaussain.back_len(ret)
         return ret
 
-    # for the results
-    def explain_result(self, x, one_idx=None):
-        if self.get_prop("no_model_softmax"):
-            ss = x
-        else:
-            ss = np.log(x)
-        # todo(warn): penalizing here for convenience
-        if self.penalize_eos > 0.:
-            if one_idx is not None:
-                if one_idx in self.penalize_list:
-                    ss -= self.penalize_eos
-            else:
-                for idx in self.penalize_list:
-                    ss[idx] -= self.penalize_eos
-        return ss
+    # for the results: input is pairs(K) of (idx, val)
+    def explain_result_topkp(self, pairs):
+        to_log = not self.get_prop("no_model_softmax")
+        to_penalize = self.penalize_eos > 0.
+        ret_pairs = []
+        for p in pairs:
+            if to_log:
+                p[VAL_DIM] = np.log(p[VAL_DIM])
+            if to_penalize:
+                if p[IDX_DIM] in self.penalize_list:
+                    p[VAL_DIM] -= self.penalize_eos
+            if p[IDX_DIM] != self.target_dict.err:
+                ret_pairs.append(p)
+        # re-sorting
+        ret_pairs.sort(key=lambda p: p[VAL_DIM], reverse=True)
+        return ret_pairs
 
     # training
     def fb(self, insts, training, ret_value="loss", new_graph=True):
@@ -382,14 +387,15 @@ class s2sModel(Model):
 
     def _mlev_loss_step(self, scores_exprs, ystep, mask_expr):
         # (wasted) getting values to test speed
-        gold_exprs = layers.BK.pick_batch(scores_exprs, ystep)
-        gold_vals = layers.BK.get_value_vec(gold_exprs)
+        # gold_exprs = layers.BK.pick_batch(scores_exprs, ystep)
+        # gold_vals = layers.BK.get_value_vec(gold_exprs)
+        # pp = layers.BK.topk(scores_exprs, 1)
+        pp = layers.BK.topk(scores_exprs, 8)
         # max_exprs = layers.BK.max_dim(scores_exprs)
         # scores_exprs.forward()
         # max_tenidx0 = scores_exprs.tensor_value()
         # zz = max_tenidx0.argmax()
         # max_tenidx = scores_exprs.tensor_value().argmax()
-        # pp = layers.BK.topk(scores_exprs, 1)
         return self._mle_loss_step(scores_exprs, ystep, mask_expr)
 
     def _mle_loss_step(self, scores_exprs, ystep, mask_expr):
@@ -403,7 +409,9 @@ class s2sModel(Model):
     def _hinge_max_loss_step(self, scores_exprs, ystep, mask_expr):
         if self.margin_ > 0.:
             scores_exprs = layers.BK.add_margin(scores_exprs, ystep, self.margin_)
-        max_exprs = layers.BK.max_dim(scores_exprs)
+        # max_exprs = layers.BK.max_dim(scores_exprs)
+        max_idxs = layers.BK.topk(scores_exprs, 1, prepare=False)[IDX_DIM]
+        max_exprs = layers.BK.pick_batch(scores_exprs, max_idxs)
         gold_exprs = layers.BK.pick_batch(scores_exprs, ystep)
         # get loss
         one_loss = max_exprs - gold_exprs
@@ -432,3 +440,7 @@ class s2sModel(Model):
         return one_loss
 
     # ----- losses -----
+
+    # todo(warn): advanced training process, similar to the mt_search part, but rewrite to avoid messing up, which
+    # -> is really not a good idea
+

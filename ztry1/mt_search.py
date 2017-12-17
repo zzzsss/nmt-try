@@ -10,6 +10,11 @@ import numpy as np
 from collections import defaultdict
 from queue import PriorityQueue
 
+##
+from zl.backends.common import ResultTopk
+IDX_DIM = ResultTopk.IDX_DIM
+VAL_DIM = ResultTopk.VAL_DIM
+
 MTState = State
 MTAction = Action
 
@@ -48,32 +53,33 @@ def search_greedy(models, insts, target_dict, opts, normer, sstater):
         caches.append(one_cache)
         # prepare next steps
         results = layers.BK.average([one["results"] for one in one_cache])
-        results_v = layers.BK.get_value_v(results)
+        results_topk = layers.BK.topk(results, 2)       # todo(warn): to avoid err states
         if need_att:
             atts_e = layers.BK.average([one["att"] for one in one_cache])
-            atts_v = layers.BK.get_value_v(atts_e)
+            atts_v = layers.BK.get_value_np(atts_e)
         else:
             atts_v = [None for _ in range(bsize)]
         for j in range(bsize):
             cur_xsrc = xwords[j] if need_att else None
-            rr = results_v[j]
+            rr0 = results_topk[j]
+            rr = _m0.explain_result_topkp(rr0)
             one_attv = atts_v[j]
             if ends[j] is None:
                 # cur off if one of the criteria says it is time to end.
                 # todo(warn): upper length pruner
                 force_end = ((step+1) >= min(decode_maxlen, len(xs[j])*decode_maxratio))
-                next_y = eos_id
                 if not force_end:
-                    next_y = int(rr.argmax())
-                # todo(warn) ignore eos score for force_end
-                score = _m0.explain_result(rr[next_y], one_idx=next_y) if not force_end else 0.
+                    next_y, next_score = rr[0][IDX_DIM], rr[0][VAL_DIM]
+                else:
+                    # todo(warn) ignore eos score for force_end
+                    next_y, next_score = eos_id, 0.
                 # check eos
                 if next_y == eos_id:
-                    ends[j] = State(prev=opens[j], action=Action(next_y, score), attention_weights=one_attv, attention_src=cur_xsrc)
+                    ends[j] = State(prev=opens[j], action=Action(next_y, next_score), attention_weights=one_attv, attention_src=cur_xsrc)
                     ends[j].mark_end()
                     finish_size += 1
                 else:
-                    opens[j] = State(prev=opens[j], action=Action(next_y, score), attention_weights=one_attv, attention_src=cur_xsrc)
+                    opens[j] = State(prev=opens[j], action=Action(next_y, next_score), attention_weights=one_attv, attention_src=cur_xsrc)
             else:
                 next_y = 0
             yprev[j] = next_y
@@ -128,34 +134,31 @@ def search_sample(models, insts, target_dict, opts, normer, sstater):
         caches.append(one_cache)
         # prepare next steps
         results = layers.BK.average([one["results"] for one in one_cache])
-        results_v0 = layers.BK.get_value_v(results)
-        results_v = _m0.explain_result(results_v0)      # todo(warn): maybe changed to log here
+        results_topk = layers.BK.topk(results, pr_local_expand)
         for i in range(bsize):
             force_end = ((step+1) >= min(decode_maxlen, len(xs[i])*decode_maxratio))
             for j in range(sample_size):
                 cur_idx = i*sample_size+j
-                one_result = results_v[cur_idx]
+                rr0 = results_topk[cur_idx]
+                rr = _m0.explain_result_topkp(rr0)
                 if ends[i][j] is None:
                     # select
                     if force_end:
-                        next_one = eos_id
                         # todo(warn) ignore eos score for force_end
-                        next_one_score = 0.
+                        next_y, next_score = eos_id, 0.
                     else:
-                        one_cands = nargmax(one_result, pr_local_expand)
-                        ids, probs = Pruner.local_prune_score(one_result, one_cands, pr_local_expand, pr_local_diff, pr_local_penalty)
+                        probs, rr_final = Pruner.local_prune_score(rr, pr_local_expand, pr_local_diff, pr_local_penalty)
                         selected = utils.Random.multinomial_select(probs, "sample")
-                        next_one = ids[selected]
-                        next_one_score = np.log(probs[selected])
+                        next_y = rr_final[selected][IDX_DIM]
+                        next_score = rr_final[selected][VAL_DIM]
                     # assign
                     # check eos
-                    if next_one == eos_id:
-                        ends[i][j] = State(prev=opens[i][j], action=Action(next_one, next_one_score))
+                    if next_y == eos_id:
+                        ends[i][j] = State(prev=opens[i][j], action=Action(next_y, next_score))
                         ends[i][j].mark_end()
                         finish_size += 1
                     else:
-                        opens[i][j] = State(prev=opens[i][j], action=Action(next_one, next_one_score))
-                    next_y = next_one
+                        opens[i][j] = State(prev=opens[i][j], action=Action(next_y, next_score))
                 else:
                     next_y = 0
                 yprev[cur_idx] = next_y
@@ -165,13 +168,6 @@ def search_sample(models, insts, target_dict, opts, normer, sstater):
     normer(ends, pred_lens)
     final_list = [sorted(beam, key=lambda x: x.score_final, reverse=True) for beam in ends]
     return final_list
-
-def nargmax(v, n):
-    # return ORDERED list of (id, value)
-    thres = max(-len(v), -n)
-    ids = np.argpartition(v, thres)[thres:]
-    ret = sorted([int(i) for i in ids], key=lambda x: v[x], reverse=True)
-    return ret
 
 class BatchedHelper(object):
     def __init__(self, opens):
@@ -272,10 +268,10 @@ def search_beam(models, insts, target_dict, opts, normer, sstater):
         # select cands
         results = layers.BK.average([one["results"] for one in one_cache])
         this_bsize = layers.BK.bsize(results)
-        results_v = layers.BK.get_value_v(results)
+        results_topk = layers.BK.topk(results, pr_local_expand)
         if need_att:
             atts_e = layers.BK.average([one["att"] for one in one_cache])
-            atts_v = layers.BK.get_value_v(atts_e)
+            atts_v = layers.BK.get_value_np(atts_e)
         else:
             atts_v = [None for _ in range(this_bsize)]
         nexts = []
@@ -290,19 +286,17 @@ def search_beam(models, insts, target_dict, opts, normer, sstater):
             cur_xsrc = xwords[i] if need_att else None
             for j, one in enumerate(prev_states):
                 # for each one in the beam of one instance
-                one_result = results_v[r_start+j]
+                rr0 = results_topk[r_start+j]
+                rr = _m0.explain_result_topkp(rr0)
                 one_attv = atts_v[r_start+j]
                 # todo(warn): force end for the last step
                 if force_end:
-                    one_cands = [eos_id]
-                else:
-                    one_cands = nargmax(one_result, pr_local_expand)     # prune beforehand
+                    # todo(warn): ignore eos score
+                    rr = [(eos_id, 0.)]
                 # local pruning
                 cand_states = []
-                for idx in one_cands:
-                    # todo(warn): ignore eos score
-                    _tmp_score = _m0.explain_result(one_result[idx], one_idx=idx) if not force_end else 0.
-                    cand_states.append(State(prev=prev_states[j], action=Action(idx, _tmp_score), attention_weights=one_attv, attention_src=cur_xsrc, _tmp_prev_idx=j))
+                for onep in rr:
+                    cand_states.append(State(prev=prev_states[j], action=Action(onep[IDX_DIM], onep[VAL_DIM]), attention_weights=one_attv, attention_src=cur_xsrc, _tmp_prev_idx=j))
                 survive_local_cands = Pruner.local_prune(cand_states, pr_local_expand, pr_local_diff, pr_local_penalty)
                 cur_cands += survive_local_cands
             # sorting them all
@@ -356,24 +350,24 @@ def search_beam(models, insts, target_dict, opts, normer, sstater):
 class Pruner(object):
     # ----- for sample
     @staticmethod
-    def local_prune_score(values, cands, maxsize, thresh, penalty):
-        # nearly the same as local_prune, but on scores; return (ids, probs(softmax-scores))
+    def local_prune_score(rr, maxsize, thresh, penalty):
+        # nearly the same as local_prune, but on scores; return (re-normed-probs, rr_modified)
         # -- always add the max-scoring one
-        ret = [cands[0]]
-        ret_scores = [values[ret[0]]]
-        one_score_max = values[cands[0]]
+        rr_final = [rr[0]]
+        one_score_max = rr[0][VAL_DIM]
+        norm_vals = [one_score_max]
         # -- possibly pruning the rest (local pruning)
-        for i, one in enumerate(cands[1:], start=1):
-            one_score_cur = values[one]
+        for i, one in enumerate(rr[1:], start=1):
             if i >= maxsize:
                 pass
-            elif one_score_cur <= one_score_max - thresh:
+            elif one[VAL_DIM] <= one_score_max - thresh:
                 pass
             else:
-                one_score_cur -= i * penalty    # diversity penalty
-                ret.append(one)
-                ret_scores.append(one_score_cur)
-        return ret, np.exp(ret_scores) / np.sum(np.exp(ret_scores), axis=0)
+                one[VAL_DIM] -= i*penalty
+                rr_final.append(one)
+                norm_vals.append(one[VAL_DIM])
+        norm_probs = np.exp(norm_vals) / np.sum(np.exp(norm_vals), axis=0)
+        return norm_probs, rr_final
 
     # ----- for beam
     @staticmethod
@@ -563,10 +557,10 @@ def search_branch(models, insts, target_dict, opts, normer, sstater):
             # get results
             results = layers.BK.average([one["results"] for one in one_cache])
             this_bsize = layers.BK.bsize(results)
-            results_v = layers.BK.get_value_v(results)
+            results_topk = layers.BK.topk(results, pr_local_expand)
             if need_att:
                 atts_e = layers.BK.average([one["att"] for one in one_cache])
-                atts_v = layers.BK.get_value_v(atts_e)
+                atts_v = layers.BK.get_value_np(atts_e)
             else:
                 atts_v = [None for _ in range(this_bsize)]
             # select cands and record branching points
@@ -581,21 +575,20 @@ def search_branch(models, insts, target_dict, opts, normer, sstater):
                     cur_xsrc = xwords[i] if need_att else None
                     force_end = (cur_len+1 >= min(decode_maxlen, pr_len_upper[i], len(xs[i])*decode_maxratio))
                     prev_state = opens[i]
-                    one_result = results_v[batched_results_base]
+                    rr0 = results_topk[batched_results_base]
+                    rr = _m0.explain_result_topkp(rr0)
                     one_attv = atts_v[batched_results_base]
                     # todo(warn): whether expand on later runs
                     if force_end:
-                        one_cands = [eos_id]
+                        rr = [(eos_id, 0.)]
                     elif num_run < branching_expand_run:
-                        one_cands = nargmax(one_result, pr_local_expand)    # prune beforehand
+                        pass    # allowing for expansion
                     else:
-                        one_cands = nargmax(one_result, 1)
+                        rr = [rr[0]]
                     # local pruning
                     cand_states = []
-                    for idx in one_cands:
-                        # todo(warn): ignore eos score
-                        _tmp_score = _m0.explain_result(one_result[idx], one_idx=idx) if not force_end else 0.
-                        cand_states.append(State(prev=prev_state, action=Action(idx, _tmp_score), attention_weights=one_attv, attention_src=cur_xsrc, _tmp_prev_idx=batched_results_base, _tmp_prev_cache=one_cache))
+                    for onep in rr:
+                        cand_states.append(State(prev=prev_state, action=Action(onep[IDX_DIM], onep[VAL_DIM]), attention_weights=one_attv, attention_src=cur_xsrc, _tmp_prev_idx=batched_results_base, _tmp_prev_cache=one_cache))
                     survive_local_cands = Pruner.local_prune(cand_states, pr_local_expand, pr_local_diff, pr_local_penalty)
                     # record branching points, could only for the first run with more than 1 expansions
                     survive_best_score = survive_local_cands[0].action_score()

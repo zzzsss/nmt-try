@@ -19,10 +19,11 @@
 # todo-list (17.12.04)
 # 1. searching
 # 1.1 analyse (maybe should noticing the difficult points)
-# 1.2 re-rank(& with gold & l2r+r2l)
+# 1.2 re-rank (& with gold & l2r+r2l)
 # 1.3 n-gram instead of RNN
 # 1.4 extract merges & stat more for sg (analyzing sstater)
 # 2. training
 # 2.0 margin (with no prob)
 # 2.1 error states
 # 2.2 recombine
+# 2.3 MED

@@ -59,19 +59,39 @@ def concat_wrapper(ff):
             return ff(xs, *args)
     return _ff
 
-# Row-Major value
-class Value(object):
-    def __init__(self, data, sizes, bsize):
-        self.data = data
-        self.bsize = bsize
-        self.sizes = sizes
-        utils.zcheck(len(sizes)==1, "Currently only support this much dimension.")
-        self.batch_dim = np.prod(sizes)
+# todo(warn): replaced by direct topk routine
+# # Row-Major value
+# class Value(object):
+#     def __init__(self, data, sizes, bsize):
+#         self.data = data
+#         self.bsize = bsize
+#         self.sizes = sizes
+#         utils.zcheck(len(sizes)==1, "Currently only support this much dimension.")
+#         self.batch_dim = np.prod(sizes)
+#
+#     def __len__(self):
+#         return self.bsize
+#
+#     def __getitem__(self, item):
+#         a = item*self.batch_dim
+#         b = a + self.batch_dim
+#         return np.asarray(self.data[a:b])
 
-    def __len__(self):
-        return self.bsize
+class ResultTopk(object):
+    IDX_DIM = 0
+    VAL_DIM = 1
 
-    def __getitem__(self, item):
-        a = item*self.batch_dim
-        b = a + self.batch_dim
-        return np.asarray(self.data[a:b])
+    # list(BS) of list(K) of pair(idx, val)
+    @staticmethod
+    def prepare_results(pp, k):
+        length = len(pp[0])//k
+        ret = []
+        base = 0
+        for i in range(length):
+            ret0 = []
+            for j in range(k):
+                ii = base + j
+                ret0.append([pp[0][ii], pp[1][ii]])
+            base += k
+            ret.append(ret0)
+        return ret
