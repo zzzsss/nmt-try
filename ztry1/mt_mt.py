@@ -104,7 +104,7 @@ class s2sModel(Model):
             self.set_prop("r2l", True)
         if opts["no_model_softmax"]:
             self.set_prop("no_model_softmax", True)
-        self.fber_ = {"std":self.fb_standard_, "std2":self.fb_standard2_}[opts["train_mode"]]
+        self.fber_ = {"std2":self.fb_standard2_, "beam":self.fb_beam_, "branch":self.fb_branch_}[opts["train_mode"]]
         self.losser_ = {"mle":self._mle_loss_step, "mlev":self._mlev_loss_step, "hinge_max":self._hinge_max_loss_step,
                         "hinge_avg":self._hinge_avg_loss_step, "hinge_sum":self._hinge_sum_loss_step}[opts["train_local_loss"]]
         self.margin_ = opts["train_margin"]
@@ -252,6 +252,7 @@ class s2sModel(Model):
         ret_pairs.sort(key=lambda p: p[VAL_DIM], reverse=True)
         return ret_pairs
 
+    # =============================
     # training
     def fb(self, insts, training, ret_value="loss", new_graph=True):
         if new_graph:
@@ -260,80 +261,21 @@ class s2sModel(Model):
         r = self.fber_(insts, training, ret_value)
         return r
 
-    def fb_standard_(self, insts, training, ret_value="loss"):
+    # helpers
+    def prepare_xy_(self, insts):
         xs = [i[0] for i in insts]
         if self.get_prop("r2l"):
             # right to left modeling, be careful about eos
             ys = [list(reversed(i[1][:-1]))+[i[1][-1]] for i in insts]
         else:
             ys = [i[1] for i in insts]
-        bsize = len(xs)
-        # opens = [State(sg=SearchGraph()) for _ in range(bsize)]     # with only one init state
-        xlens = [len(_x) for _x in xs]
-        ylens = [len(_y) for _y in ys]
-        cur_maxlen = max(ylens)
-        losses = []
-        caches = []
-        yprev = None
-        for i in range(cur_maxlen):
-            # forward
-            ystep, mask_expr = prepare_y_step(ys, i)
-            if i==0:
-                cc = self.start(xs, softmax=False)
-                if self.is_fitting_length:
-                    pred_lens = self.lg.calculate(cc["summ"], xlens)
-                    loss_len = self.lg.ll_loss(pred_lens, ylens)
-            else:
-                cc = self.step(caches[-1], yprev, softmax=False)
-            caches.append(cc)
-            yprev = ystep
-            # build loss
-            scores_exprs = cc["out_s"]
-            loss = self.losser_(scores_exprs, ystep, mask_expr)
-            if self.scaler is not None:
-                len_scales = [self.scaler(len(_y)) for _y in ys]
-                np.asarray(len_scales).reshape((1, -1))
-                len_scalue_e = layers.BK.inputTensor(len_scales, True)
-                loss = loss * len_scalue_e
-            losses.append(loss)
-            # prepare next steps: only following gold
-            # new_opens = [State(prev=ss, action=Action(yy, 0.)) for ss, yy in zip(opens, ystep)]
-            # opens = new_opens
-        # -- final
-        loss0 = layers.BK.esum(losses)
-        loss_y = layers.BK.sum_batches(loss0) / bsize
-        if self.is_fitting_length:
-            loss = loss_y + loss_len * self.len_lambda      # todo(warn): must be there
-        else:
-            loss = loss_y
-        if training:
-            layers.BK.forward(loss)
-            layers.BK.backward(loss)
-        # return value?
-        if ret_value == "loss":
-            lossy_val = layers.BK.get_value_sca(loss_y)
-            loss_len_val = -1.
-            if self.is_fitting_length:
-                loss_len_val = layers.BK.get_value_sca(loss_len)
-            return {"y": lossy_val*bsize, "len": loss_len_val}
-        elif ret_value == "losses":
-            # return token-wise loss
-            origin_values = [layers.BK.get_value_vec(i) for i in losses]
-            reshaped_values = [[origin_values[j][i] for j in range(yl)] for i, yl in enumerate(ylens)]
-            if self.get_prop("r2l"):
-                reshaped_values = [list(reversed(one[:-1]))+[one[-1]] for one in reshaped_values]
-            return reshaped_values
-        else:
-            return {}
+        return xs, ys
 
+    # specific forward/backward runs
     def fb_standard2_(self, insts, training, ret_value="loss"):
+        # please don't ask me where is standard1 ...
         # similar to standard1, but record states and no training for lengths
-        xs = [i[0] for i in insts]
-        if self.get_prop("r2l"):
-            # right to left modeling, be careful about eos
-            ys = [list(reversed(i[1][:-1]))+[i[1][-1]] for i in insts]
-        else:
-            ys = [i[1] for i in insts]
+        xs, ys = self.prepare_xy_(insts)
         bsize = len(xs)
         opens = [State(sg=SearchGraph(target_dict=self.target_dict)) for _ in range(bsize)]     # with only one init state
         # xlens = [len(_x) for _x in xs]
@@ -442,5 +384,11 @@ class s2sModel(Model):
     # ----- losses -----
 
     # todo(warn): advanced training process, similar to the mt_search part, but rewrite to avoid messing up, which
-    # -> is really not a good idea
+    # -> is really not a good idea, and this should be combined with mt_search, however ...
 
+    def fb_beam_(self, insts, training, ret_value):
+        # always keeping the same size for more efficient batching
+        return
+
+    def fb_branch_(self, insts, training, ret_value):
+        pass

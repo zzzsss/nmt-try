@@ -883,3 +883,70 @@ def _hinge_avg_loss_step(self, scores_exprs, ystep, mask_expr):
         if mask_expr is not None:
             one_loss = one_loss * mask_expr
         return one_loss
+
+# ---------------
+def fb_standard_(self, insts, training, ret_value="loss"):
+        xs = [i[0] for i in insts]
+        if self.get_prop("r2l"):
+            # right to left modeling, be careful about eos
+            ys = [list(reversed(i[1][:-1]))+[i[1][-1]] for i in insts]
+        else:
+            ys = [i[1] for i in insts]
+        bsize = len(xs)
+        # opens = [State(sg=SearchGraph()) for _ in range(bsize)]     # with only one init state
+        xlens = [len(_x) for _x in xs]
+        ylens = [len(_y) for _y in ys]
+        cur_maxlen = max(ylens)
+        losses = []
+        caches = []
+        yprev = None
+        for i in range(cur_maxlen):
+            # forward
+            ystep, mask_expr = prepare_y_step(ys, i)
+            if i==0:
+                cc = self.start(xs, softmax=False)
+                if self.is_fitting_length:
+                    pred_lens = self.lg.calculate(cc["summ"], xlens)
+                    loss_len = self.lg.ll_loss(pred_lens, ylens)
+            else:
+                cc = self.step(caches[-1], yprev, softmax=False)
+            caches.append(cc)
+            yprev = ystep
+            # build loss
+            scores_exprs = cc["out_s"]
+            loss = self.losser_(scores_exprs, ystep, mask_expr)
+            if self.scaler is not None:
+                len_scales = [self.scaler(len(_y)) for _y in ys]
+                np.asarray(len_scales).reshape((1, -1))
+                len_scalue_e = layers.BK.inputTensor(len_scales, True)
+                loss = loss * len_scalue_e
+            losses.append(loss)
+            # prepare next steps: only following gold
+            # new_opens = [State(prev=ss, action=Action(yy, 0.)) for ss, yy in zip(opens, ystep)]
+            # opens = new_opens
+        # -- final
+        loss0 = layers.BK.esum(losses)
+        loss_y = layers.BK.sum_batches(loss0) / bsize
+        if self.is_fitting_length:
+            loss = loss_y + loss_len * self.len_lambda      # todo(warn): must be there
+        else:
+            loss = loss_y
+        if training:
+            layers.BK.forward(loss)
+            layers.BK.backward(loss)
+        # return value?
+        if ret_value == "loss":
+            lossy_val = layers.BK.get_value_sca(loss_y)
+            loss_len_val = -1.
+            if self.is_fitting_length:
+                loss_len_val = layers.BK.get_value_sca(loss_len)
+            return {"y": lossy_val*bsize, "len": loss_len_val}
+        elif ret_value == "losses":
+            # return token-wise loss
+            origin_values = [layers.BK.get_value_vec(i) for i in losses]
+            reshaped_values = [[origin_values[j][i] for j in range(yl)] for i, yl in enumerate(ylens)]
+            if self.get_prop("r2l"):
+                reshaped_values = [list(reversed(one[:-1]))+[one[-1]] for one in reshaped_values]
+            return reshaped_values
+        else:
+            return {}

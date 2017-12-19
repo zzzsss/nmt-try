@@ -200,9 +200,11 @@ def init(phase):
     # -- training methods and output modeling
     training2.add_argument('--no_model_softmax', action='store_true', help="No adding softmax for vocab output (direct score)")
     training2.add_argument('--train_r2l', action='store_true', help="training right to left model")
-    training2.add_argument('--train_mode', type=str, default="std2", help="which training process?")
+    training2.add_argument('--train_mode', type=str, default="std2", choices=["std2", "beam", "branch"], help="which training process?")
     training2.add_argument('--train_local_loss', type=str, default="mle", choices=["mle", "mlev", "hinge_max", "hinge_avg", "hinge_sum"], help="Training objective.")
     training2.add_argument('--train_margin', type=float, default=0., help="The margin for margin-training.")
+    # -- start training with non-gold seq
+
 
     # extra: for advanced decoding
     decode2 = parser.add_argument_group('decoding parameters section2')
