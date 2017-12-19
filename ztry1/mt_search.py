@@ -236,7 +236,7 @@ def search_beam(models, insts, target_dict, opts, normer, sstater):
     pr_local_diff = opts["pr_local_diff"]
     pr_local_penalty = opts["pr_local_penalty"]
     #
-    pr_global_expand = min(opts["pr_global_expand"],esize_all)
+    pr_global_expand = min(opts["pr_global_expand"], esize_all)
     pr_global_diff = opts["pr_global_diff"]
     pr_global_penalty = opts["pr_global_penalty"]
     pr_tngram_n = opts["pr_tngram_n"]
@@ -363,7 +363,8 @@ class Pruner(object):
             elif one[VAL_DIM] <= one_score_max - thresh:
                 pass
             else:
-                one[VAL_DIM] -= i*penalty
+                if penalty > 0.:
+                    one[VAL_DIM] -= i*penalty
                 rr_final.append(one)
                 norm_vals.append(one[VAL_DIM])
         norm_probs = np.exp(norm_vals) / np.sum(np.exp(norm_vals), axis=0)
@@ -384,8 +385,9 @@ class Pruner(object):
             elif one_score_cur <= one_score_max - thresh:
                 one.state("PR_LOCAL_DIFF")
             else:
-                one_score_cur -= i * penalty    # diversity penalty
-                one.action_score(one_score_cur) # penalty
+                if penalty > 0.:
+                    one_score_cur -= i * penalty    # diversity penalty
+                    one.action_score(one_score_cur) # penalty
                 ret.append(one)
         return ret
 
@@ -425,10 +427,12 @@ class Pruner(object):
                 # adding
                 if not this_pruned:
                     # todo(warn) penalize here according to two criteria
-                    one_score_cur = one.action_score()
-                    one_score_cur -= sig_ngram_curnum[cur_sig] * penalty
-                    if flag_not_best:
-                        one_score_cur -= penalty
+                    if penalty > 0.:
+                        one_score_cur = one.action_score()
+                        one_score_cur -= sig_ngram_curnum[cur_sig] * penalty
+                        if flag_not_best:
+                            one_score_cur -= penalty
+                        one.action_score(one_score_cur)
                     # add all steps for this one
                     for one_state in them:
                         one_sig = one_state.sig_ngram(ngram_n)

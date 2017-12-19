@@ -6,6 +6,7 @@ from .mt_length import MTLengther, LinearGaussain
 import numpy as np
 from . import mt_layers as layers
 from zl.search import State, SearchGraph, Action
+from .mt_search import Pruner as SPruner
 
 from zl.backends.common import ResultTopk
 IDX_DIM = ResultTopk.IDX_DIM
@@ -113,6 +114,13 @@ class s2sModel(Model):
         #
         self.penalize_eos = opts["penalize_eos"]
         self.penalize_list = self.target_dict.get_ending_tokens()
+
+    def repeat(self, c, bs, times, names):
+        new_c = {}
+        orders = [i//times for i in range(bs*times)]
+        for n in names:
+            new_c[n] = layers.BK.rearrange_cache(c[n], orders)
+        return new_c
 
     def rerange(self, c, bv_orders, bi_orders):
         new_c = {}
@@ -350,11 +358,13 @@ class s2sModel(Model):
 
     def _hinge_max_loss_step(self, scores_exprs, ystep, mask_expr):
         if self.margin_ > 0.:
-            scores_exprs = layers.BK.add_margin(scores_exprs, ystep, self.margin_)
+            scores_exprs_final = layers.BK.add_margin(scores_exprs, ystep, self.margin_)
+        else:
+            scores_exprs_final = scores_exprs
         # max_exprs = layers.BK.max_dim(scores_exprs)
-        max_idxs = layers.BK.topk(scores_exprs, 1, prepare=False)[IDX_DIM]
-        max_exprs = layers.BK.pick_batch(scores_exprs, max_idxs)
-        gold_exprs = layers.BK.pick_batch(scores_exprs, ystep)
+        max_idxs = layers.BK.topk(scores_exprs_final, 1, prepare=False)[IDX_DIM]
+        max_exprs = layers.BK.pick_batch(scores_exprs_final, max_idxs)
+        gold_exprs = layers.BK.pick_batch(scores_exprs_final, ystep)
         # get loss
         one_loss = max_exprs - gold_exprs
         if mask_expr is not None:
@@ -385,10 +395,140 @@ class s2sModel(Model):
 
     # todo(warn): advanced training process, similar to the mt_search part, but rewrite to avoid messing up, which
     # -> is really not a good idea, and this should be combined with mt_search, however ...
+    # -> do not re-use the decoding part of opts, rename those to t2_*
 
     def fb_beam_(self, insts, training, ret_value):
         # always keeping the same size for more efficient batching
+        utils.zcheck(training, "Only for training mode.")
+        xs, ys = self.prepare_xy_(insts)
+        # --- no need to refresh
+        # -- options and vars
+        # basic
+        bsize = len(xs)
+        esize_all = self.opts["t2_beam_size"]
+        ylens = [len(_y) for _y in ys]
+        ylens_max = [int(np.ceil(_yl*self.opts["t2_search_ratio"])) for _yl in ylens]   # todo: currently, just cut off according to ref length
+        # pruners (no diversity penalty here for training)
+        # -> local
+        t2_local_expand = min(self.opts["t2_local_expand"], esize_all)
+        t2_local_diff = self.opts["t2_local_diff"]
+        # -> global beam/gold merging for ngram
+        t2_global_expand = self.opts["t2_global_expand"]
+        t2_global_diff = self.opts["t2_global_diff"]
+        t2_bngram_n = self.opts["t2_bngram_n"]
+        t2_bngram_range = self.opts["t2_bngram_range"]
+        t2_gngram_n = self.opts["t2_gngram_n"]
+        t2_gngram_range = self.opts["t2_gngram_range"]
+        #
+        # specific running options
+        CACHE_NAME = "CC"
+        PADDING_STATE = None
+        PADDING_ACTION = 0
+        EOS_ID = self.target_dict.eos
+        model_softmax = not self.get_prop("no_model_softmax")
+        t2_gold_run = self.opts["t2_gold_run"]
+
+        # => START
+        State.reset_id()
+        f_new_sg = lambda _i: SearchGraph(target_dict=self.target_dict, src_info=insts[_i])
+        # 1. first running the gold seqs if needed
+        gold_cur = [State(sg=f_new_sg(_i)) for _i in range(bsize)]
+        gold_states = [gold_cur]
+        running_yprev = None
+        running_cprev = None
+        for step_gold in range(max(ylens)):
+            # running the caches
+            ystep, mask_expr = prepare_y_step(ys, step_gold)    # set 0 for padding if ended
+            # select the next steps anyway
+            gold_next = []
+            for _i in range(bsize):
+                x = gold_cur[_i]
+                if x is PADDING_STATE or x.action_code == EOS_ID:
+                    gold_next.append(PADDING_STATE)
+                else:
+                    gold_next.append(State(prev=x, action=Action(ystep[_i], 0.)))
+            if t2_gold_run:
+                # softmax for the "correct" score if needed
+                if step_gold == 0:
+                    cc = self.start(xs, softmax=model_softmax)
+                else:
+                    cc = self.step(running_cprev, running_yprev, gold_cur, softmax=model_softmax)
+                running_yprev = ystep
+                running_cprev = cc
+                # attach caches
+                sc_expr = layers.BK.pick_batch(cc["results"], ystep)
+                sc_val = layers.BK.get_value_vec(sc_expr)
+                # todo(warn): here not calling explain for simplicity
+                if model_softmax:
+                    sc_val = np.log(sc_val)
+                for _i in range(bsize):
+                    if gold_cur[_i] is not PADDING_STATE:
+                        gold_cur[_i].set(CACHE_NAME, (cc, _i))
+                        gold_cur[_i].action_score(sc_val[_i])
+            gold_cur = gold_next
+            gold_states.append(gold_next)
+        # 2. then start the beam search (with the knowledge of gold-seq)
+        beam_states = []
+        beam_cur = [[PADDING_STATE for _j in range(esize_all)] for _i in range(bsize)]
+        beam_states.append(beam_cur)
+        beam_ends = []
+        beam_remains = [esize_all for _i in range(bsize)]
+        for _i in range(bsize):     # new search graph
+            beam_cur[_i][0] = State(sg=f_new_sg(_i))
+        # ready go, break at the end
+        running_yprev = None
+        running_cprev = None
+        step_beam = 0
+        while True:
+            # running the caches
+            if step_beam == 0:
+                if t2_gold_run:
+                    # todo(warn): expand previously calculated values and also results
+                    cc = self.repeat(gold_states[0][0].get(CACHE_NAME)[0], bsize, esize_all, {"hid", "S", "V", "out_s", "results"})
+                else:
+                    cc = self.start(xs, repeat_time=esize_all, softmax=model_softmax)
+            else:
+                cc = self.step(running_cprev, running_yprev, gold_cur, softmax=model_softmax)
+            # attach caches
+            for _i in range(bsize):
+                for _j in range(esize_all):
+                    one = beam_cur[_i][_j]
+                    if one is not PADDING_STATE:
+                        one.set(CACHE_NAME, (cc, _i*esize_all+_j))
+            # compare for the next steps --- almost same as beam_search, but all-batched and simplified
+            results_topk = layers.BK.topk(cc["results"], t2_local_expand)
+            for i in range(bsize):
+                # collect local candidates
+                global_cands = []
+                for j in range(esize_all):
+                    prev = beam_cur[i][j]
+                    # skip ended states
+                    if prev is PADDING_STATE or prev.action_code == EOS_ID:
+                        continue
+                    inbatch_idx = i*esize_all+j
+                    rr0 = results_topk[inbatch_idx]
+                    rr = self.explain_result_topkp(rr0)
+                    local_cands = []
+                    for onep in rr:
+                        local_cands.append(State(prev=prev, action=Action(onep[IDX_DIM], onep[VAL_DIM])))
+                    survived_local_cands = SPruner.local_prune(local_cands, t2_local_expand, t2_local_diff, 0.)
+                    global_cands += survived_local_cands
+                # sort them all
+                global_cands.sort(key=(lambda x: x.score_partial), reverse=True)
+                # global pruning (if no bngram, then simply get the first remains[i] ones)
+                survived_global_cands = SPruner.global_prune_ngram_greedy(cand_states=global_cands, rest_beam_size=beam_remains[i], sig_beam_size=t2_global_expand, thresh=t2_global_diff, penalty=0., ngram_n=t2_bngram_n, ngram_range=t2_bngram_range)
+                # ======================
+                # gold checking
+
+            # todo(assign them)
+            running_yprev = ystep
+            running_cprev = cc
+            # how to break?
+            step_beam += 1
+        # -- recorders
         return
 
     def fb_branch_(self, insts, training, ret_value):
+        # this branches from gold which is different from the search_branch_ which branches from greedy-best
+        raise NotImplementedError("To be implemented")
         pass

@@ -32,7 +32,7 @@ def init():
         "--valid_batch_width": 80,
         # "--report_freq": 1000,
         "--valid_freq": 10000,
-        # "--patience": 5,
+        # "--patience": 3,
         # "--anneal_restarts": 2,
         "--normalize": 0.0,
         "--test_beam_size": 5,

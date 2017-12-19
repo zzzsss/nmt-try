@@ -24,6 +24,7 @@ alias tokenize="perl ${MOSES_DIR}/scripts/tokenizer/tokenizer.perl"
 alias clean-corpus="perl ${MOSES_DIR}/scripts/training/clean-corpus-n.perl"
 alias train-truecaser="perl ${MOSES_DIR}/scripts/recaser/train-truecaser.perl"
 alias truecaser="perl ${MOSES_DIR}/scripts/recaser/truecase.perl"
+alias lowercaser="perl ${MOSES_DIR}/scripts/tokenizer/lowercase.perl"
 alias multi-bleu="perl ${MOSES_DIR}/scripts/generic/multi-bleu.perl"
 
 # prepare-data <DIR> <SRC> <TRG>; at lease for en-fr en-de

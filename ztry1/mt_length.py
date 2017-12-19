@@ -60,6 +60,7 @@ class LinearGaussain(BasicLayer):
                 regr.fit(x1, y1)
                 a, b = float(regr.coef_[0]), float(regr.intercept_)
             except:
+                utils.zlog("Cannot linear-regression, skip that.")
                 a, b = 1., 0.
             # 3. fit sigma
             x1 = x1.reshape((-1,))

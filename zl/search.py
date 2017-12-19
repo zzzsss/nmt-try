@@ -146,6 +146,7 @@ class State(object):
         return int(self.action)
 
     def action_score(self, s=None):
+        # todo: but will not update the states later, be careful about this
         if s is not None:
             # also change accumulate scores
             self._score_partial += (s-self.action.score)
