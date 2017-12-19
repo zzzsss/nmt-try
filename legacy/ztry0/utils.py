@@ -2,8 +2,8 @@
 import time, sys, os, subprocess, random, json, platform
 
 # tools
-from tools import shuffle, get_final_vocab, get_origin_vocab, zfopen
-from tools import printing as helper_print
+from .tools import shuffle, get_final_vocab, get_origin_vocab, zfopen
+from .tools import printing as helper_print
 
 # print and log
 class Logger(object):

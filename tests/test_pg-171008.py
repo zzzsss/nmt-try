@@ -31,7 +31,7 @@ def get_model(n_x, n_y, n_hidden):
         for k in params:
             iparams[k] = dy.parameter(params[k])
         h0 = iparams["w0"] * x
-        h0 = dy.rectify(h0)
+        h0 = getattr(dy, sys.argv[2])(h0)
         h2 = iparams["w1"] * h0
         h2 += iparams["b1"]
         h3 = dy.softmax(h2)
@@ -69,11 +69,11 @@ def build_loss(scores, probs_val, y, way):
 
 def test():
     n_in = 2
-    n_hidden = 10
+    n_hidden = 20
     n_class = 2
-    n_point = 2
+    n_point = 5
     n_sample = 100
-    n_iters = 500
+    n_iters = 1000
     way = int(sys.argv[1])
     x, y, centers = get_data(n_in, n_class, n_point, n_sample)
     print(centers)
@@ -89,7 +89,7 @@ def test():
         # acc
         probs_val = np.reshape(np.array(probs.value()), (len(y), n_class))
         preds = [np.argmax(one) for one in probs_val]
-        if i%25==0:
+        if i%50==0:
             acc(preds, y)
         # gradients
         loss = build_loss(scores, probs_val, y, way)

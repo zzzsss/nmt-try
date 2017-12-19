@@ -22,8 +22,11 @@ def main():
     # print info
     print("==> Summary info: %s(sents), %s(words), %s(w/s), %s(diff-words)" % (num_sents, num_words, num_words/num_sents, len(fw)))
     print("==> Length info")
-    for k in dl:
-        print("%s: %s" % (k, dl[k]))
+    lens = sorted(list(dl.keys()))
+    cum = 0
+    for k in lens:
+        cum += dl[k]
+        print("%s: %s (cum:%s)" % (k, dl[k], cum))
     print("==> Words info")
     cur = 0
     max_freq = max(ff)

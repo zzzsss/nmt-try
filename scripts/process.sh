@@ -56,3 +56,4 @@ time pstep5-concat
 #DIR_SUFFIX=z5 BPE_OP=50000 BPE_CUT=100000 BPE_TH=2 bash -v znmt/scripts/process.sh wmt14_en_fr.sh
 #DIR_SUFFIX=z5 BPE_OP=50000 BPE_CUT=100000 BPE_TH=2 SRC=en TRG=fr bash -v znmt/scripts/process.sh wit3.sh
 #DIR_SUFFIX=z5 BPE_OP=50000 BPE_CUT=100000 BPE_TH=2 SRC=en TRG=de bash -v znmt/scripts/process.sh wit3.sh
+#DIR_SUFFIX=z5 BPE_OP=50000 BPE_CUT=100000 BPE_TH=2 bash -v znmt/scripts/process.sh wat_ja_en.sh

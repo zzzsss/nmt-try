@@ -391,7 +391,7 @@ class BiaffAttention(Attention):
     def __init__(self, model, n_s, n_h, n_hidden, n_cov, n_cov_h):
         super(BiaffAttention, self).__init__(model, n_s, n_h, n_cov, n_cov_h)
         # parameters -- (BiAffine-version e = h*W*s)
-        self.params["W"] = self._add_parameters((n_s, n_h))
+        self.params["W"] = self._add_parameters((n_h, n_s))
 
     def __call__(self, s, n):
         # s: list(len==steps) of {(n_s,), batch_size}, n: {(n_h,), batch_size}
@@ -400,11 +400,11 @@ class BiaffAttention(Attention):
             self.cache_sig = sig
             self.cache_length = len(s)
             self.cache_values["S"] = dy.concatenate_cols(s)
+            self.cache_values["V"] = self.iparams["W"] * self.cache_values["S"]
             if self.need_coverage:
                 self._cov_init(s)
-        wn = self.iparams["W"] * n      # {(n_s,), batch_size}
-        wn_t = dy.reshape(wn, (1, self.n_s), batch_size=bs(n))
-        att_e = dy.reshape(wn_t * self.cache_values["S"], (len(s), ), batch_size=bs(n))
+        wn_t = dy.reshape(n, (1, self.n_h), batch_size=bs(n))
+        att_e = dy.reshape(wn_t * self.cache_values["V"], (len(s), ), batch_size=bs(n))
         if self.need_coverage:
             att_e = att_e + self._cov_get()
         att_alpha = dy.softmax(att_e)

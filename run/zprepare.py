@@ -10,7 +10,7 @@ import sys
 def init():
     print(" ".join(sys.argv))
     p = argparse.ArgumentParser()
-    p.add_argument("--tool", "-t", type=str, required=True, choices=["nematus", "xnmt", "znmt", "opennmt"])
+    p.add_argument("--tool", "-t", type=str, required=True, choices=["nematus", "xnmt", "znmt", "opennmt", "znmt_zh"])
     p.add_argument("--device", "-p", type=int, required=True, help="-1:cpu >0:gpu")
     p.add_argument("--datadir", "-d", type=str, required=True)
     p.add_argument("--rundir", type=str)    # None means current one (pwd)
@@ -18,22 +18,23 @@ def init():
     p.add_argument("--trg", type=str)   # could be inferred from data_dir name
     p.add_argument("--output", "-o", type=str, default="output.txt")
     p.add_argument("--debug", action='store_true')
+    p.add_argument("--profile", action='store_true')
+    p.add_argument("--zhold", "-z", type=str, default="nope")      # "-z n" will be about n-G
     # some others
     dicts = {
         # zmt home
         "--zmt": "..",
         # znmt style parameters
-        "--max_epochs": 100,
-        "--max_updates": 500000,
-        "--max_len": 50,
+        # "--max_epochs": 100,
+        # "--max_updates": 500000,
+        # "--max_len": 50,
         "--batch_size": 80,
-        "--valid_batch_width": 32,
-        "--report_freq": 1000,
-        "--normalize": 0.0,
-        "--dev_beam_size": 1,
+        "--valid_batch_width": 80,
+        # "--report_freq": 1000,
         "--valid_freq": 10000,
-        "--patience": 5,
-        "--anneal_restarts": 2,
+        # "--patience": 5,
+        # "--anneal_restarts": 2,
+        "--normalize": 0.0,
         "--test_beam_size": 5,
         # some extras
         "--extras": ""
@@ -48,7 +49,7 @@ def init():
         args["rundir"] = "../%s" % bn
     if args["src"] is None or args["trg"] is None:
         # inferring from datadir-name
-        LANGS = ["en", "de", "fr", "cn", "ja"]
+        LANGS = ["en", "de", "fr", "zh", "ja", ]
         fs = re.findall("|".join(LANGS), args["datadir"])
         if len(fs) == 2:
             args["src"], args["trg"] = fs[0], fs[1]
@@ -59,10 +60,15 @@ def init():
     # assert len(fs)%2==0, "currently only support this kind of parameters"
     for i in range((len(fs)+1)//2):
         fs[i*2] = "--" + fs[i*2]
+    # todo<warn>: delete special token
+    fs = [_one for _one in fs if _one != "ZZ"]
     args["extras"] = " ".join(fs)
-    # debugging
+    # debugging or profile
+    assert not (args["debug"] and args["profile"]), "cannot achieve both"
     if args["debug"]:
         args["py_args"] = "-m pdb"
+    elif args["profile"]:
+        args["py_args"] = '-m cProfile -o stat.prof'
     else:
         args["py_args"] = ""
     # report
@@ -103,8 +109,7 @@ def _prepare_file(sinput, output, args, additions):
 def main():
     args = init()
     is_gpu = (args["device"] >= 0)
-    if is_gpu:
-        args["gpuid"] = args["device"]
+    args["gpuid"] = args["device"]
     # specifically for dynet systems
     if is_gpu:
         args["_dy_device"] = "GPU:%s" % args["gpuid"]
@@ -122,8 +127,11 @@ def main():
         "znmt": [
             ["run_znmt.sh", "_test.sh", args, {}]
         ],
+        "znmt_zh": [
+            ["run_znmt_zh.sh", "_test.sh", args, {}]
+        ],
         "opennmt": [
-            ["run_opennmt.sh", "_test.sh", args, {}]
+            ["run_opennmt.sh", "_test.sh", args, {"_opennmt_device":("-gpuid %s"%args["gpuid"] if is_gpu else ""), "_opennmt_test_device":("-gpu %s"%args["gpuid"] if is_gpu else "")}]
         ]
     }
     for eve in table[args["tool"]]:
@@ -140,3 +148,9 @@ if __name__ == "__main__":
 
 # checking
 # grep --color -E -C 2 "BLEU|cmd" *.log
+
+# cProfile
+# import pstats
+# p = pstats.Stats('stat.prof')
+# p.strip_dirs().sort_stats('cumtime').print_stats(30)
+# python3 -c "import pstats;p = pstats.Stats('stat.prof');p.strip_dirs().sort_stats('cumtime').print_stats(30)"

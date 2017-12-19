@@ -1,0 +1,145 @@
+# runnings
+
+running with t00, and with extras --test_batch_size 1 --beam_size 1
+%% [b'BLEU = 35.39, 76.2/47.6/29.4/18.0 (BP=0.950, ratio=0.951, hyp_len=24512, ref_len=25776)\n']
+running with t01, and with extras --test_batch_size 1 --beam_size 5
+%% [b'BLEU = 37.29, 79.2/51.4/32.8/20.6 (BP=0.915, ratio=0.919, hyp_len=23449, ref_len=25527)\n']
+running with t02, and with extras --test_batch_size 1 --beam_size 10
+%% [b'BLEU = 36.29, 79.5/51.7/32.8/20.6 (BP=0.890, ratio=0.895, hyp_len=22590, ref_len=25235)\n']
+running with t03, and with extras --test_batch_size 1 --beam_size 20
+%% [b'BLEU = 35.64, 79.9/51.9/33.3/21.0 (BP=0.864, ratio=0.873, hyp_len=21816, ref_len=25002)\n']
+running with t04, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3
+%% [b'BLEU = 36.43, 79.6/51.7/32.7/20.5 (BP=0.894, ratio=0.899, hyp_len=22666, ref_len=25212)\n']
+running with t05, and with extras --test_batch_size 1 --beam_size 20 --pr_local_diff 2.3
+%% [b'BLEU = 36.35, 80.1/52.0/33.2/20.9 (BP=0.882, ratio=0.889, hyp_len=22218, ref_len=25005)\n']
+running with t06, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 1.6
+%% [b'BLEU = 36.64, 79.6/51.6/32.8/20.6 (BP=0.898, ratio=0.903, hyp_len=22808, ref_len=25257)\n']
+running with t07, and with extras --test_batch_size 1 --beam_size 20 --pr_local_diff 1.6
+%% [b'BLEU = 36.48, 79.9/52.0/33.2/20.9 (BP=0.885, ratio=0.891, hyp_len=22339, ref_len=25069)\n']
+running with t10, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0
+%% [b'BLEU = 38.00, 78.2/50.6/32.1/20.1 (BP=0.951, ratio=0.952, hyp_len=24864, ref_len=26114)\n']
+running with t11, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 0.5
+%% [b'BLEU = 37.12, 79.2/51.5/32.8/20.6 (BP=0.911, ratio=0.915, hyp_len=23361, ref_len=25529)\n']
+running with t12, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way google --normalize_alpha 1.0
+%% [b'BLEU = 37.66, 78.6/50.9/32.3/20.3 (BP=0.936, ratio=0.938, hyp_len=24293, ref_len=25896)\n']
+running with t13, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way google --normalize_alpha 0.5
+%% [b'BLEU = 36.80, 79.4/51.6/32.7/20.5 (BP=0.904, ratio=0.908, hyp_len=23126, ref_len=25466)\n']
+running with t14, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 0.1
+%% [b'BLEU = 36.60, 79.5/51.7/32.8/20.6 (BP=0.897, ratio=0.902, hyp_len=22840, ref_len=25331)\n']
+running with t15, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 0.5
+%% [b'BLEU = 37.97, 78.6/51.0/32.5/20.4 (BP=0.941, ratio=0.942, hyp_len=24467, ref_len=25967)\n']
+running with t16, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way gaussian --normalize_alpha 1.0
+%% [b'BLEU = 36.81, 79.6/51.7/32.8/20.6 (BP=0.902, ratio=0.906, hyp_len=22855, ref_len=25221)\n']
+running with t17, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way gaussian --normalize_alpha 0.5
+%% [b'BLEU = 36.57, 79.6/51.7/32.8/20.6 (BP=0.896, ratio=0.901, hyp_len=22714, ref_len=25216)\n']
+
+running with t20, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 1 --pr_tngram_n 5
+%% [b'BLEU = 38.08, 78.3/50.8/32.3/20.4 (BP=0.946, ratio=0.948, hyp_len=24855, ref_len=26226)\n']
+running with t21, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 5
+%% [b'BLEU = 38.14, 78.3/50.9/32.4/20.3 (BP=0.948, ratio=0.949, hyp_len=24819, ref_len=26145)\n']
+running with t22, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 3 --pr_tngram_n 5
+%% [b'BLEU = 38.34, 78.5/51.1/32.6/20.5 (BP=0.947, ratio=0.949, hyp_len=24753, ref_len=26091)\n']
+running with t23, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 5
+%% [b'BLEU = 38.33, 78.4/51.1/32.6/20.5 (BP=0.947, ratio=0.949, hyp_len=24753, ref_len=26090)\n']
+running with t24, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 5 --pr_tngram_n 5
+%% [b'BLEU = 38.37, 78.5/51.2/32.7/20.6 (BP=0.947, ratio=0.948, hyp_len=24715, ref_len=26063)\n']
+running with t25, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 1 --pr_tngram_n 4
+%% [b'BLEU = 38.14, 78.3/50.9/32.5/20.5 (BP=0.945, ratio=0.947, hyp_len=24800, ref_len=26194)\n']
+running with t26, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4
+%% [b'BLEU = 38.22, 78.4/51.0/32.6/20.6 (BP=0.945, ratio=0.946, hyp_len=24730, ref_len=26133)\n']
+running with t27, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 3 --pr_tngram_n 4
+%% [b'BLEU = 38.15, 78.4/51.0/32.6/20.6 (BP=0.942, ratio=0.944, hyp_len=24614, ref_len=26076)\n']
+running with t28, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4
+%% [b'BLEU = 38.17, 78.4/51.1/32.6/20.6 (BP=0.942, ratio=0.944, hyp_len=24603, ref_len=26069)\n']
+running with t29, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 5 --pr_tngram_n 4
+%% [b'BLEU = 38.19, 78.5/51.2/32.7/20.6 (BP=0.941, ratio=0.943, hyp_len=24537, ref_len=26022)\n']
+running with t30, and with extras --decode_way branch --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0
+%% [b'BLEU = 37.24, 77.2/49.2/31.0/19.4 (BP=0.958, ratio=0.959, hyp_len=24921, ref_len=25984)\n']
+running with t31, and with extras --decode_way branch --test_batch_size 1 --beam_size 20 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0
+%% [b'BLEU = 37.54, 77.3/49.6/31.3/19.6 (BP=0.959, ratio=0.959, hyp_len=24911, ref_len=25964)\n']
+running with t32, and with extras --decode_way branch --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --branching_criterion relative
+%% [b'BLEU = 36.99, 77.4/49.4/31.1/19.3 (BP=0.951, ratio=0.952, hyp_len=24692, ref_len=25940)\n']
+running with t33, and with extras --decode_way branch --test_batch_size 1 --beam_size 20 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --branching_criterion relative
+%% [b'BLEU = 37.21, 77.3/49.5/31.1/19.3 (BP=0.955, ratio=0.956, hyp_len=24815, ref_len=25959)\n']
+running with t34, and with extras --decode_way branch --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --branching_expand2
+%% [b'BLEU = 36.66, 76.4/48.4/30.3/18.7 (BP=0.963, ratio=0.964, hyp_len=25080, ref_len=26020)\n']
+running with t35, and with extras --decode_way branch --test_batch_size 1 --beam_size 20 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --branching_expand2
+%% [b'BLEU = 36.77, 76.6/48.7/30.4/18.7 (BP=0.964, ratio=0.964, hyp_len=25128, ref_len=26055)\n']
+running with t36, and with extras --decode_way branch --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 1 --pr_tngram_n 5
+%% [b'BLEU = 37.25, 77.3/49.3/31.0/19.3 (BP=0.958, ratio=0.959, hyp_len=24841, ref_len=25896)\n']
+running with t37, and with extras --decode_way branch --test_batch_size 1 --beam_size 20 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 1 --pr_tngram_n 5
+%% [b'BLEU = 37.52, 77.2/49.6/31.3/19.6 (BP=0.958, ratio=0.959, hyp_len=24871, ref_len=25940)\n']
+running with t38, and with extras --decode_way branch --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 5
+%% [b'BLEU = 37.29, 77.2/49.3/31.1/19.4 (BP=0.958, ratio=0.958, hyp_len=24789, ref_len=25863)\n']
+running with t39, and with extras --decode_way branch --test_batch_size 1 --beam_size 20 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 5
+%% [b'BLEU = 37.61, 77.2/49.6/31.4/19.6 (BP=0.960, ratio=0.960, hyp_len=24870, ref_len=25897)\n']
+
+
+running with s01, and with extras --test_batch_size 1 --beam_size 4 --pr_local_diff 2.0
+%% [b'BLEU = 37.18, 78.8/50.9/32.4/20.3 (BP=0.923, ratio=0.926, hyp_len=23733, ref_len=25637)\n']
+running with s02, and with extras --test_batch_size 1 --beam_size 4 --pr_local_diff 2.0 --normalize_way add --normalize_alpha 1.0
+%% [b'BLEU = 38.01, 77.0/49.3/31.1/19.4 (BP=0.977, ratio=0.977, hyp_len=25963, ref_len=26572)\n']
+running with s03, and with extras --decode_way branch --test_batch_size 1 --beam_size 4 --pr_local_diff 2.0 --normalize_way add --normalize_alpha 1.0
+%% [b'BLEU = 36.22, 76.0/47.7/29.7/18.2 (BP=0.968, ratio=0.968, hyp_len=25426, ref_len=26261)\n']
+running with s04, and with extras --test_batch_size 1 --beam_size 4 --pr_local_diff 2.0 --normalize_way add --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4
+%% [b'BLEU = 38.59, 77.5/50.0/31.8/20.0 (BP=0.974, ratio=0.974, hyp_len=25751, ref_len=26427)\n']
+running with s05, and with extras --decode_way branch --test_batch_size 1 --beam_size 4 --pr_local_diff 2.0 --normalize_way add --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4
+%% [b'BLEU = 36.26, 76.1/47.8/29.8/18.3 (BP=0.966, ratio=0.967, hyp_len=25265, ref_len=26132)\n']
+running with s06, and with extras --test_batch_size 1 --beam_size 4 --pr_local_diff 2.0 --normalize_way add --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_lreward 1.0
+%% [b'BLEU = 38.32, 76.8/49.3/31.2/19.5 (BP=0.984, ratio=0.984, hyp_len=26347, ref_len=26762)\n']
+running with s07, and with extras --decode_way branch --test_batch_size 1 --beam_size 4 --pr_local_diff 2.0 --normalize_way add --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_lreward 1.0
+%% [b'BLEU = 36.24, 75.9/47.7/29.8/18.3 (BP=0.967, ratio=0.968, hyp_len=25405, ref_len=26254)\n']
+
+running with s11, and with extras --test_batch_size 1 --beam_size 4 --pr_local_diff 2.0 --penalize_eos 1.0
+%% [b'BLEU = 38.00, 78.2/50.4/32.0/20.0 (BP=0.952, ratio=0.954, hyp_len=24841, ref_len=26052)\n']
+running with s12, and with extras --test_batch_size 1 --beam_size 4 --pr_local_diff 2.0 --normalize_way add --normalize_alpha 1.0 --penalize_eos 1.0
+%% [b'BLEU = 38.24, 76.8/49.1/31.0/19.4 (BP=0.985, ratio=0.986, hyp_len=26328, ref_len=26714)\n']
+running with s13, and with extras --decode_way branch --test_batch_size 1 --beam_size 4 --pr_local_diff 2.0 --normalize_way add --normalize_alpha 1.0 --penalize_eos 1.0
+%% [b'BLEU = 36.20, 75.9/47.6/29.7/18.2 (BP=0.968, ratio=0.969, hyp_len=25443, ref_len=26270)\n']
+running with s14, and with extras --test_batch_size 1 --beam_size 4 --pr_local_diff 2.0 --normalize_way add --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --penalize_eos 1.0
+%% [b'BLEU = 38.53, 77.1/49.6/31.5/19.7 (BP=0.981, ratio=0.981, hyp_len=26141, ref_len=26640)\n']
+running with s15, and with extras --decode_way branch --test_batch_size 1 --beam_size 4 --pr_local_diff 2.0 --normalize_way add --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --penalize_eos 1.0
+%% [b'BLEU = 36.27, 76.1/47.9/29.8/18.3 (BP=0.966, ratio=0.967, hyp_len=25271, ref_len=26140)\n']
+running with s16, and with extras --test_batch_size 1 --beam_size 4 --pr_local_diff 2.0 --normalize_way add --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_lreward 1.0 --penalize_eos 1.0
+%% [b'BLEU = 38.27, 76.4/49.0/30.9/19.3 (BP=0.990, ratio=0.990, hyp_len=26698, ref_len=26969)\n']
+running with s17, and with extras --decode_way branch --test_batch_size 1 --beam_size 4 --pr_local_diff 2.0 --normalize_way add --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_lreward 1.0 --penalize_eos 1.0
+%% [b'BLEU = 36.29, 76.0/47.8/29.8/18.3 (BP=0.967, ratio=0.968, hyp_len=25420, ref_len=26262)\n']
+
+running with s08, and with extras --test_batch_size 1 --beam_size 4 --pr_local_diff 2.0 --normalize_way add --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0
+%% [b'BLEU = 38.40, 77.4/49.9/31.7/19.9 (BP=0.972, ratio=0.972, hyp_len=25800, ref_len=26537)\n']
+running with s09, and with extras --decode_way branch --test_batch_size 1 --beam_size 4 --pr_local_diff 2.0 --normalize_way add --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0
+%% [b'BLEU = 36.23, 75.9/47.7/29.8/18.3 (BP=0.967, ratio=0.968, hyp_len=25402, ref_len=26254)\n']
+running with s18, and with extras --test_batch_size 1 --beam_size 4 --pr_local_diff 2.0 --normalize_way add --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --penalize_eos 1.0
+%% [b'BLEU = 38.37, 77.0/49.5/31.4/19.6 (BP=0.981, ratio=0.981, hyp_len=26173, ref_len=26688)\n']
+running with s19, and with extras --decode_way branch --test_batch_size 1 --beam_size 4 --pr_local_diff 2.0 --normalize_way add --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --penalize_eos 1.0
+%% [b'BLEU = 36.28, 76.0/47.8/29.8/18.3 (BP=0.967, ratio=0.968, hyp_len=25417, ref_len=26262)\n']
+
+running with s20, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.0 --normalize_way norm --normalize_alpha 1.0
+%% [b'BLEU = 38.02, 78.3/50.7/32.2/20.1 (BP=0.949, ratio=0.951, hyp_len=24815, ref_len=26101)\n']
+running with s21, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.0 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4
+%% [b'BLEU = 38.22, 78.5/51.1/32.6/20.6 (BP=0.943, ratio=0.945, hyp_len=24650, ref_len=26087)\n']
+running with s22, and with extras --test_batch_size 1 --beam_size 10 --pr_local_diff 2.0 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0
+%% [b'BLEU = 38.28, 78.4/51.1/32.7/20.6 (BP=0.945, ratio=0.946, hyp_len=24686, ref_len=26093)\n']
+running with s23, and with extras --decode_way branch --test_batch_size 1 --beam_size 10 --pr_local_diff 2.0 --normalize_way norm --normalize_alpha 1.0
+%% [b'BLEU = 37.25, 77.2/49.3/31.0/19.4 (BP=0.958, ratio=0.959, hyp_len=24922, ref_len=25984)\n']
+running with s24, and with extras --decode_way branch --test_batch_size 1 --beam_size 10 --branching_fullfill_ratio 10 --pr_local_diff 2.0 --normalize_way norm --normalize_alpha 1.0
+%% [b'BLEU = 37.51, 77.2/49.6/31.3/19.5 (BP=0.959, ratio=0.960, hyp_len=24913, ref_len=25953)\n']
+running with s25, and with extras --decode_way branch --test_batch_size 1 --beam_size 10 --pr_local_diff 2.0 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4
+%% [b'BLEU = 37.01, 77.0/49.1/30.9/19.2 (BP=0.957, ratio=0.958, hyp_len=24810, ref_len=25899)\n']
+running with s26, and with extras --decode_way branch --test_batch_size 1 --beam_size 10 --branching_fullfill_ratio 10 --pr_local_diff 2.0 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0
+%% [b'BLEU = 37.44, 77.4/49.7/31.4/19.6 (BP=0.954, ratio=0.955, hyp_len=24798, ref_len=25962)\n']
+
+running with s30, and with extras --test_batch_size 1 --beam_size 20 --pr_local_diff 2.0 --normalize_way norm --normalize_alpha 1.0
+%% [b'BLEU = 38.36, 78.4/50.9/32.6/20.4 (BP=0.950, ratio=0.951, hyp_len=24844, ref_len=26112)\n']
+running with s31, and with extras --test_batch_size 1 --beam_size 20 --pr_local_diff 2.0 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4
+%% [b'BLEU = 38.35, 78.3/51.0/32.6/20.6 (BP=0.948, ratio=0.949, hyp_len=24729, ref_len=26056)\n']
+running with s32, and with extras --test_batch_size 1 --beam_size 20 --pr_local_diff 2.0 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0
+%% [b'BLEU = 38.39, 78.3/51.0/32.7/20.6 (BP=0.949, ratio=0.950, hyp_len=24754, ref_len=26058)\n']
+running with s33, and with extras --decode_way branch --test_batch_size 1 --beam_size 20 --pr_local_diff 2.0 --normalize_way norm --normalize_alpha 1.0
+%% [b'BLEU = 37.50, 77.3/49.6/31.3/19.6 (BP=0.958, ratio=0.959, hyp_len=24905, ref_len=25976)\n']
+running with s34, and with extras --decode_way branch --test_batch_size 1 --beam_size 20 --branching_fullfill_ratio 20 --pr_local_diff 2.0 --normalize_way norm --normalize_alpha 1.0
+%% [b'BLEU = 37.47, 77.6/49.9/31.5/19.5 (BP=0.954, ratio=0.955, hyp_len=24804, ref_len=25976)\n']
+running with s35, and with extras --decode_way branch --test_batch_size 1 --beam_size 20 --pr_local_diff 2.0 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4
+%% [b'BLEU = 37.17, 77.2/49.4/31.1/19.3 (BP=0.955, ratio=0.956, hyp_len=24793, ref_len=25927)\n']
+running with s36, and with extras --decode_way branch --test_batch_size 1 --beam_size 20 --branching_fullfill_ratio 20 --pr_local_diff 2.0 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0
+%% [b'BLEU = 37.40, 77.4/49.8/31.4/19.6 (BP=0.954, ratio=0.955, hyp_len=24765, ref_len=25939)\n']

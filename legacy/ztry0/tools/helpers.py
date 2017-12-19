@@ -5,7 +5,7 @@ _printing_heads = {
     "warn":"!! ", "fatal":"KI ", "debug":"DE ", "none":""
 }
 def printing(s, func="plain", out=sys.stderr):
-    print(_printing_heads[func]+s, file=out)
+    print(_printing_heads[func]+s, file=out, flush=True)
 
 # an open wrapper
 def zfopen(filename, mode='r'):

@@ -1,0 +1,952 @@
+##### legacy of 2017.11 #####
+##### ================= #####
+
+from zl.model import Model
+from zl.trainer import Trainer
+from zl import layers, utils, data
+import numpy
+from zl.layers import BK
+from collections import Iterable
+from . import mt_search, mt_eval
+
+# An typical example of a model, fixed architecture
+# single s2s: one input(no factors), one output
+# !! stateless, states & caches are managed by the Scorer
+class s2sModel(Model):
+    def __init__(self, opts, source_dict, target_dict):
+        super(s2sModel, self).__init__()
+        self.opts = opts
+        self.source_dict = source_dict
+        self.target_dict = target_dict
+        # build the layers
+        # embeddings
+        self.embed_src = layers.Embedding(self.model, len(source_dict), opts["dim_word"], dropout_wordceil=source_dict.get_wordceil())
+        self.embed_trg = layers.Embedding(self.model, len(target_dict), opts["dim_word"], dropout_wordceil=target_dict.get_wordceil())
+        # enc-dec
+        self.enc = layers.Encoder(self.model, opts["dim_word"], opts["hidden_enc"], opts["enc_depth"], opts["rnn_type"])
+        self.dec = layers.NematusDecoder(self.model, opts["dim_word"], opts["hidden_dec"], opts["dec_depth"],
+                    opts["rnn_type"], opts["summ_type"], opts["att_type"], opts["hidden_att"], opts["dim_cov"], 2*opts["hidden_enc"])
+        # outputs
+        self.out0 = layers.Affine(self.model, 2*opts["hidden_enc"]+opts["hidden_dec"]+opts["dim_word"], opts["hidden_out"])
+        self.out1 = layers.AffineNodrop(self.model, opts["hidden_out"], len(target_dict), act="linear")
+        #
+        # computation values
+        # What is in the cache: S,V/ cov,ctx,att,/ out_hid,/ out_s,results => these are handled/rearranged by the Scorer
+        self.names_bv = {"cov", "ctx", "hid", "out_hid"}
+        self.names_bi = {"S", "V", "summ"}
+        self.names_ig = {"att", "out_s", "results"}
+        utils.zlog("End of creating Model.")
+
+    def refresh(self, training):
+        def _gd(drop):  # get dropout
+            return drop if training else 0.
+        opts = self.opts
+        self.embed_src.refresh({"hdrop":_gd(opts["drop_embedding"]), "idrop":_gd(opts["idrop_embedding"])})
+        self.embed_trg.refresh({"hdrop":_gd(opts["drop_embedding"]), "idrop":_gd(opts["idrop_embedding"])})
+        self.enc.refresh({"idrop":_gd(opts["idrop_enc"]), "gdrop":_gd(opts["gdrop_enc"])})
+        self.dec.refresh({"idrop":_gd(opts["idrop_dec"]), "gdrop":_gd(opts["gdrop_dec"]), "hdrop":_gd(opts["drop_hidden"])})
+        self.out0.refresh({"hdrop":_gd(opts["drop_hidden"])})
+        self.out1.refresh({})
+
+    # data helpers #
+    def prepare_data(self, ys, dict, fix_len=0):
+        # input: list of list of index (bsize, step),
+        # output: padded input (step, bsize), masks (1 for real words, 0 for paddings)
+        bsize, steps = len(ys), max([len(i) for i in ys])
+        if fix_len > 0:
+            steps = fix_len
+        y = [[] for _ in range(steps)]
+        lens = [len(i) for i in ys]
+        eos, padding = dict.eos, dict.pad
+        for s in range(steps):
+            for b in range(bsize):
+                y[s].append(ys[b][s] if s<lens[b] else padding)
+        # check last step
+        for b in range(bsize):
+            if y[-1][b] not in [eos, padding]:
+                y[-1][b] = eos
+        return y, [[(1. if len(one)>s else 0.) for one in ys] for s in range(steps)]
+
+    # helper routines #
+    def get_embeddings_step(self, tokens, embed):
+        # tokens: list of int or one int, embed: Embedding => one expression (batched)
+        return embed(tokens)
+
+    def get_start_yembs(self, bsize):
+        return self.get_embeddings_step([self.target_dict.bos for _ in range(bsize)], self.embed_trg)
+
+    def get_scores(self, at, hi, ye):
+        real_hi = hi[-1]["H"]
+        output_concat = BK.concatenate([at, real_hi, ye])
+        output_hidden = self.out0(output_concat)
+        output_score = self.out1(output_hidden)
+        return output_score, output_hidden
+
+    def encode(self, xx, xm):
+        # -- encode xs, return list of encoding vectors
+        # xx, xm = self.prepare_data(xs) # prepare at the outside
+        x_embed = [self.get_embeddings_step(s, self.embed_src) for s in xx]
+        x_encodes = self.enc(x_embed, xm)
+        return x_encodes
+
+    def decode_start(self, x_encodes):
+        # start the first step of decoding
+        return self.dec.start_one(x_encodes)
+
+    def decode_step(self, x_encodes, inputs, hiddens, caches):
+        # feed one step
+        return self.dec.feed_one(x_encodes, inputs, hiddens, caches)
+
+    # main routines #
+    def start(self, xs, repeat=1):
+        # encode
+        bsize = len(xs)
+        xx, xm = self.prepare_data(xs, self.source_dict)
+        x_encodes = self.encode(xx, xm)
+        x_encodes = [layers.BK.batch_repeat(one, repeat) for one in x_encodes]
+        # init decode
+        cache = self.decode_start(x_encodes)
+        start_embeds = self.get_start_yembs(bsize)
+        output_score, output_hidden = self.get_scores(cache["ctx"], cache["hid"], start_embeds)
+        probs = layers.BK.softmax(output_score)
+        return utils.Helper.combine_dicts(cache, {"out_hid": output_hidden, "out_s": output_score, "results": probs})
+
+    def step(self, prev_val, inputs):
+        x_encodes, hiddens = None, prev_val["hid"]
+        next_embeds = self.get_embeddings_step(inputs, self.embed_trg)
+        cache = self.decode_step(x_encodes, next_embeds, hiddens, prev_val)
+        output_score, output_hidden = self.get_scores(cache["ctx"], cache["hid"], next_embeds)
+        probs = layers.BK.softmax(output_score)
+        return utils.Helper.combine_dicts(cache, {"out_hid": output_hidden, "out_s": output_score, "results": probs})
+
+    def fb(self, insts, training):
+        return mt_search.MTSearcher.fb_loss([self], self.target_dict, insts, training)
+
+# ======= about the training of the model
+# class ValidResult(object):
+#     def __init__(self, scores):
+#         if not isinstance(scores, Iterable):
+#             scores = [scores]
+#         self.scores = scores
+#
+#     @property
+#     def v(self):
+#         return self.scores[0]
+ValidResult = list
+
+class OnceRecorder(object):
+    def __init__(self, name):
+        self.name = name
+        self.loss = 0.
+        self.sents = 1e-6
+        self.words = 1e-6
+        self.updates = 0
+        self.timer = utils.Timer("")
+
+    def record(self, insts, loss, update):
+        self.loss += loss
+        self.sents += len(insts)
+        self.words += sum([len(x[0]) for x in insts])     # for src
+        self.updates += update
+
+    def reset(self):
+        self.loss = 0.
+        self.sents = 1e-6
+        self.words = 1e-6
+        self.updates = 0
+        self.timer = utils.Timer("")
+
+    # const, only reporting, could be called many times
+    def state(self):
+        one_time = self.timer.get_time()
+        loss_per_sentence = self.loss / self.sents
+        loss_per_word = self.loss / self.words
+        sent_per_second = float(self.sents) / one_time
+        word_per_second = float(self.words) / one_time
+        return ("Recoder <%s>, %.3f(time)/%s(updates)/%.3f(sents)/%.3f(words)/%.3f(sl-loss)/%.3f(w-loss)/%.3f(s-sec)/%.3f(w-sec)" % (self.name, one_time, self.updates, self.sents, self.words, loss_per_sentence, loss_per_word, sent_per_second, word_per_second))
+
+    def report(self, s=""):
+        utils.zlog(s+self.state(), func="info")
+
+class MTTrainer(Trainer):
+    def __init__(self, opts, model):
+        super(MTTrainer, self).__init__(opts, model)
+
+    def _validate_ll(self, dev_iter):
+        # log likelihood
+        one_recorder = self._get_recorder("VALID-LL")
+        for insts in dev_iter.arrange_batches():
+            loss = self._mm.fb(insts, False)
+            one_recorder.record(insts, loss, 0)
+        one_recorder.report()
+        return -1 * (one_recorder.loss / one_recorder.words)
+
+    def _validate_bleu(self, dev_iter):
+        # bleu score
+        mt_decode(dev_iter, [self._mm], self._mm.target_dict, self.opts, self.opts["dev_output"])
+        # no restore specifies for the dev set
+        s = mt_eval.evaluate(self.opts["dev_output"], self.opts["dev"][1], self.opts["eval_metric"], True)
+        return s
+
+    def _validate_them(self, dev_iter, metrics):
+        validators = {"ll": self._validate_ll, "bleu": self._validate_bleu}
+        r = []
+        for m in metrics:
+            r.append(validators[m](dev_iter))
+        return ValidResult(r)
+
+    def _get_recorder(self, name):
+        return OnceRecorder(name)
+
+
+# how to take lengths into account
+class MTLengthNormer(object):
+    def __init__(self, alpha, method):
+        if alpha <= 0.:
+            alpha = 0.
+        self.alpha = alpha
+        if alpha <= 0.:
+            self._ff = self.score_none
+        else:
+            self._ff = {"norm":self.score_norm, "google":self.score_google}[method]
+
+    def score_none(self, s):
+        return s.score_partial
+
+    def score_norm(self, s):
+        return s.score_partial / pow(s.length, self.alpha)
+
+    def score_google(self, s):
+        return s.score_partial * pow(6, self.alpha) / pow(5+s.length, self.alpha)
+
+    def __call__(self, ls):
+        for s in ls:
+            s.set_score_final(self._ff(s))
+
+def mt_decode(test_iter, mms, target_dict, opts, outf):
+    one_recorder = OnceRecorder("DECODE")
+    num_sents = len(test_iter)
+    cur_sents = 0.
+    # decoding them all
+    results = []
+    prev_point = 0
+    for insts in test_iter.arrange_batches():
+        if opts["verbose"] and (cur_sents - prev_point) >= (opts["report_freq"]*test_iter.bsize()):
+            utils.zlog("Decoding process: %.2f%%" % (cur_sents / num_sents * 100))
+            prev_point = cur_sents
+        cur_sents += len(insts)
+        rs = mt_search.MTSearcher.search_beam(mms, MTLengthNormer(opts["normalize"], opts["normalize_way"]), insts, target_dict, opts)
+        results += [[int(x) for x in r[0].get_path("action")] for r in rs]
+        one_recorder.record(insts, 0, 0)
+    # restore from sorting by length
+    results = test_iter.restore_order(results)
+    with utils.zopen(outf, "w") as f:
+        for r in results:
+            best_seq = r
+            strs = data.Vocab.i2w(target_dict, best_seq)
+            f.write(" ".join(strs)+"\n")
+    one_recorder.report()
+
+# first write a full process for standard beam-decoding, then use it as a template to see how to re-factor
+
+# the main searching processes
+from zl.search import State, Action, Searcher, SearchGraph, Results, Scorer
+from zl.model import Model
+from zl import utils, layers
+from collections import Iterable
+import numpy
+
+# class MTState(State):
+#     def __init__(self, sg=None, action=None, prev=None, values=None):
+#         super(MTState, self).__init__(sg, action, prev, values)
+#
+# class MTAction(Action):
+#     def __init__(self, action_code, score):
+#         super(MTAction, self).__init__(action_code, score)
+MTState = State
+MTAction = Action
+
+# fixed possible candidates for NMT: all possible words in vocabularies
+# class MTStateCands():
+#     def __init__(self, state):
+#         self.state = state
+#
+#     def get_state(self):
+#         return self.state
+
+# the scores for MTStateCands
+# class MTResults(Results):
+
+# Stated scorer, data stored as list(batch)//dict(state-id)
+# -- simply, the stored data include the mapping of state-id -> calculation needed
+# -- created once each searching process
+class MTScorer(Scorer):
+    def __init__(self, models, training):
+        super(MTScorer, self).__init__()
+        if not isinstance(models, Iterable):
+            models = [models]
+        self.models = models
+        self.training = training
+        # init
+        Model.new_graph()
+        for _mm in models:
+            _mm.refresh(self.training)
+        # caches: separated for each model, also for each element in the batches
+        self.insts_num = -1
+        # todo: with re-arrange, one value could appear in multiple places
+        self.indexes = [{} for _ in range(len(models))]     # idx is: state-id => (cache-id, inside-id)
+        self.caches = []            # expressions: dicts
+        self.caches_bsizes = []     # the beam sizes of them, sum up to esizes: lists
+        self.caches_asizes = []     # num of batches: sum(self.baches_bsizes)
+
+    @property
+    def started(self):
+        return self.insts_num > 0
+
+    def rearrange_check(self, idxes):
+        # list of (idx, batch-idx), check continuous
+        ii = idxes[0][0]
+        for i, p in enumerate(idxes):
+            if p[0]!=ii or p[1]!=i:
+                return False
+        return len(idxes)==sum(self.caches_bsizes[ii])
+
+    # todo: could be more efficient by reordering
+    def rearrange_do(self, prev_idxes, mm, ret_names=None):
+        # collect the groups and preserving flags
+        groups = []     # (idx, [batch-idxes])
+        accu = []  # (?exact, ?beam-based)
+        prev_i0, next_beam_bar, next_beam_i = -1, 0, 0    # for BI
+        for i0, i1 in prev_idxes:
+            if i0 != prev_i0:
+                # new idx
+                groups.append((i0, [i1]))
+                accu.append([0, 0])
+                prev_i0 = i0
+                next_beam_bar, next_beam_i = 0, 0
+            else:
+                groups[-1][1].append(i1)
+            # check cont
+            accu[-1][0] = i1+1 if i1==accu[-1][0] else utils.Constants.MIN_V   # if not seq, cannot accumulate up
+            if i1 >= next_beam_bar:
+                if accu[-1][1] != next_beam_bar:
+                    accu[-1][1] = utils.Constants.MIN_V
+                next_beam_bar += self.caches_bsizes[i0][next_beam_i]
+                next_beam_i += 1
+            accu[-1][1] = accu[-1][1]+1 if i1<next_beam_bar else utils.Constants.MIN_V
+        # re-arrange them
+        ret = {}
+        for names, which in zip([mm.names_bv, mm.names_bi], [0, 1]):
+            for n in names:
+                if ret_names is not None and not n in ret_names:
+                    continue
+                ll = []
+                for ac, g in zip(accu, groups):
+                    ii = g[0]
+                    cc = self.caches[ii][n]
+                    if ac[which] == self.caches_asizes[ii]:
+                        ll.append(cc)
+                    else:
+                        ll.append(layers.rearrange_cache(cc, g[1]))
+                if len(ll) > 0:
+                    ret[n] = layers.concate_cache(ll)
+        return ret
+
+    def calc_step(self, state_cands, xs, skip_rearrange=False):
+        # calculate for the states
+        cur_states = state_cands        # for simplicity
+        cur_flats = [s for s in utils.Helper.stream_rec(cur_states)]
+        ccs = []
+        if not self.started:
+            self.insts_num = len(xs)
+            repeat_time = len(cur_states[0])
+            # assert that they are all initial states
+            utils.zcheck_ff_iter(cur_states, lambda x: len(x)==repeat_time and all(y.is_start() for y in x),
+                                 "Unexpected initial states.", _forced=True)
+            utils.zcheck_matched_length(cur_states, xs, _forced=True)
+            # start
+            for _mm in self.models:
+                cc = _mm.start(xs, repeat_time)
+                ccs.append(cc)
+        else:
+            # assert that they are all not initial states
+            utils.zcheck_ff_iter(cur_states, lambda x: all(not y.is_start() for y in x), "Unexpected initial states.")
+            #
+            prev_ids = [x.prev.id for x in cur_flats]
+            next_actions = [int(x.action) for x in cur_flats]
+            # calculate
+            for i, _mm in enumerate(self.models):
+                # check and rearrange
+                prev_idxes = [self.indexes[i][x] for x in prev_ids]    # list of (idx, batch-idx)
+                could_skip = self.rearrange_check(prev_idxes)
+                if skip_rearrange:
+                    utils.zcheck(could_skip, "Not continuous but skipping rearrange!")
+                if not could_skip:
+                    prev_val = self.rearrange_do(prev_idxes, _mm)
+                else:
+                    prev_val = self.caches[prev_idxes[0][0]]
+                # actual calculate
+                cc = _mm.step(prev_val, next_actions)
+                ccs.append(cc)
+        # add the caches
+        cur_bsizes = [len(one) for one in cur_states]
+        for i, cc in enumerate(ccs):
+            idx = len(self.caches)
+            self.caches.append(cc)
+            self.caches_bsizes.append(cur_bsizes)
+            self.caches_asizes.append(sum(cur_bsizes))
+            for ii, one in enumerate(cur_flats):
+                self.indexes[i][one.id] = (idx, ii)
+
+    def get_result_values(self, states, rets, skip_rearrange=False):
+        exprs = self.get_result_expressions(states, rets, skip_rearrange)
+        cur_bsizes = [len(one) for one in states]
+        ret = []
+        for e in exprs:
+            results_list = layers.BK.get_value_vec(e)
+            dims = layers.BK.dims(e)
+            utils.zcheck(len(dims)==1, "Wrong result dimensions.")
+            bsize, outd = (layers.BK.bsize(e), dims[0])
+            ret.append(Results.build(results_list, cur_bsizes, outd))
+        return ret
+
+    # obtain result expressions --- return as batched ones
+    def get_result_expressions(self, states, rets, skip_rearrange=False):
+        cur_states = states        # for simplicity
+        cur_flats = [s for s in utils.Helper.stream_rec(cur_states)]
+        cur_ids = [x.id for x in cur_flats]
+        # prepare the caches
+        values = []
+        for i, _mm in enumerate(self.models):
+            # check and rearrange
+            cur_idxes = [self.indexes[i][x] for x in cur_ids]    # list of (idx, batch-idx)
+            could_skip = self.rearrange_check(cur_idxes)
+            if skip_rearrange:
+                utils.zcheck(could_skip, "Not continuous but skipping rearrange!")
+            if not could_skip:
+                cur_val = self.rearrange_do(cur_idxes, _mm, ret_names=rets)
+            else:
+                cur_val = self.caches[cur_idxes[0][0]]
+            values.append(cur_val)
+        # average the values
+        values_avg = []
+        for n in rets:
+            # todo(warn): now this is for same BK models
+            vv = layers.BK.average([_v[n] for _v in values])
+            values_avg.append(vv)
+        return values_avg
+
+class MTSearcher(Searcher):
+    # def __init__(self):
+    #     # some records
+    #     pass
+
+    # todo: with several pruning and length checking
+    @staticmethod
+    def search_beam(models, length_normer, insts, target_dict, opts):
+        # input: scorer, list of instances
+        xs = [i[0] for i in insts]
+        # ys = [i[1] for i in insts]
+        sc = MTScorer(models, False)
+        # init the search
+        bsize = len(xs)
+        opens = [[MTState(sg=SearchGraph())] for _ in range(bsize)]     # with only one init state
+        ends = [[] for _ in range(bsize)]
+        # search for them
+        esize_all = opts["beam_size"]
+        esize_one = opts["beam_size"]
+        eos_code = target_dict.eos
+        decode_maxlen = opts["decode_len"]
+        for _ in range(decode_maxlen):
+            # expand and generate cands
+            sc.calc_step(opens, xs)
+            results = sc.get_result_values(opens, ["results"])    # list of list of list of scores
+            next_opens = []
+            still_going = False
+            for one_inst, one_end, one_res in zip(opens, ends, results):
+                # for one instance
+                extended_candidates = []
+                # pruning locally
+                for one_state, one_score in zip(one_inst, one_res):
+                    top_cands = numpy.argpartition(one_score, max(-len(one_score), -esize_one))[-esize_one:]
+                    for cand_action in top_cands:
+                        code = int(cand_action)
+                        prob = one_score[code]
+                        next_one = MTState(prev=one_state, action=MTAction(code, numpy.log(prob), prob=prob))
+                        extended_candidates.append(next_one)
+                # sort globally
+                best_cands = sorted(extended_candidates, key=lambda x: x.score_partial, reverse=True)[:esize_all]
+                # pruning globally & set up
+                # todo(warn): decrease beam size here
+                next_opens_one = []
+                cap = max(0, esize_all-len(one_end))
+                still_going = still_going and (cap>0)
+                for j in range(cap):
+                    one_cand = best_cands[j]
+                    if int(one_cand.action) == eos_code:
+                        one_cand.mark_end()
+                        one_end.append(one_cand)
+                    else:
+                        next_opens_one.append(one_cand)
+                next_opens.append(next_opens_one)
+            opens = next_opens
+            if not still_going:
+                break
+        # finish up the un-finished (maybe +1 step)
+        results = sc.calc_step(opens, xs)
+        for one_inst, one_end, one_res in zip(opens, ends, results):
+            for one_state, one_score in zip(one_inst, one_res):
+                code = eos_code
+                prob = one_score[code]
+                finished_one = MTState(prev=one_state, action=MTAction(code, numpy.log(prob), prob=prob))
+                finished_one.mark_end()
+                one_end.append(finished_one)
+        # re-ranking to the final ones
+        length_normer(utils.Helper.stream_rec(ends))
+        final_list = [sorted(beam, key=lambda x: x.score_final, reverse=True) for beam in ends]
+        return final_list
+
+    # force gold tracking
+    @staticmethod
+    def _gen_y_step(ys, i, bsize):
+        _mask = [1. if i<len(_y) else 0. for _y in ys]
+        ystep = [_y[i] if i<len(_y) else 0 for _y in ys]
+        mask_expr = layers.BK.inputVector(_mask)
+        mask_expr = layers.BK.reshape(mask_expr, (1, ), bsize)
+        return ystep, mask_expr
+
+    @staticmethod
+    def _mle_loss_step(probs, scores_exprs, ystep, mask_expr):
+        one_loss = layers.BK.pickneglogsoftmax_batch(scores_exprs, ystep)
+        one_loss = one_loss * mask_expr
+        return one_loss
+
+    @staticmethod
+    def fb_loss(models, target_dict, insts, training):
+        xs = [i[0] for i in insts]
+        ys = [i[1] for i in insts]
+        sc = MTScorer(models, training)
+        bsize = len(xs)
+        opens = [[MTState(sg=SearchGraph())] for _ in range(bsize)]     # with only one init state
+        cur_maxlen = max([len(_y) for _y in ys])
+        losses = []
+        for i in range(cur_maxlen):
+            sc.calc_step(opens, xs, skip_rearrange=True)
+            results = None
+            scores_exprs = sc.get_result_expressions(opens, ["out_s"], skip_rearrange=True)[0]
+            ystep, mask_expr = MTSearcher._gen_y_step(ys, i, bsize)
+            loss = MTSearcher._mle_loss_step(None, scores_exprs, ystep, mask_expr)
+            losses.append(loss)
+            # prepare next steps: only following gold
+            new_opens = []
+            for b in range(bsize):
+                ss, _y = opens[b][0], ystep[b]
+                prob = 1. if _y==target_dict.non or results is None else results[b][0][_y]
+                new_opens.append([MTState(prev=ss, action=MTAction(_y, numpy.log(prob), prob=prob))])
+            opens = new_opens
+        # -- final
+        loss = layers.BK.esum(losses)
+        loss = layers.BK.sum_batches(loss) / bsize
+        if training:
+            layers.BK.forward(loss)
+            layers.BK.backward(loss)
+        # return value?
+        loss_val = layers.BK.get_value_sca(loss)
+        return loss_val*bsize
+
+# 17.11.06 -> mt_search
+# first write a full process for standard beam-decoding, then use it as a template to see how to re-factor
+
+# the main searching processes
+from zl.search import State, Action, Searcher, SearchGraph, Results, Scorer
+from zl.model import Model
+from zl import utils, layers
+from collections import Iterable
+import numpy
+
+# class MTState(State):
+#     def __init__(self, sg=None, action=None, prev=None, values=None):
+#         super(MTState, self).__init__(sg, action, prev, values)
+#
+# class MTAction(Action):
+#     def __init__(self, action_code, score):
+#         super(MTAction, self).__init__(action_code, score)
+MTState = State
+MTAction = Action
+
+# fixed possible candidates for NMT: all possible words in vocabularies
+# class MTStateCands():
+#     def __init__(self, state):
+#         self.state = state
+#
+#     def get_state(self):
+#         return self.state
+
+# the scores for MTStateCands
+# class MTResults(Results):
+
+# Stated scorer, data stored as list(batch)//dict(state-id)
+# -- simply, the stored data include the mapping of state-id -> calculation needed
+# -- created once each searching process
+class MTScorer(Scorer):
+    def __init__(self, models, training):
+        super(MTScorer, self).__init__()
+        if not isinstance(models, Iterable):
+            models = [models]
+        self.models = models
+        self.training = training
+        # init
+        Model.new_graph()
+        for _mm in models:
+            _mm.refresh(self.training)
+        # caches: separated for each model, also for each element in the batches
+        self.insts_num = -1
+        # todo: with re-arrange, one value could appear in multiple places
+        self.indexes = [{} for _ in range(len(models))]     # idx is: state-id => (cache-id, inside-id)
+        self.caches = []            # expressions: dicts
+        self.caches_bsizes = []     # the beam sizes of them, sum up to esizes: lists
+        self.caches_asizes = []     # num of batches: sum(self.baches_bsizes)
+
+    @property
+    def started(self):
+        return self.insts_num > 0
+
+    def rearrange_check(self, idxes):
+        # list of (idx, batch-idx), check continuous
+        ii = idxes[0][0]
+        for i, p in enumerate(idxes):
+            if p[0]!=ii or p[1]!=i:
+                return False
+        return len(idxes)==sum(self.caches_bsizes[ii])
+
+    # todo: could be more efficient by reordering
+    def rearrange_do(self, prev_idxes, mm, ret_names=None):
+        # collect the groups and preserving flags
+        groups = []     # (idx, [batch-idxes])
+        accu = []  # (?exact, ?beam-based)
+        prev_i0, next_beam_bar, next_beam_i = -1, 0, 0    # for BI
+        for i0, i1 in prev_idxes:
+            if i0 != prev_i0:
+                # new idx
+                groups.append((i0, [i1]))
+                accu.append([0, 0])
+                prev_i0 = i0
+                next_beam_bar, next_beam_i = 0, 0
+            else:
+                groups[-1][1].append(i1)
+            # check cont
+            accu[-1][0] = i1+1 if i1==accu[-1][0] else utils.Constants.MIN_V   # if not seq, cannot accumulate up
+            if i1 >= next_beam_bar:
+                if accu[-1][1] != next_beam_bar:
+                    accu[-1][1] = utils.Constants.MIN_V
+                next_beam_bar += self.caches_bsizes[i0][next_beam_i]
+                next_beam_i += 1
+            accu[-1][1] = accu[-1][1]+1 if i1<next_beam_bar else utils.Constants.MIN_V
+        # re-arrange them
+        ret = {}
+        for names, which in zip([mm.names_bv, mm.names_bi], [0, 1]):
+            for n in names:
+                if ret_names is not None and not n in ret_names:
+                    continue
+                ll = []
+                for ac, g in zip(accu, groups):
+                    ii = g[0]
+                    cc = self.caches[ii][n]
+                    if ac[which] == self.caches_asizes[ii]:
+                        ll.append(cc)
+                    else:
+                        ll.append(layers.rearrange_cache(cc, g[1]))
+                if len(ll) > 0:
+                    ret[n] = layers.concate_cache(ll)
+        return ret
+
+    def calc_step(self, state_cands, xs, skip_rearrange=False):
+        # calculate for the states
+        cur_states = state_cands        # for simplicity
+        cur_flats = [s for s in utils.Helper.stream_rec(cur_states)]
+        ccs = []
+        if not self.started:
+            self.insts_num = len(xs)
+            repeat_time = len(cur_states[0])
+            # assert that they are all initial states
+            utils.zcheck_ff_iter(cur_states, lambda x: len(x)==repeat_time and all(y.is_start() for y in x),
+                                 "Unexpected initial states.", _forced=True)
+            utils.zcheck_matched_length(cur_states, xs, _forced=True)
+            # start
+            for _mm in self.models:
+                cc = _mm.start(xs, repeat_time)
+                ccs.append(cc)
+        else:
+            # assert that they are all not initial states
+            utils.zcheck_ff_iter(cur_states, lambda x: all(not y.is_start() for y in x), "Unexpected initial states.")
+            #
+            prev_ids = [x.prev.id for x in cur_flats]
+            next_actions = [int(x.action) for x in cur_flats]
+            # calculate
+            for i, _mm in enumerate(self.models):
+                # check and rearrange
+                prev_idxes = [self.indexes[i][x] for x in prev_ids]    # list of (idx, batch-idx)
+                could_skip = self.rearrange_check(prev_idxes)
+                if skip_rearrange:
+                    utils.zcheck(could_skip, "Not continuous but skipping rearrange!")
+                if not could_skip:
+                    prev_val = self.rearrange_do(prev_idxes, _mm)
+                else:
+                    prev_val = self.caches[prev_idxes[0][0]]
+                # actual calculate
+                cc = _mm.step(prev_val, next_actions)
+                ccs.append(cc)
+        # add the caches
+        cur_bsizes = [len(one) for one in cur_states]
+        for i, cc in enumerate(ccs):
+            idx = len(self.caches)
+            self.caches.append(cc)
+            self.caches_bsizes.append(cur_bsizes)
+            self.caches_asizes.append(sum(cur_bsizes))
+            for ii, one in enumerate(cur_flats):
+                self.indexes[i][one.id] = (idx, ii)
+
+    def get_result_values(self, states, rets, skip_rearrange=False):
+        exprs = self.get_result_expressions(states, rets, skip_rearrange)
+        cur_bsizes = [len(one) for one in states]
+        ret = []
+        for e in exprs:
+            results_list = layers.BK.get_value_vec(e)
+            dims = layers.BK.dims(e)
+            utils.zcheck(len(dims)==1, "Wrong result dimensions.")
+            bsize, outd = (layers.BK.bsize(e), dims[0])
+            ret.append(Results.build(results_list, cur_bsizes, outd))
+        return ret
+
+    # obtain result expressions --- return as batched ones
+    def get_result_expressions(self, states, rets, skip_rearrange=False):
+        cur_states = states        # for simplicity
+        cur_flats = [s for s in utils.Helper.stream_rec(cur_states)]
+        cur_ids = [x.id for x in cur_flats]
+        # prepare the caches
+        values = []
+        for i, _mm in enumerate(self.models):
+            # check and rearrange
+            cur_idxes = [self.indexes[i][x] for x in cur_ids]    # list of (idx, batch-idx)
+            could_skip = self.rearrange_check(cur_idxes)
+            if skip_rearrange:
+                utils.zcheck(could_skip, "Not continuous but skipping rearrange!")
+            if not could_skip:
+                cur_val = self.rearrange_do(cur_idxes, _mm, ret_names=rets)
+            else:
+                cur_val = self.caches[cur_idxes[0][0]]
+            values.append(cur_val)
+        # average the values
+        values_avg = []
+        for n in rets:
+            # todo(warn): now this is for same BK models
+            vv = layers.BK.average([_v[n] for _v in values])
+            values_avg.append(vv)
+        return values_avg
+
+class MTSearcher(Searcher):
+    # def __init__(self):
+    #     # some records
+    #     pass
+
+    # todo: with several pruning and length checking
+    @staticmethod
+    def search_beam(models, insts, target_dict, opts):
+        # input: scorer, list of instances
+        xs = [i[0] for i in insts]
+        # ys = [i[1] for i in insts]
+        sc = MTScorer(models, False)
+        # init the search
+        bsize = len(xs)
+        opens = [[MTState(sg=SearchGraph())] for _ in range(bsize)]     # with only one init state
+        ends = [[] for _ in range(bsize)]
+        # search for them
+        esize_all = opts["beam_size"]
+        esize_one = opts["beam_size"]
+        eos_code = target_dict.eos
+        decode_maxlen = opts["decode_len"]
+        still_going = False
+        for _ in range(decode_maxlen):
+            # expand and generate cands
+            sc.calc_step(opens, xs)
+            results = sc.get_result_values(opens, ["results"])[0]    # list of list of list of scores
+            next_opens = []
+            still_going = False
+            for j in range(bsize):
+                one_inst, one_end, one_res = opens[j], ends[j], results[j]
+                # for one instance
+                extended_candidates = []
+                # pruning locally
+                for i in range(len(one_inst)):
+                    one_state, one_score = one_inst[i], one_res[i]
+                    top_cands = one_score.argmax(esize_one)
+                    for cand_action in top_cands:
+                        code = int(cand_action)
+                        prob = one_score[code]
+                        next_one = MTState(prev=one_state, action=MTAction(code, numpy.log(prob), prob=prob))
+                        extended_candidates.append(next_one)
+                # sort globally
+                best_cands = sorted(extended_candidates, key=lambda x: x.score_partial, reverse=True)[:esize_all]
+                # pruning globally & set up
+                # todo(warn): decrease beam size here
+                next_opens_one = []
+                cap = max(0, esize_all-len(one_end))
+                for j in range(cap):
+                    one_cand = best_cands[j]
+                    if int(one_cand.action) == eos_code:
+                        one_cand.mark_end()
+                        one_end.append(one_cand)
+                    else:
+                        next_opens_one.append(one_cand)
+                next_opens.append(next_opens_one)
+                cap = max(0, esize_all-len(one_end))
+                still_going = still_going or (cap>0)
+            opens = next_opens
+            if not still_going:
+                break
+        # finish up the un-finished (maybe +1 step)
+        if still_going:
+            sc.calc_step(opens, xs)
+            results = sc.get_result_values(opens, ["results"])[0]
+            for j in range(bsize):
+                one_inst, one_end, one_res = opens[j], ends[j], results[j]
+                for i in range(len(one_inst)):
+                    one_state, one_score = one_inst[i], one_res[i]
+                    code = eos_code
+                    prob = one_score[code]
+                    finished_one = MTState(prev=one_state, action=MTAction(code, numpy.log(prob), prob=prob))
+                    finished_one.mark_end()
+                    one_end.append(finished_one)
+        # re-ranking to the final ones
+        # todo: length normer: to final_score
+        final_list = [sorted(beam, key=lambda x: x.score_partial, reverse=True) for beam in ends]
+        return final_list
+
+# b ztry1/mt_search:262
+# p ends[0][0].sg.bfs()
+
+##### legacy of 2017.12 #####
+##### ================= #####
+
+# loss functions
+
+    # def _hinge_loss_step(self, scores_exprs, ystep, mask_expr, loss_max):
+    #     if self.margin_ > 0.:
+    #         scores_exprs = layers.BK.add_margin(scores_exprs, ystep, self.margin_)
+    #     gold_expr = layers.BK.pick_batch(scores_exprs, ystep)
+    #     scores_exprs -= gold_expr
+    #     hinge_expr = layers.BK.rectify(scores_exprs)
+    #     if loss_max:
+    #         one_loss = layers.BK.max_dim(hinge_expr)
+    #     else:
+    #         sum_expr = layers.BK.esum(hinge_expr)
+    #         count_expr = layers.BK.count_nonzero(hinge_expr)
+    #         one_loss = layers.BK.cdiv(sum_expr, count_expr)
+    #     if mask_expr is not None:
+    #         one_loss = one_loss * mask_expr
+    #     return one_loss
+
+    def _hinge_max_loss_step(self, scores_exprs, ystep, mask_expr):
+        scores_val = layers.BK.get_value_v(scores_exprs)
+        # max(s+margin_)
+        max_idxs = []
+        for i in range(len(scores_val)):
+            scores_val_one = scores_val[i]
+            scores_val_one[ystep[i]] -= self.margin_
+            one_idx = scores_val_one.argmax()
+            max_idxs.append(one_idx)
+        # get loss
+        one_loss = layers.BK.pick_batch(scores_exprs, max_idxs) - layers.BK.pick_batch(scores_exprs, ystep)
+        if mask_expr is not None:
+            one_loss = one_loss * mask_expr
+        return one_loss
+
+# def count_nonzero(expr):
+#     TMP_MUL = 1000
+#     dd, bs = dims(expr), bsize(expr)
+#     utils.zcheck(len(dd) == 1, "Currently only support dim=1.")
+#     count_expr = esum(dy.bmin(expr*TMP_MUL, dy.ones((dd[0],), batch_size=bs)))
+#     return nobackprop(count_expr)       # todo(warn): only for its value
+
+def _hinge_avg_loss_step(self, scores_exprs, ystep, mask_expr):
+        one_loss_all = layers.BK.hinge_batch(scores_exprs, ystep)
+        scores_val = layers.BK.get_value_v(scores_exprs)
+        lengths = []
+        for i in range(len(scores_val)):
+            scores_val_one = scores_val[i]
+            thresh = scores_val_one[ystep[i]] - self.margin_ + 1e-3     # todo(warn): slightly larger
+            count = (scores_val_one>thresh).sum()
+            lengths.append(count)
+        # get loss
+        length_np = np.asarray(lengths).reshape((1, -1))
+        one_loss = layers.BK.cdiv(one_loss_all, layers.BK.inputTensor(length_np, True))
+        if mask_expr is not None:
+            one_loss = one_loss * mask_expr
+        return one_loss
+
+# ---------------
+def fb_standard_(self, insts, training, ret_value="loss"):
+        xs = [i[0] for i in insts]
+        if self.get_prop("r2l"):
+            # right to left modeling, be careful about eos
+            ys = [list(reversed(i[1][:-1]))+[i[1][-1]] for i in insts]
+        else:
+            ys = [i[1] for i in insts]
+        bsize = len(xs)
+        # opens = [State(sg=SearchGraph()) for _ in range(bsize)]     # with only one init state
+        xlens = [len(_x) for _x in xs]
+        ylens = [len(_y) for _y in ys]
+        cur_maxlen = max(ylens)
+        losses = []
+        caches = []
+        yprev = None
+        for i in range(cur_maxlen):
+            # forward
+            ystep, mask_expr = prepare_y_step(ys, i)
+            if i==0:
+                cc = self.start(xs, softmax=False)
+                if self.is_fitting_length:
+                    pred_lens = self.lg.calculate(cc["summ"], xlens)
+                    loss_len = self.lg.ll_loss(pred_lens, ylens)
+            else:
+                cc = self.step(caches[-1], yprev, softmax=False)
+            caches.append(cc)
+            yprev = ystep
+            # build loss
+            scores_exprs = cc["out_s"]
+            loss = self.losser_(scores_exprs, ystep, mask_expr)
+            if self.scaler is not None:
+                len_scales = [self.scaler(len(_y)) for _y in ys]
+                np.asarray(len_scales).reshape((1, -1))
+                len_scalue_e = layers.BK.inputTensor(len_scales, True)
+                loss = loss * len_scalue_e
+            losses.append(loss)
+            # prepare next steps: only following gold
+            # new_opens = [State(prev=ss, action=Action(yy, 0.)) for ss, yy in zip(opens, ystep)]
+            # opens = new_opens
+        # -- final
+        loss0 = layers.BK.esum(losses)
+        loss_y = layers.BK.sum_batches(loss0) / bsize
+        if self.is_fitting_length:
+            loss = loss_y + loss_len * self.len_lambda      # todo(warn): must be there
+        else:
+            loss = loss_y
+        if training:
+            layers.BK.forward(loss)
+            layers.BK.backward(loss)
+        # return value?
+        if ret_value == "loss":
+            lossy_val = layers.BK.get_value_sca(loss_y)
+            loss_len_val = -1.
+            if self.is_fitting_length:
+                loss_len_val = layers.BK.get_value_sca(loss_len)
+            return {"y": lossy_val*bsize, "len": loss_len_val}
+        elif ret_value == "losses":
+            # return token-wise loss
+            origin_values = [layers.BK.get_value_vec(i) for i in losses]
+            reshaped_values = [[origin_values[j][i] for j in range(yl)] for i, yl in enumerate(ylens)]
+            if self.get_prop("r2l"):
+                reshaped_values = [list(reversed(one[:-1]))+[one[-1]] for one in reshaped_values]
+            return reshaped_values
+        else:
+            return {}

@@ -1,6 +1,7 @@
 # some useful functions
 import sys, gzip, platform, subprocess, os, time
 import numpy as np
+from collections import Iterable
 
 # Part 0: loggings
 def zopen(filename, mode='r'):
@@ -15,7 +16,7 @@ def zlog(s, func="plain", flush=True):
 class Logger(object):
     _instance = None
     _logger_heads = {
-        "plain":"-- ", "time":"## ", "io":"== ", "info":"** ", "score":"%% ",
+        "plain":"-- ", "details":">> ", "time":"## ", "io":"== ", "info":"** ", "score":"%% ",
         "warn":"!! ", "fatal":"KI ", "debug":"DE ", "none":"**INVALID-CODE**"
     }
     @staticmethod
@@ -62,22 +63,65 @@ class Logger(object):
     # todo (register or filter files & codes)
 
 # Part 1: checkers
-def zcheck(ff, ss, func):
-    if Checker._checker_enabled:
-        Checker._instance._check(ff, ss, func)
+# Checkings: also including some shortcuts for convenience
 
-def zforced_check(ff, ss):
-    Checker._instance._check(ff, ss, "forced")
-
-def zfatal():
+def zfatal(ss=""):
+    zlog(ss, func="fatal")
     raise RuntimeError()
+
+# general
+def zcheck(ff, ss, func="fatal", _forced=False):
+    if Checker.enabled() or _forced:
+        Checker._instance._check(ff, ss, func, _forced)
+
+# -- len(a) == len(b)
+def zcheck_matched_length(a, b, func="fatal", _forced=False):
+    if Checker.enabled() or _forced:
+        la, lb = len(a), len(b)
+        Checker._instance._check(la==lb, "Failed matched_length checking, %s / %s for %s / %s" % (la, lb, type(a), type(b)), func, _forced)
+
+# x in [a, b)
+def zcheck_range(x, a=None, b=None, func="fatal", _forced=False):
+    if Checker.enabled() or _forced:
+        flag = True
+        if a is not None and x < a:
+            flag = False
+        elif b is not None and x >= b:
+            flag = False
+        Checker._instance._check(flag, "Failed range checking, %s not in [%s, %s)" % (x, a, b), func, _forced)
+
+# type
+def zcheck_type(x, t, func="fatal", _forced=False):
+    if Checker.enabled() or _forced:
+        Checker._instance._check(isinstance(x, t), "Failed in type checking, %s is not %s" % (x, t), func, _forced)
+
+# x in y
+def zcheck_in(x, y, func="fatal", _forced=False):
+    if Checker.enabled() or _forced:
+        Checker._instance._check(x in y, "Failed in checking, %s not in %s" % (x, type(y)), func, _forced)
+
+# function
+def zcheck_ff(x, ff, finfo, func="fatal", _forced=False):
+    if Checker.enabled() or _forced:
+        Checker._instance._check(ff(x), "Failed function checking, %s by %s (%s)" % (x, ff, finfo), func, _forced)
+
+# function_iter
+def zcheck_ff_iter(ii, ff, finfo, func="fatal", _forced=False):
+    if Checker.enabled() or _forced:
+        for i, one in enumerate(ii):
+            Checker._instance._check(ff(one), "Failed function-iter checking, %s-th element %s by %s (%s)" % (i, one, ff, finfo), func, _forced)
 
 # should be used when debugging or only fatal ones, comment out if real usage
 class Checker(object):
     _instance = None
     _checker_filters = {"warn": True, "fatal": True}
     _checker_handlers = {"warn": (lambda: 0), "fatal": (lambda: zfatal())}
-    _checker_enabled = True  # todo(warn) a better way to disable is to comment out
+    _checker_enabled = True
+
+    @staticmethod
+    def enabled():
+        # todo(warn) a better way to disable is to comment out
+        return Checker._checker_enabled
 
     @staticmethod
     def init(enabled):
@@ -89,16 +133,11 @@ class Checker(object):
         self.func_filters = func_filters
         self.func_handlers = func_handlers
 
-    def _check(self, form, ss, func):
-        if self._checker_filters[func]:
+    def _check(self, form, ss, func, forced):
+        if forced or self._checker_filters[func]:
             if not form:
                 zlog(ss, func=func)
                 self.func_handlers[func]()
-
-    def _forced_check(self, form, ss):
-        if not form:
-            zlog(ss, func="fatal")
-            zfatal()
 
     # todo (manage filters and recordings)
 
@@ -169,7 +208,7 @@ class Timer(Task):
         self.info = info
         self.accu = 0.   # accumulated time
         self.paused = False
-        self.start = None
+        self.start = Timer.systime()
 
     def pause(self):
         if not self.paused:
@@ -219,7 +258,8 @@ class Random(object):
         if task not in Random._seeds:
             one = 1
             for t in task:
-                one = one * ord(t) // (2**31)
+                one = one * ord(t) % (2**30)
+            one += 1
             Random._seeds[task] = np.random.RandomState(one)
         return Random._seeds[task]
 
@@ -228,49 +268,125 @@ class Random(object):
         np.random.seed(12345)
 
     @staticmethod
-    def _function(task, *argv):
-        rg = Random.get_generator(task)
+    def _function(task, type, *argv):
+        rg = Random.get_generator(type)
         return getattr(rg, task)(*argv)
 
     @staticmethod
-    def shuffle(xs):
-        Random._function("shuffle", xs)
+    def shuffle(xs, type):
+        Random._function("shuffle", type, xs)
 
     @staticmethod
-    def binomial(n, p, size):
-        return Random._function("binomial", n, p, size)
+    def binomial(n, p, size, type):
+        return Random._function("binomial", type, n, p, size)
 
     @staticmethod
-    def ortho_weight(ndim):
-        W = Random._function("randn", ndim, ndim)
+    def ortho_weight(ndim, type):
+        W = Random.randn_clip((ndim, ndim), type)
         u, s, v = np.linalg.svd(W)
         return u.astype(np.float)
 
+    @staticmethod
+    def rand(dims, type):
+        return Random._function("rand", type, *dims)
+
+    @staticmethod
+    def randn_clip(dims, type):
+        w = Random._function("randn", type, *dims)
+        w.clip(-2, 2)   # clip [-2*si, 2*si]
+        return w
+
+    @staticmethod
+    def multinomial_select(probs, type):
+        # once selection
+        x = Random._function("multinomial", type, 1, probs, 1)
+        return int(np.argmax(x[0]))
+
+# convenience for basic classes like lists and dicts
+class Helper(object):
+    @staticmethod
+    def combine_dicts(*args, func="fatal", relax=set()):
+        # combine {}s, but warn/fatal when finding repeated keys
+        x = {}
+        for one in args:
+            for k in one:
+                if k in x and k not in relax:
+                    zcheck(False, "Repeated key %s: replacing %s with %s?" % (k, x[k], one[k]), func, _forced=True)
+                x[k] = one[k]
+        return x
+
+    @staticmethod
+    def stream_on_file(fd, tok=(lambda x: x.strip().split())):
+        for line in fd:
+            for w in tok(line):
+                yield w
+
+    @staticmethod
+    def stream_rec(obj):
+        if isinstance(obj, Iterable):
+            for x in obj:
+                for y in Helper.stream_rec(x):
+                    yield y
+        else:
+            yield obj
+
+    @staticmethod
+    def repeat_list(l, time):
+        ret = []
+        for one in l:
+            for i in range(time):
+                ret.append(one)
+        return ret
+
+    @staticmethod
+    def shrink_list(l, time):
+        ret = []
+        zcheck(len(l)%time==0, "Unlegal shrink")
+        for i in range(len(l)//time):
+            ret.append(l[i*time])
+        return ret
+
+    @staticmethod
+    def add_inplace_list(a, b, mu=1):
+        # a += b
+        zcheck_matched_length(a, b)
+        for i in range(len(a)):
+            a[i] += mu*b[i]
+
+    @staticmethod
+    def system(cmd, popen=False, print=False, check=False):
+        if print:
+            zlog("Executing cmd: %s" % cmd)
+        if popen:
+            p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+            n = p.wait()
+            output = p.stdout.read()
+            if print:
+                zlog("Output is: %s" % output)
+        else:
+            n = os.system(cmd)
+            output = None
+        if check:
+            assert n==0
+        return output
+
+# constants
+class Constants(object):
+    MAX_V = 12345678
+    MIN_V = -12345678
+
 # Calling once at start, init them all
 def init(extra_file=Logger.MAGIC_CODE):
-    Logger.init([extra_file, sys.stderr])
+    flist = [sys.stderr]
+    if len(extra_file) > 0:
+        flist.append(extra_file)
+    Logger.init(flist)
     Checker.init(True)
     Timer.init()
     Random.init()
+    # init_print
+    zlog("*cmd: %s" % ' '.join(sys.argv))
+    zlog("*platform: %s" % ' '.join(platform.uname()))
 
 # ========================================================== #
 # outside perspective: init, zlog, zcheck, Random, Timer
-def _test():
-    init("test.log")
-    zlog("this starts the test", func="debug")
-    with Timer("test", print_date=True):
-        zcheck(100==1+99, "math", "fatal")
-        zcheck(100==1, "math2", "warn")
-    with Timer("test", print_date=True, accumulated=True):
-        for _ in range(100):
-            z = Random.binomial(1, 0.1, 100)
-        zlog(z)
-    with Timer("test", print_date=True, accumulated=True):
-        zcheck(100==1+99, "math", "fatal")
-        for _ in range(100):
-            z = Random.binomial(1, 0.1, 100)
-        zcheck(100==1, "math2", "warn")
-    zlog(Task.get_accu(), func="info")
-
-if __name__ == '__main__':
-    _test()

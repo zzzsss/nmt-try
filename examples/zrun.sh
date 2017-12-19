@@ -87,17 +87,90 @@ python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --b
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.2 idrop_embedding 0.1 rnn_type lstm" -p 7
 
 # 17.10.8 (tuning again)
-# t0-noshuffle (x46)
+# t0-noshuffle (x46) (35.4+, 35.4)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.2 idrop_embedding 0.1 no_shuffle_training_data" -p 6
-# t1-d0.4 (x46)
+# t1-d0.4 (x46) (!!35.7+, 35.7)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.1" -p 7
-# idrop
+# idrop (35.4+, 35.5+)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends idrop_rec 0.2 gdrop_rec 0.2 idrop_embedding 0.1" -p 3
-# avg
+# avg (34.3+, 35.5+, not fully)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type avg gdrop_rec 0.2 idrop_embedding 0.1" -p 5
-# rnn
+# rnn (33+, 34+)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.2 idrop_embedding 0.1 dec_type att" -p 6
-# lrate
+# lrate (34.8+, 34.9+, not fully)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.2 idrop_embedding 0.1 lrate 0.0002" -p 7
-# momentum (x46)
-python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.2 idrop_embedding 0.1 trainer_type momentum lrate 0.2 moment 0.6" -p 2
+# momentum (x46) (35.0, 35.1)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.2 idrop_embedding 0.1 trainer_type momentum lrate 0.2 moment 0.6" -p 3
+
+# findings:
+# 1. seems that larger gdrop helps ...
+# 2. cGRU helps
+
+# 17.10.11
+# 0, base (35.3+, 36.08)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.1" -p 3
+# 1, drop1 (36.0, 36.25)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.4 drop_hidden 0.4 drop_embedding 0.4" -p 5
+# 2, drop2 (35.4+, 36.20)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.3 idrop_embedding 0.3 drop_hidden 0.3 drop_embedding 0.3" -p 6
+# 3, left for exploring
+# ... -p 7
+# 4(x46), bi-affine (35.9, 35.96)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.1 att_type biaff" -p 3
+# 5(x46), bi-affine + cov (36.0, 35.82)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.1 att_type biaff coverage_dim 10 coverage_dim_hidden 100" -p 6
+# 6(x46), bi-affine + cov2 (36.0, 35.93)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.1 att_type biaff coverage_dim 50 coverage_dim_hidden 100" -p 7
+
+# 17.10.15
+# now run nematus again on z5 (x46)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t nematus --batch_size 80 --extras "dropout_embedding 0.4 dropout_hidden 0.4 dropout_source 0.4 dropout_target 0.4 use_dropout" -p 6 # (too large dropout, skip)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t nematus --batch_size 80 --extras "dropout_embedding 0.2 dropout_hidden 0.2 dropout_source 0.1 dropout_target 0.1 use_dropout" -p 7 # (36.5, 36.7)
+# and back on x48
+# 0. base on z5 (36.2, 36.7)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.4 drop_hidden 0.4 drop_embedding 0.4" -p 3
+# 1. base (36.2, 36.3)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.4 drop_hidden 0.4 drop_embedding 0.4" -p 4
+# 2. bi-affine (36.2, 35.8)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.4 drop_hidden 0.4 drop_embedding 0.4 att_type biaff" -p 5
+# 3. small (35.7, 35.5)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.4 drop_hidden 0.4 drop_embedding 0.4 hidden_rec 500 hidden_att 500" -p 6
+# 4. all dropouts (35.6, 36.2)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/en-fr/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.4 drop_hidden 0.4 drop_embedding 0.4 idrop_rec 0.4" -p 7
+
+# findings:
+# (maybe) Too-large (many) dropouts are not that good.
+
+# 17.10.20
+## now start to turn to z5 & JE
+# base nematus (x47) (oom)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../ja_en_data_z5 -t nematus --batch_size 80 --extras "dropout_embedding 0.2 dropout_hidden 0.2 dropout_source 0.1 dropout_target 0.1 n_words_src 50000 n_words 50000 use_dropout" -z 6 -p 6
+# 0. drop (35.76, 36.02)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2" -z 6 -p 5
+# 1. biaffine (36.21, 36.29)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 att_type biaff" -z 6 -p 7
+##
+# JE on x46
+# 0. drop
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../ja_en_data_z5 -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 dicts_thres 50000" -z 6 -p 6
+# 1. biaffine
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../ja_en_data_z5 -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 att_type biaff dicts_thres 50000" -z 6 -p 7
+
+# 17.10.26
+## final tuning on dropouts
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.5 drop_hidden 0.2 idrop_embedding 0.2 drop_embedding 0.2" -z 6 -p 5
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.5 drop_hidden 0.2 idrop_embedding 0.1 drop_embedding 0.1" -z 6 -p 6
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.5 drop_hidden 0.2 idrop_embedding 0.1 drop_embedding 0.2" -z 6 -p 7
+# => 35+, maybe slightly too large gdrop
+
+# 17.10.29
+# see what is for wmt_ef (30k vocab)
+# python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../en_fr_data_z5/set2/ -t nematus --batch_size 80 --extras "dropout_source 0.1 dropout_target 0.1 n_words_src 30000 n_words 30000 use_dropout" -p 1
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../en_fr_data_z5/set2/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 dicts_thres 30000" -p 4
+
+# 17.10.30
+# ..., don't know what to run, please finish ztry1 as soon as possible
+# if several runs will be quite different?
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2" -z 6 -p 5
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2" -z 6 -p 6
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/wit3-en-fr_z5/ -t znmt --batch_size 80 --patience 3 --extras "summ_type ends gdrop_rec 0.4 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2" -z 6 -p 7

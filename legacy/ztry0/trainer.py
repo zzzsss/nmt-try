@@ -1,6 +1,11 @@
+import json
+
 import dynet as dy
-import json, numpy
-import utils, decode, eval
+import numpy
+from . import decode, utils
+
+from ztry0 import eval
+
 
 class TrainingProgress(object):
     '''
@@ -25,6 +30,10 @@ class TrainingProgress(object):
         self.hist_train_loss = []
         self.best_scores = -12345678
         self.best_point = -1
+
+    def report(self):
+        for k in sorted(self.__dict__):
+            utils.printing("Training progress results: %s = %s." % (k, self.__dict__[k]), func="score")
 
 class Trainer(object):
     TP_TAIL = ".progress.json"
@@ -148,7 +157,7 @@ class Trainer(object):
                     ttp.bad_counter = 0
                     ttp.anneal_restarts_points.append(ss)
                     if ttp.anneal_restarts_done < self.opts["anneal_restarts"]:
-                        utils.printing("Patience -= 1, annealing for %s." % (self._tp.anneal_restarts_done+1), func="info")
+                        utils.printing("Patience -= 1, annealing for %s." % (self._tp.anneal_restarts_done + 1), func="info")
                         if self.opts["anneal_reload_best"]:
                             self.load(Trainer.BEST_PREFIX+self.opts["model"], False)   # load model, but not process
                         self._tp.anneal_restarts_done += 1                      # new tp now maybe
@@ -156,6 +165,7 @@ class Trainer(object):
                     else:
                         utils.printing("Sorry, Early Update !!", func="warn")
                         ttp.estop = True
+        self._tp.report()
         utils.printing("", func="info")     # to see it more clearly
 
     # main training
@@ -164,7 +174,7 @@ class Trainer(object):
         while not self._finished():     # epochs
             # utils.printing("", func="info")
             with utils.Timer(name="Iter %s" % self._tp.eidx, print_date=True) as et:
-                iter_recorder = utils.OnceRecorder("ITER-%s"%self._tp.eidx)
+                iter_recorder = utils.OnceRecorder("ITER-%s" % self._tp.eidx)
                 for xs, ys, tk_x, tk_t in train_iter:
                     if numpy.random.random() < self.opts["rand_skip"]:     # introduce certain randomness
                         continue
