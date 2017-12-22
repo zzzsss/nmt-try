@@ -50,3 +50,31 @@ p = t2_t.max_and_argmax(0, K)
 
 for i in range(BATCH_SIZE):
     print(np.argsort(v[i*VOCAB_SIZE:(i+1)*VOCAB_SIZE])[-K:])
+
+# =================
+# test count_larger
+import dynet as dy
+import numpy as np
+VOCAB_SIZE = 1000
+BATCH_SIZE = 20
+x = [float(np.random.randint(0, 10000)) for i in range(VOCAB_SIZE*BATCH_SIZE)]
+y = [float(np.random.randint(0, 10000)) for i in range(BATCH_SIZE)]
+tx = dy.inputVector(x)
+tx2 = dy.reshape(tx, (VOCAB_SIZE,), BATCH_SIZE)
+tx2_t = tx2.tensor_value()
+ty = dy.inputVector(y)
+ty2 = dy.reshape(ty, (1,), BATCH_SIZE)
+ty2_t = ty2.tensor_value()
+
+p = tx2_t.count_larger(ty2_t)
+
+pp = []
+for i in range(BATCH_SIZE):
+    c = 0
+    for j in range(VOCAB_SIZE):
+        if x[i*VOCAB_SIZE+j] > y[i]:
+            c += 1
+    pp.append(c)
+
+print(p)
+print(pp)

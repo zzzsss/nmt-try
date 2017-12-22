@@ -106,8 +106,7 @@ class s2sModel(Model):
         if opts["no_model_softmax"]:
             self.set_prop("no_model_softmax", True)
         self.fber_ = {"std2":self.fb_standard2_, "beam":self.fb_beam_, "branch":self.fb_branch_}[opts["train_mode"]]
-        self.losser_ = {"mle":self._mle_loss_step, "mlev":self._mlev_loss_step, "hinge_max":self._hinge_max_loss_step,
-                        "hinge_avg":self._hinge_avg_loss_step, "hinge_sum":self._hinge_sum_loss_step}[opts["train_local_loss"]]
+        self.losser_ = {"mle":self._mle_loss_step, "mlev":self._mlev_loss_step, "hinge_max":self._hinge_max_loss_step, "hinge_avg0":self._hinge_avg0_loss_step, "hinge_avg":self._hinge_avg_loss_step, "hinge_sum":self._hinge_sum_loss_step}[opts["train_local_loss"]]
         self.margin_ = opts["train_margin"]
         utils.zlog("For the training process %s, using %s; loss is %s, using %s; margin is %s"
                    % (opts["train_mode"], self.fber_, opts["train_local_loss"], self.losser_, self.margin_))
@@ -381,6 +380,17 @@ class s2sModel(Model):
         count_exprs = layers.BK.sum_elems(layers.BK.logistic(scores_exprs))
         count_exprs = layers.BK.nobackprop(count_exprs)
         one_loss = layers.BK.cdiv(one_loss_all, count_exprs+1)
+        if mask_expr is not None:
+            one_loss = one_loss * mask_expr
+        return one_loss
+
+    def _hinge_avg0_loss_step(self, scores_exprs, ystep, mask_expr):
+        one_loss_all = layers.BK.hinge_batch(scores_exprs, ystep, self.margin_)
+        gold_exprs = layers.BK.pick_batch(scores_exprs, ystep)
+        gold_exprs_minus = gold_exprs - self.margin_
+        counts = layers.BK.count_larger(scores_exprs, gold_exprs_minus)
+        counts_expr = layers.BK.inputVector_batch(counts)
+        one_loss = layers.BK.cdiv(one_loss_all, counts_expr)
         if mask_expr is not None:
             one_loss = one_loss * mask_expr
         return one_loss

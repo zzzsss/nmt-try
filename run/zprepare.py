@@ -10,7 +10,7 @@ import sys
 def init():
     print(" ".join(sys.argv))
     p = argparse.ArgumentParser()
-    p.add_argument("--tool", "-t", type=str, required=True, choices=["nematus", "xnmt", "znmt", "opennmt", "znmt_zh"])
+    p.add_argument("--tool", "-t", type=str, required=True, choices=["nematus", "nematus_zh", "xnmt", "znmt", "opennmt", "znmt_zh"])
     p.add_argument("--device", "-p", type=int, required=True, help="-1:cpu >0:gpu")
     p.add_argument("--datadir", "-d", type=str, required=True)
     p.add_argument("--rundir", type=str)    # None means current one (pwd)
@@ -119,6 +119,10 @@ def main():
         "nematus": [
             ["run_nematus.sh", "_test.sh", args, {"_nematus_device":("cuda" if is_gpu else "cpu"), "_nematus_valid_script":"./_nematus_valid.sh"}],
             ["_nematus_valid.sh", "_nematus_valid.sh", args, {}]
+        ],
+        "nematus_zh": [
+            ["run_nematus_zh.sh", "_test.sh", args, {"_nematus_device":("cuda" if is_gpu else "cpu"), "_nematus_valid_script":"./_nematus_valid_zh.sh"}],
+            ["_nematus_valid_zh.sh", "_nematus_valid_zh.sh", args, {}]
         ],
         "xnmt": [
             ["run_xnmt.sh", "_test.sh", args, {"_xnmt_yaml": "_xnmt.yaml"}],

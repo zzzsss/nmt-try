@@ -201,13 +201,13 @@ def init(phase):
     training2.add_argument('--no_model_softmax', action='store_true', help="No adding softmax for vocab output (direct score)")
     training2.add_argument('--train_r2l', action='store_true', help="training right to left model")
     training2.add_argument('--train_mode', type=str, default="std2", choices=["std2", "beam", "branch"], help="which training process?")
-    training2.add_argument('--train_local_loss', type=str, default="mle", choices=["mle", "mlev", "hinge_max", "hinge_avg", "hinge_sum"], help="Training objective.")
+    training2.add_argument('--train_local_loss', type=str, default="mle", choices=["mle", "mlev", "hinge_max", "hinge_avg", "hinge_avg0", "hinge_sum"], help="Training objective.")
     training2.add_argument('--train_margin', type=float, default=0., help="The margin for margin-training.")
     # # # # #
     # -- start training with non-gold seq (reusing opts from other parts)
     # === general mode
     training2.add_argument('--t2_search_ratio', type=float, default=1.0, help="Max search steps ratio according to reference.")
-    training2.add_argument('--t2_gold_run', action='store_action', help="First running a gold sequence.")
+    training2.add_argument('--t2_gold_run', action='store_true', help="First running a gold sequence.")
     training2.add_argument('--t2_beam_size', type=int, default=1, help="Beam size for beam training2.")
     #
     training2.add_argument('--t2_local_expand', type=int, default=100, help="Most expansions for each state.")
@@ -220,7 +220,7 @@ def init(phase):
     training2.add_argument('--t2_gngram_range', type=int, default=0, help="Number of the range of history for matching gold, 0 for none, n for 2n-1.")
     #
     # === LASER
-    training2.add_argument()
+
 
     # extra: for advanced decoding
     decode2 = parser.add_argument_group('decoding parameters section2')

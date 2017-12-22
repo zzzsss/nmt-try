@@ -18,6 +18,7 @@ log = dy.log
 hinge_batch = dy.hinge_batch
 inputTensor = dy.inputTensor
 inputVector = dy.inputVector
+inputVector_batch = lambda x: reshape(inputVector(x), (1,), len(x))
 logistic = dy.logistic
 lookup_batch = dy.lookup_batch
 max_dim = dy.max_dim
@@ -235,6 +236,7 @@ def add_margin(bexpr, yidxs, margin):
 #     max_val = get_value_vec(max_exprs)
 #     return idxs, max_val
 
+# =============== topk
 def NEVER_KNOWN_LOCAL_nargmax(v, n):
     # return ORDERED list of (id, value)
     thres = max(-len(v), -n)
@@ -273,6 +275,28 @@ def topk_gpu(expr, k, prepare=True):
 
 topk = topk_gpu
 
+# =============== count_larger
+def cl_cpu(ex, ey):
+    vx = get_value_np(ex)
+    vy = get_value_np(ey)
+    ret = []
+    for i in range(len(vx)):
+        c = np.sum(vx[i]>vy[i])
+        ret.append(int(c))
+    return ret
+
+def cl_gpu(ex, ey):
+    tv = ex.tensor_value()
+    ty = ey.tensor_value()
+    pp = tv.count_larger(ty)
+    # # debug
+    # if True:
+    #     ppc = cl_cpu(ex, ey)
+    #     utils.zcheck(ppc==pp, "Error on count_larger.")
+    return pp
+
+count_larger = cl_gpu
+
 # ------------- CONFIGS -------------
 class DY_CONFIG:
     immediate_compute = False
@@ -291,4 +315,6 @@ def init(opts):
     if "GPU" not in opts["dynet-devices"]:
         global topk
         topk = topk_cpu
-        utils.zlog("Currently using numpy for topk_cpu.")
+        global count_larger
+        count_larger = cl_cpu
+        utils.zlog("Currently using numpy for topk_cpu/count_larger.")
