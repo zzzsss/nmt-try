@@ -45,9 +45,14 @@ def init(phase):
         data.add_argument('--models', '-m', type=str, default=["zbest.model"], metavar='PATHs', nargs="*",
                              help="model file names (ensemble if >1)")
         data.add_argument("--loop", action='store_true', help="Entering looping mode, reading from std-inputs.")
-        ## no use, just for convenience
+        # ----------
+        # -- no used options, just for convenience of the train-test scripts
         data.add_argument('--dicts_rthres', type=int, default=50000, metavar='INT', help="NON-USED OPTION")
         data.add_argument('--dicts_fthres', type=int, default=1, metavar='INT', help="NON-USED OPTION")
+        data.add_argument('--no_rebuild_dicts', action='store_false', help="NON-USED OPTION")
+        data.add_argument('--reload', action='store_true', help="NON-USED OPTION")
+        data.add_argument('--reload_model_name', type=str, help="NON-USED OPTION")
+        data.add_argument('--no_reload_training_progress', action='store_false', help="NON-USED OPTION")
     else:
         raise NotImplementedError(phase)
 
@@ -205,7 +210,7 @@ def init(phase):
     training2.add_argument('--train_margin', type=float, default=0., help="The margin for margin-training.")
     # # # # #
     # -- start training with non-gold seq (reusing opts from other parts)
-    # === general mode
+    # === fb_beam
     training2.add_argument('--t2_search_ratio', type=float, default=1.0, help="Max search steps ratio according to reference.")
     training2.add_argument('--t2_gold_run', action='store_true', help="First running a gold sequence.")
     training2.add_argument('--t2_beam_size', type=int, default=1, help="Beam size for beam training2.")
@@ -219,14 +224,20 @@ def init(phase):
     training2.add_argument('--t2_gngram_n', type=int, default=5, help="Nth tailing ngram sig for matching gold.")
     training2.add_argument('--t2_gngram_range', type=int, default=0, help="Number of the range of history for matching gold, 0 for none, n for 2n-1.")
     #
-    # === LASER
-
+    # how gold will influence the searching (suggest using up=end if setting GI)
+    training2.add_argument('--t2_gi_mode', type=str, default="none", choices=["none", "laso", "ngatt"], help="How gold will influence the learning")
+    # about the loss function
+    # -> the final loss: perceptron; local-prob-with-err-states
+    training2.add_argument('--t2_beam_loss', type=str, default="per", choices=["per", "err"], help="what is the loss for fb_beam?")
+    # -> updating point: early-update(first-gi-point:FG); max-violation; at-end(all-gi-points or end points)
+    training2.add_argument('--t2_beam_up', type=str, default="end", choices=["ag", "mv", "end"], help="The updating points")
+    # -> how to compare the state scores for attached points
+    training2.add_argument('--t2_compare_at', type=str, default="norm", choices=["norm", "none"], help="Normalizing methods for fb_beam")
 
     # extra: for advanced decoding
     decode2 = parser.add_argument_group('decoding parameters section2')
     # -- general
     decode2.add_argument('--no_output_kbest', action='store_false', help="Output special files with all outputs.", dest="decode_output_kbest")
-    # decode2.add_argument('--no_output_score', action='store_false', help="Output scores with the outputs.", dest="decode_output_score")
     decode2.add_argument('--decode_replace_unk', action='store_true', help="Copy max-attention src for UNK.")
     decode2.add_argument('--decode_latnbest', action='store_true', help="Re-generate n-best from lattice.")
     decode2.add_argument('--decode_latnbest_nalpha', type=float, default=0.0, help="Length normalizer for lattice n-best.")

@@ -174,3 +174,10 @@ def mt_decode(decode_way, test_iter, mms, target_dict, opts, outf, gold_iter=Non
                 f.write("# znumber%s\n%s\n" % (i, r[0].sg.show_graph(target_dict, False)))
         # todo: maybe dump sg
     return results
+
+# fb_beamer's stater (like StateStater, but for training)
+class FbeamStater(object):
+    def __init__(self):
+        pass
+
+

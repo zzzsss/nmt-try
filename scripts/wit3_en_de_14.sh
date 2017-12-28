@@ -60,6 +60,9 @@ function pstep5-concat
 for lang in ${SRC} ${TRG}; do
     head -153000 train.tok.clean.${lang} > train.final.${lang}
     tail -6969 train.tok.clean.${lang} > dev.final.${lang}
+#    # according to harvardnlp-BSO's preparation script
+#    awk '{if (NR%23 == 0)  print $0; }' train.tok.clean.${lang} > dev.final.${lang}
+#    awk '{if (NR%23 != 0)  print $0; }' train.tok.clean.${lang} > train.final.${lang}
     cat dt.*.tok.${lang} > test.final.${lang}
 done
 ########### -- task specific -- ###########

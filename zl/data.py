@@ -21,7 +21,7 @@ class Vocab(object):
             word_freqs[w] += 1
         # sort
         words = [w for w in word_freqs]
-        words = sorted(words, key=lambda x: word_freqs[x], reverse=True)
+        words = sorted(words, key=lambda x: (word_freqs[x], x), reverse=True)
         # write with filters
         v = {Vocab.NON_TOKEN: 0}    # todo(warn) hard-coded
         cur_idx = 1

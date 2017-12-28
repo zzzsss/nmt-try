@@ -49,7 +49,8 @@ class Model(object):
                 self.props = json.load(fd)
             utils.zlog("Also Read Model-prop from %s." % pname, func="io")
         except:
-            self.props = {}
+            # self.props = {}
+            pass
 
     def save(self, fname):
         layers.BK.save_model(fname, self.model)

@@ -420,7 +420,7 @@ class s2sModel(Model):
         ylens_max = [int(np.ceil(_yl*self.opts["t2_search_ratio"])) for _yl in ylens]   # todo: currently, just cut off according to ref length
         # pruners (no diversity penalty here for training)
         # -> local
-        t2_local_expand = min(self.opts["t2_local_expand"], esize_all)
+        t2_local_expand = max(2, min(self.opts["t2_local_expand"], esize_all))      # todo(warn): could have err-states
         t2_local_diff = self.opts["t2_local_diff"]
         # -> global beam/gold merging for ngram
         t2_global_expand = self.opts["t2_global_expand"]
@@ -431,13 +431,17 @@ class s2sModel(Model):
         t2_gngram_range = self.opts["t2_gngram_range"]
         #
         # specific running options
-        CACHE_NAME = "CC"
+        CACHE_NAME = "CC"       # (cache-dict, batch-idx)
+        GOLD_NAME = "GD"        # BOOL: whether it is a gold state
+        ATTACH_NAME = "AT"      # State: attach to which gold state if possible
+        ABLEN_NAME = "AL"       # int: attach-based length
+        GISTATE_NAME = "GI"     # the state if gold interference
         PADDING_STATE = None
         PADDING_ACTION = 0
         EOS_ID = self.target_dict.eos
         model_softmax = not self.get_prop("no_model_softmax")
         t2_gold_run = self.opts["t2_gold_run"]
-
+        t2_gi_mode = self.opts["t2_gi_mode"]
         # => START
         State.reset_id()
         f_new_sg = lambda _i: SearchGraph(target_dict=self.target_dict, src_info=insts[_i])
@@ -474,6 +478,7 @@ class s2sModel(Model):
                 for _i in range(bsize):
                     if gold_cur[_i] is not PADDING_STATE:
                         gold_cur[_i].set(CACHE_NAME, (cc, _i))
+                        # todo(warn): not updating the accumulated scores
                         gold_cur[_i].action_score(sc_val[_i])
             gold_cur = gold_next
             gold_states.append(gold_next)
@@ -481,10 +486,15 @@ class s2sModel(Model):
         beam_states = []
         beam_cur = [[PADDING_STATE for _j in range(esize_all)] for _i in range(bsize)]
         beam_states.append(beam_cur)
-        beam_ends = []
+        beam_ends = [[] for _i in range(bsize)]
         beam_remains = [esize_all for _i in range(bsize)]
-        for _i in range(bsize):     # new search graph
-            beam_cur[_i][0] = State(sg=f_new_sg(_i))
+        beam_update_points = [[] for _i in range(bsize)]        # todo(warn): currently only recording the best points
+        for _i in range(bsize):     # set the init states
+            one = State(sg=f_new_sg(_i))
+            one.set(GOLD_NAME, True)                    # init as zero gold
+            one.set(ATTACH_NAME, gold_states[0][_i])    # attach to init gold
+            one.set(ABLEN_NAME, 0)                      # init attach-based len is 0
+            beam_cur[_i][0] = one
         # ready go, break at the end
         running_yprev = None
         running_cprev = None
@@ -498,7 +508,7 @@ class s2sModel(Model):
                 else:
                     cc = self.start(xs, repeat_time=esize_all, softmax=model_softmax)
             else:
-                cc = self.step(running_cprev, running_yprev, gold_cur, softmax=model_softmax)
+                cc = self.step(running_cprev, running_yprev, beam_cur, softmax=model_softmax)
             # attach caches
             for _i in range(bsize):
                 for _j in range(esize_all):
@@ -527,16 +537,112 @@ class s2sModel(Model):
                 global_cands.sort(key=(lambda x: x.score_partial), reverse=True)
                 # global pruning (if no bngram, then simply get the first remains[i] ones)
                 survived_global_cands = SPruner.global_prune_ngram_greedy(cand_states=global_cands, rest_beam_size=beam_remains[i], sig_beam_size=t2_global_expand, thresh=t2_global_diff, penalty=0., ngram_n=t2_bngram_n, ngram_range=t2_bngram_range)
-                # ======================
-                # gold checking
-
-            # todo(assign them)
-            running_yprev = ystep
-            running_cprev = cc
+                # =========================
+                # setting states properties
+                gold_index = -1
+                gold_prev_index = -1
+                cur_ys = ys[i]
+                for j, one in enumerate(survived_global_cands):
+                    # GOLD_NAME
+                    if one.prev.get(GOLD_NAME):
+                        gold_prev_index = j
+                        if one.length<=len(cur_ys) and one.action_code==cur_ys[one.length-1]:
+                            one.set(GOLD_NAME, True)
+                            gold_index = j
+                    # ATTACH_NAME
+                    default_len = one.prev.get(ABLEN_NAME)+1
+                    # todo: could attach back, but currently just let it be
+                    for g_step in reversed(range(max(0,default_len-t2_gngram_range+1), min(len(cur_ys), default_len+t2_gngram_range))):
+                        g_one = gold_states[g_step][i]
+                        if g_one.sig_ngram(t2_gngram_n) == one.sig_ngram(t2_gngram_n):
+                            # hit for ngram merging, mark it & break
+                            one.set(ATTACH_NAME, g_one)
+                            default_len = g_step
+                    one.set(ABLEN_NAME, default_len)
+                # =========================
+                # gold interfering (also recording the interfering point for updating)
+                # gi1: ngram gold attach: find ngram to attach on the gold seq
+                if t2_gi_mode == "ngatt":
+                    # only remain the gold-merged 1st-ranked one
+                    if survived_global_cands[0].get(ATTACH_NAME) is not None:
+                        beam_update_points[i].append(survived_global_cands[0])
+                        survived_global_cands = [survived_global_cands[0]]
+                        survived_global_cands[0].set(GISTATE_NAME, "NGATT")
+                # gi2: laso: re-pick the pruned gold state
+                elif t2_gi_mode == "laso":
+                    # re-pick the gold seq
+                    if gold_index < 0:
+                        beam_update_points[i].append(survived_global_cands[0])
+                        utils.zcheck(gold_prev_index>0, "Unreasonable non-existing prev-gold for the laso mode!!")
+                        prev_gold_ss = survived_global_cands[gold_prev_index].prev
+                        according_gold = gold_states[prev_gold_ss.length+1][i]
+                        repicked_gold = State(prev=prev_gold_ss, action=according_gold.action)
+                        repicked_gold.set(GOLD_NAME, True)
+                        repicked_gold.set(ATTACH_NAME, according_gold)
+                        repicked_gold.set(ABLEN_NAME, repicked_gold.length)
+                        repicked_gold.set(GISTATE_NAME, "LASO")
+                        survived_global_cands = [repicked_gold]
+                # nope: nothing to do
+                else:
+                    pass
+                # =========================
+                # force to eos if out of maxlen & add eos ones to ends
+                force_eos_thresh = ylens_max[i]
+                for one in survived_global_cands:
+                    # eos forcing
+                    if one.action_code != EOS_ID and one.length >= force_eos_thresh:
+                        one.action_score(0.)
+                        one.action = Action(EOS_ID, 0.)
+                    # eos recording
+                    if one.action_code == EOS_ID and beam_remains[i]>0:
+                        one.mark_end()
+                        one.set(ATTACH_NAME, gold_states[-1][i])
+                        one.set(ABLEN_NAME, gold_states[-1][i].length)
+                        beam_remains[i] -= 1
+                        beam_ends[i].append(one)
+                #
+                while len(survived_global_cands) < esize_all:
+                    survived_global_cands.append(PADDING_STATE)
+                beam_cur[i] = survived_global_cands
+            # ========================= outside recording and preparing
+            beam_states.append(beam_cur)
+            #
+            running_yprev = []
+            running_cprev_orders = []
+            for _i in range(bsize):
+                once_cands = beam_cur[_i]
+                for _j in range(esize_all):
+                    one_cand = once_cands[_j]
+                    if one_cand is None:
+                        running_yprev.append(PADDING_ACTION)
+                        running_cprev_orders.append(_i*esize_all)
+                    else:
+                        running_yprev.append(one_cand.action_code)
+                        running_cprev_orders.append(one_cand.prev.get(CACHE_NAME)[-1])
+            # todo(warn): always pad the beam, thus None for bi_orders
+            if esize_all > 1:
+                running_cprev = self.rerange(cc, running_cprev_orders, None)
+            else:
+                running_cprev = cc
             # how to break?
             step_beam += 1
-        # -- recorders
+            if all([len(br)<=0 for br in beam_remains]):
+                break
+        # ===============================
+        # -- ranking the best searched ones
+        if self.opts["t2_compare_at"] == "norm":
+            _get_score_f = (lambda x: x.score_partial/x.length)
+        else:
+            _get_score_f = (lambda x: x.score_partial)
+        for _i in range(bsize):
+            best_end = sorted(beam_ends[_i], key=_get_score_f, reverse=True)[0]
+            beam_update_points[_i].append(best_end)
+        # -- collecting loss according to update_points and use masks for batching
+
         return
+
+    # -- helpers for fb_beam
+
 
     def fb_branch_(self, insts, training, ret_value):
         # this branches from gold which is different from the search_branch_ which branches from greedy-best

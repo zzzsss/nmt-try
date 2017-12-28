@@ -226,6 +226,7 @@ class State(object):
                 self.values[n] = [str(self.action_code)] + pp[:-1]
         return self.values[n]
 
+    # padded version of list, used for ngram-decoder
     def sig_ngram_tlist(self, n, pad):
         v = -n     # todo(warn) ...
         if v not in self.values:
