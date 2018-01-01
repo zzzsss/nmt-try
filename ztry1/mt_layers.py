@@ -174,8 +174,6 @@ class Embedding(Basic):
             input_exp = [input_exp]
         # input dropouts
         if self.idrop > 0:
-            # todo
-            # input_exp = [(0 if (v<=0 and i>=self.dropout_wordceil) else i) for i,v in zip(input_exp, np.random.binomial(1, 1-self.idrop, len(input_exp)))]
             input_exp = [(0 if (v>0.5 and i<self.dropout_wordceil) else i) for i,v in zip(input_exp, np.random.binomial(1, self.idrop, len(input_exp)))]
         x = dy.lookup_batch(self.params["_E"], input_exp, self.update)
         if self.hdrop > 0:

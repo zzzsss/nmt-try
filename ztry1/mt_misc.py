@@ -11,13 +11,14 @@ import numpy as np
 ValidResult = list
 
 class OnceRecorder(object):
-    def __init__(self, name):
+    def __init__(self, name, mm=None):
         self.name = name
         self.loss = defaultdict(float)
         self.sents = 1e-6
         self.words = 1e-6
         self.updates = 0
         self.timer = utils.Timer("")
+        self._mm = mm
 
     def record(self, insts, loss, update):
         for k in loss:
@@ -28,10 +29,13 @@ class OnceRecorder(object):
 
     def reset(self):
         self.loss = self.loss = defaultdict(float)
-        self.sents = 1e-6
-        self.words = 1e-6
+        self.sents = 1e-5
+        self.words = 1e-5
         self.updates = 0
         self.timer = utils.Timer("")
+        #
+        if self._mm is not None:
+            self._mm.stat_clear()
 
     # const, only reporting, could be called many times
     def state(self):
@@ -44,6 +48,8 @@ class OnceRecorder(object):
 
     def report(self, s=""):
         utils.zlog(s+self.state(), func="info")
+        if self._mm is not None:
+            self._mm.stat_report()
 
 class MTTrainer(Trainer):
     def __init__(self, opts, model):
@@ -69,7 +75,7 @@ class MTTrainer(Trainer):
         # log likelihood
         one_recorder = self._get_recorder("VALID-LL")
         for insts in dev_iter.arrange_batches():
-            loss = self._mm.fb(insts, False)
+            loss = self._mm.fb(insts, False, run_name="std2")   # only run fb-mle
             one_recorder.record(insts, loss, 0)
         one_recorder.report()
         # todo(warn) "y" as the key
@@ -92,7 +98,7 @@ class MTTrainer(Trainer):
         return ValidResult(r)
 
     def _get_recorder(self, name):
-        return OnceRecorder(name)
+        return OnceRecorder(name, self._mm)
 
     def _fb_once(self, insts):
         return self._mm.fb(insts, True)

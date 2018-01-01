@@ -8,9 +8,21 @@ from . import mt_layers as layers
 from zl.search import State, SearchGraph, Action
 from .mt_search import Pruner as SPruner
 
+# consts
 from zl.backends.common import ResultTopk
+#
 IDX_DIM = ResultTopk.IDX_DIM
 VAL_DIM = ResultTopk.VAL_DIM
+# specific running options
+VNAME_CACHE = "CC"      # (cache-dict, batch-idx)
+VNAME_GOLD = "GD"       # BOOL: whether it is a gold state
+VNAME_ATT = "AT"        # State: attach to which gold state if possible
+VNAME_ATT_BASE = "AB"   # int: baselength for attaching (last attaching length)
+VNAME_SYNCLEN = "SY"    # int: sync length
+VNAME_GISTAT = "GI"     # gold-interf mode: means the ends of updating frags
+#
+PADDING_STATE = None
+PADDING_ACTION = 0
 
 # herlpers
 # data helpers #
@@ -105,8 +117,10 @@ class s2sModel(Model):
             self.set_prop("r2l", True)
         if opts["no_model_softmax"]:
             self.set_prop("no_model_softmax", True)
-        self.fber_ = {"std2":self.fb_standard2_, "beam":self.fb_beam_, "branch":self.fb_branch_}[opts["train_mode"]]
+        self.fb_fs = {"std2":self.fb_standard2_, "beam":self.fb_beam_, "branch":self.fb_branch_}
+        self.fber_ = self.fb_fs[opts["train_mode"]]
         self.losser_ = {"mle":self._mle_loss_step, "mlev":self._mlev_loss_step, "hinge_max":self._hinge_max_loss_step, "hinge_avg0":self._hinge_avg0_loss_step, "hinge_avg":self._hinge_avg_loss_step, "hinge_sum":self._hinge_sum_loss_step}[opts["train_local_loss"]]
+        self.beam_losser_ = BeamLossBuilder(opts, self.target_dict)
         self.margin_ = opts["train_margin"]
         utils.zlog("For the training process %s, using %s; loss is %s, using %s; margin is %s"
                    % (opts["train_mode"], self.fber_, opts["train_local_loss"], self.losser_, self.margin_))
@@ -151,12 +165,21 @@ class s2sModel(Model):
         self.out1.refresh({})
         self.lg.refresh({"idrop":_gd(opts["drop_hidden"])})
 
+    # ----------
     def update_schedule(self, uidx):
         # todo, change mode while training (before #num updates)
         # fitting len
         if not self.is_fitting_length and uidx>=self.opts["train_len_uidx"]:
             self.is_fitting_length = True
             utils.zlog("(Advanced-fitting) Model is starting to fit length.")
+
+    def stat_report(self):
+        if self.opts["train_mode"] == "beam":
+            utils.zlog(self.beam_losser_.report(), func="details")
+
+    def stat_clear(self):
+        self.beam_losser_.refresh(True)
+    # ----------
 
     # helper routines #
     def get_embeddings_step(self, tokens, embed):
@@ -198,7 +221,7 @@ class s2sModel(Model):
         x_encodes = [layers.BK.batch_repeat(one, repeat_time) for one in x_encodes]
         # init decode
         cache = self.decode_start(x_encodes)
-        start_embeds = self.get_start_yembs(bsize)
+        start_embeds = self.get_start_yembs(bsize*repeat_time)
         output_score, output_hidden = self.get_scores(cache["ctx"], cache["hid"], start_embeds)
         if softmax and not self.get_prop("no_model_softmax"):
             results = layers.BK.softmax(output_score)
@@ -261,11 +284,14 @@ class s2sModel(Model):
 
     # =============================
     # training
-    def fb(self, insts, training, ret_value="loss", new_graph=True):
+    def fb(self, insts, training, ret_value="loss", new_graph=True, run_name=None):
         if new_graph:
             Model.new_graph()
             self.refresh(training)
-        r = self.fber_(insts, training, ret_value)
+        if run_name is None:
+            r = self.fber_(insts, training, ret_value)
+        else:
+            r = self.fb_fs[run_name](insts, training, ret_value)
         return r
 
     # helpers
@@ -407,7 +433,31 @@ class s2sModel(Model):
     # -> is really not a good idea, and this should be combined with mt_search, however ...
     # -> do not re-use the decoding part of opts, rename those to t2_*
 
+    def fb_branch_(self, insts, training, ret_value):
+        # this branches from gold which is different from the search_branch_ which branches from greedy-best
+        raise NotImplementedError("To be implemented")
+        pass
+
     def fb_beam_(self, insts, training, ret_value):
+        # pieces = self.opts["t2_beam_size"]
+        # if self.opts["t2_gold_run"]:
+        #     pieces += 1
+        # real_bsize = len(insts)
+        # impl_bsize = real_bsize // pieces
+        real_bsize = len(insts)
+        impl_bsize = self.opts["t2_impl_bsize"]
+        v = 0.
+        idx = 0
+        while idx < real_bsize:
+            # reuse masks, todo(warn) always new_graph for this one
+            Model.new_graph()
+            self.refresh(training)
+            idx_bound = min(idx+impl_bsize, real_bsize)
+            v += self.fb_beam_impl_(insts[idx:idx_bound], real_bsize, training, ret_value)
+            idx += impl_bsize
+        return {"y":v}
+
+    def fb_beam_impl_(self, insts, real_bsize, training, ret_value):
         # always keeping the same size for more efficient batching
         utils.zcheck(training, "Only for training mode.")
         xs, ys = self.prepare_xy_(insts)
@@ -427,17 +477,15 @@ class s2sModel(Model):
         t2_global_diff = self.opts["t2_global_diff"]
         t2_bngram_n = self.opts["t2_bngram_n"]
         t2_bngram_range = self.opts["t2_bngram_range"]
-        t2_gngram_n = self.opts["t2_gngram_n"]
-        t2_gngram_range = self.opts["t2_gngram_range"]
+        # -> sync
+        t2_sync_med = self.opts["t2_sync_med"]
+        t2_med_range = self.opts["t2_med_range"]
+        t2_sync_nga = self.opts["t2_sync_nga"]
+        t2_nga_n = self.opts["t2_nga_n"]
+        t2_nga_range = self.opts["t2_nga_range"]
+        # update
+        t2_beam_up = self.opts["t2_beam_up"]
         #
-        # specific running options
-        CACHE_NAME = "CC"       # (cache-dict, batch-idx)
-        GOLD_NAME = "GD"        # BOOL: whether it is a gold state
-        ATTACH_NAME = "AT"      # State: attach to which gold state if possible
-        ABLEN_NAME = "AL"       # int: attach-based length
-        GISTATE_NAME = "GI"     # the state if gold interference
-        PADDING_STATE = None
-        PADDING_ACTION = 0
         EOS_ID = self.target_dict.eos
         model_softmax = not self.get_prop("no_model_softmax")
         t2_gold_run = self.opts["t2_gold_run"]
@@ -448,6 +496,7 @@ class s2sModel(Model):
         # 1. first running the gold seqs if needed
         gold_cur = [State(sg=f_new_sg(_i)) for _i in range(bsize)]
         gold_states = [gold_cur]
+        gold_ends = [None] * bsize  # un-sync ends
         running_yprev = None
         running_cprev = None
         for step_gold in range(max(ylens)):
@@ -460,7 +509,10 @@ class s2sModel(Model):
                 if x is PADDING_STATE or x.action_code == EOS_ID:
                     gold_next.append(PADDING_STATE)
                 else:
-                    gold_next.append(State(prev=x, action=Action(ystep[_i], 0.)))
+                    next_x = State(prev=x, action=Action(ystep[_i], 0.))
+                    gold_next.append(next_x)
+                    if next_x.action_code == EOS_ID:
+                        gold_ends[_i] = next_x
             if t2_gold_run:
                 # softmax for the "correct" score if needed
                 if step_gold == 0:
@@ -477,9 +529,10 @@ class s2sModel(Model):
                     sc_val = np.log(sc_val)
                 for _i in range(bsize):
                     if gold_cur[_i] is not PADDING_STATE:
-                        gold_cur[_i].set(CACHE_NAME, (cc, _i))
+                        gold_cur[_i].set(VNAME_CACHE, (cc, _i))
                         # todo(warn): not updating the accumulated scores
-                        gold_cur[_i].action_score(sc_val[_i])
+                        if gold_next[_i] is not PADDING_STATE:
+                            gold_next[_i].action_score(sc_val[_i])
             gold_cur = gold_next
             gold_states.append(gold_next)
         # 2. then start the beam search (with the knowledge of gold-seq)
@@ -491,20 +544,24 @@ class s2sModel(Model):
         beam_update_points = [[] for _i in range(bsize)]        # todo(warn): currently only recording the best points
         for _i in range(bsize):     # set the init states
             one = State(sg=f_new_sg(_i))
-            one.set(GOLD_NAME, True)                    # init as zero gold
-            one.set(ATTACH_NAME, gold_states[0][_i])    # attach to init gold
-            one.set(ABLEN_NAME, 0)                      # init attach-based len is 0
+            one.set(VNAME_GOLD, True)                    # init as zero gold
+            one.set(VNAME_ATT, gold_states[0][_i])       # attach to init gold
+            one.set(VNAME_ATT_BASE, 0)                   # last attaching length
+            one.set(VNAME_SYNCLEN, 0)                    # init attach-based len is 0
+            one.set(VNAME_GISTAT, "START")               # gold-inference state: marking updating boundaries
             beam_cur[_i][0] = one
         # ready go, break at the end
         running_yprev = None
         running_cprev = None
         step_beam = 0
-        while True:
+        beam_continue_flag = True
+        while beam_continue_flag:
+            beam_continue_flag = False
             # running the caches
             if step_beam == 0:
                 if t2_gold_run:
                     # todo(warn): expand previously calculated values and also results
-                    cc = self.repeat(gold_states[0][0].get(CACHE_NAME)[0], bsize, esize_all, {"hid", "S", "V", "out_s", "results"})
+                    cc = self.repeat(gold_states[0][0].get(VNAME_CACHE)[0], bsize, esize_all, {"hid", "S", "V", "out_s", "results"})
                 else:
                     cc = self.start(xs, repeat_time=esize_all, softmax=model_softmax)
             else:
@@ -514,7 +571,7 @@ class s2sModel(Model):
                 for _j in range(esize_all):
                     one = beam_cur[_i][_j]
                     if one is not PADDING_STATE:
-                        one.set(CACHE_NAME, (cc, _i*esize_all+_j))
+                        one.set(VNAME_CACHE, (cc, _i*esize_all+_j))
             # compare for the next steps --- almost same as beam_search, but all-batched and simplified
             results_topk = layers.BK.topk(cc["results"], t2_local_expand)
             for i in range(bsize):
@@ -542,65 +599,84 @@ class s2sModel(Model):
                 gold_index = -1
                 gold_prev_index = -1
                 cur_ys = ys[i]
+                for j, one in enumerate(beam_cur[i]):
+                    if one is not PADDING_STATE:
+                        if one.get(VNAME_GOLD):
+                            gold_prev_index = j
                 for j, one in enumerate(survived_global_cands):
                     # GOLD_NAME
-                    if one.prev.get(GOLD_NAME):
-                        gold_prev_index = j
+                    if one.prev.get(VNAME_GOLD):
                         if one.length<=len(cur_ys) and one.action_code==cur_ys[one.length-1]:
-                            one.set(GOLD_NAME, True)
+                            one.set(VNAME_GOLD, True)
                             gold_index = j
                     # ATTACH_NAME
-                    default_len = one.prev.get(ABLEN_NAME)+1
-                    # todo: could attach back, but currently just let it be
-                    for g_step in reversed(range(max(0,default_len-t2_gngram_range+1), min(len(cur_ys), default_len+t2_gngram_range))):
-                        g_one = gold_states[g_step][i]
-                        if g_one.sig_ngram(t2_gngram_n) == one.sig_ngram(t2_gngram_n):
-                            # hit for ngram merging, mark it & break
-                            one.set(ATTACH_NAME, g_one)
-                            default_len = g_step
-                    one.set(ABLEN_NAME, default_len)
+                    default_len = one.prev.get(VNAME_SYNCLEN)+1
+                    default_attbase = one.prev.get(VNAME_ATT_BASE)
+                    att_len_min = default_attbase+1
+                    if t2_sync_nga:
+                        # only attach ahead, no way to look backward
+                        for g_step in reversed(range(max(att_len_min, default_len-t2_nga_range+1), min(len(cur_ys), default_len+t2_nga_range))):
+                            g_one = gold_states[g_step][i]
+                            if g_one.sig_ngram(t2_nga_n) == one.sig_ngram(t2_nga_n):
+                                # hit for ngram merging, mark it & break
+                                one.set(VNAME_ATT, g_one)
+                                default_attbase = g_step
+                                default_len = g_step
+                    one.set(VNAME_SYNCLEN, default_len)
+                    one.set(VNAME_ATT_BASE, default_attbase)
                 # =========================
                 # gold interfering (also recording the interfering point for updating)
                 # gi1: ngram gold attach: find ngram to attach on the gold seq
-                if t2_gi_mode == "ngatt":
-                    # only remain the gold-merged 1st-ranked one
-                    if survived_global_cands[0].get(ATTACH_NAME) is not None:
-                        beam_update_points[i].append(survived_global_cands[0])
-                        survived_global_cands = [survived_global_cands[0]]
-                        survived_global_cands[0].set(GISTATE_NAME, "NGATT")
-                # gi2: laso: re-pick the pruned gold state
-                elif t2_gi_mode == "laso":
-                    # re-pick the gold seq
-                    if gold_index < 0:
-                        beam_update_points[i].append(survived_global_cands[0])
-                        utils.zcheck(gold_prev_index>0, "Unreasonable non-existing prev-gold for the laso mode!!")
-                        prev_gold_ss = survived_global_cands[gold_prev_index].prev
-                        according_gold = gold_states[prev_gold_ss.length+1][i]
-                        repicked_gold = State(prev=prev_gold_ss, action=according_gold.action)
-                        repicked_gold.set(GOLD_NAME, True)
-                        repicked_gold.set(ATTACH_NAME, according_gold)
-                        repicked_gold.set(ABLEN_NAME, repicked_gold.length)
-                        repicked_gold.set(GISTATE_NAME, "LASO")
-                        survived_global_cands = [repicked_gold]
-                # nope: nothing to do
-                else:
-                    pass
+                if len(survived_global_cands) > 0:
+                    if t2_gi_mode == "ngab":
+                        # only remain the gold-merged 1st-ranked one
+                        if survived_global_cands[0].get(VNAME_ATT) is not None:
+                            beam_update_points[i].append(survived_global_cands[0])
+                            survived_global_cands = [survived_global_cands[0]]
+                            survived_global_cands[0].set(VNAME_GISTAT, "NGAB")
+                    # gi2: laso: re-pick the pruned gold state
+                    elif t2_gi_mode == "laso":
+                        # re-pick the gold seq
+                        if gold_index < 0:
+                            beam_update_points[i].append(survived_global_cands[0])
+                            utils.zcheck(gold_prev_index>=0, "Unreasonable non-existing prev-gold for the laso mode!!")
+                            prev_gold_ss = beam_cur[i][gold_prev_index]
+                            according_gold = gold_states[prev_gold_ss.length+1][i]
+                            repicked_gold = State(prev=prev_gold_ss, action=according_gold.action)
+                            repicked_gold.set(VNAME_GOLD, True)
+                            repicked_gold.set(VNAME_ATT, according_gold)
+                            repicked_gold.set(VNAME_ATT_BASE, repicked_gold.length)
+                            repicked_gold.set(VNAME_SYNCLEN, repicked_gold.length)
+                            repicked_gold.set(VNAME_GISTAT, "LASO")
+                            if survived_global_cands[0].get(VNAME_ATT) is None:
+                                survived_global_cands[0].set(VNAME_ATT, according_gold)
+                            survived_global_cands = [repicked_gold]
+                    # nope: nothing to do
+                    else:
+                        pass
                 # =========================
                 # force to eos if out of maxlen & add eos ones to ends
                 force_eos_thresh = ylens_max[i]
+                cur_gold_end = gold_ends[i]
                 for one in survived_global_cands:
                     # eos forcing
+                    force_ending = False
                     if one.action_code != EOS_ID and one.length >= force_eos_thresh:
-                        one.action_score(0.)
-                        one.action = Action(EOS_ID, 0.)
+                        # one.action_score(0.)
+                        # one.action = Action(EOS_ID, 0.)
+                        force_ending = True
                     # eos recording
-                    if one.action_code == EOS_ID and beam_remains[i]>0:
+                    if (one.action_code == EOS_ID or force_ending) and beam_remains[i]>0:
                         one.mark_end()
-                        one.set(ATTACH_NAME, gold_states[-1][i])
-                        one.set(ABLEN_NAME, gold_states[-1][i].length)
+                        one.set(VNAME_ATT, cur_gold_end)
+                        one.set(VNAME_ATT_BASE, cur_gold_end.length)
+                        one.set(VNAME_SYNCLEN, cur_gold_end.length)
+                        # (nope) one.set(VNAME_GISTAT, "END")
                         beam_remains[i] -= 1
                         beam_ends[i].append(one)
                 #
+                if len(survived_global_cands) > 0:
+                    beam_continue_flag = True
                 while len(survived_global_cands) < esize_all:
                     survived_global_cands.append(PADDING_STATE)
                 beam_cur[i] = survived_global_cands
@@ -618,16 +694,14 @@ class s2sModel(Model):
                         running_cprev_orders.append(_i*esize_all)
                     else:
                         running_yprev.append(one_cand.action_code)
-                        running_cprev_orders.append(one_cand.prev.get(CACHE_NAME)[-1])
+                        running_cprev_orders.append(one_cand.prev.get(VNAME_CACHE)[-1])
             # todo(warn): always pad the beam, thus None for bi_orders
             if esize_all > 1:
                 running_cprev = self.rerange(cc, running_cprev_orders, None)
             else:
                 running_cprev = cc
-            # how to break?
+            # how to break -> flag
             step_beam += 1
-            if all([len(br)<=0 for br in beam_remains]):
-                break
         # ===============================
         # -- ranking the best searched ones
         if self.opts["t2_compare_at"] == "norm":
@@ -636,15 +710,445 @@ class s2sModel(Model):
             _get_score_f = (lambda x: x.score_partial)
         for _i in range(bsize):
             best_end = sorted(beam_ends[_i], key=_get_score_f, reverse=True)[0]
-            beam_update_points[_i].append(best_end)
+            if len(beam_update_points[_i])<=0 or best_end.length > beam_update_points[_i][-1].length:
+                beam_update_points[_i].append(best_end)
         # -- collecting loss according to update_points and use masks for batching
+        self.beam_losser_.refresh()
+        for _i in range(bsize):
+            # preparing update points
+            update_points = beam_update_points[_i]
+            if t2_beam_up == "fg":
+                # only updating at the first one, wasting much time for this mode
+                update_points = update_points[0]
+            # collect them
+            for up in reversed(update_points):
+                self.beam_losser_.build_one(up, 1.0)    # todo: scale for the loss
+        losses = self.beam_losser_.get_loss()    # one value for sum of the batches
+        loss = losses / real_bsize               # real batch size
+        if training:
+            layers.BK.forward(loss)
+            layers.BK.backward(loss)
+        # return value?
+        if ret_value == "loss":
+            lossy_val = layers.BK.get_value_sca(loss)
+            return lossy_val*bsize
+        else:
+            return 0.
 
-        return
+# -- build loss for fb_beam (collecting loss according to predicted ones)
+class BeamLossBuilder(object):
+    def __init__(self, opts, vocab):
+        self.opts = opts
+        self.vocab = vocab
+        self.ERR_ID = vocab.err
+        self.IGNORE_IDS = vocab.get_ending_tokens()
+        #
+        self.t2_sync_nga = opts["t2_sync_nga"]
+        self.t2_sync_med = opts["t2_sync_med"]
+        if self.t2_sync_med:
+            self.seq_build_f = self.build_seq_med
+        elif self.t2_sync_nga:
+            self.seq_build_f = self.build_seq_nga
+        else:
+            self.seq_build_f = self.build_seq_default
+        #
+        self.t2_beam_loss = opts["t2_beam_loss"]
+        self.t2_bad_lambda = opts["t2_bad_lambda"]
+        self.t2_bad_maxlen = opts["t2_bad_maxlen"]
+        if self.t2_beam_loss == "per":
+            self.loss_build_f = self.build_loss_per
+            self.per_norm = opts["t2_compare_at"]=="norm"
+            self.margin = opts["train_margin"]
+        elif self.t2_beam_loss == "err":
+            self.loss_build_f = self.build_loss_err
+            self.t2_err_gold_lambda = opts["t2_err_gold_lambda"]
+        else:
+            self.loss_build_f = None
+        #
+        self.refresh(True)
 
-    # -- helpers for fb_beam
+    # --------
+    # refresh
+    def refresh(self, clear_stat=False):
+        # clear and start a new loss-building process
+        self.beam_maps = {}
+        self.gold_maps = {}
+        if clear_stat:
+            # stats
+            self.num_points = 0
+            self.num_segs = 0
+            self.num_tokens = 0
+            self.num_bad_tokens = 0
+            self.num_good_tokens = 0
+            # stats2
+            # err
+            self.num_tok_mod = 0
+            self.num_tok_err = 0
+            self.num_tok_good = 0
+            self.num_tok_gold = 0
+            # per
+            self.num_tok_minus = 0
+            self.num_tok_plus = 0
 
+    def report(self):
+        # r = {}
+        # for n in self.__dict__:
+        #     if n.startswith("num"):
+        #         r[n] = self.__dict__[n]
+        # return r
+        s = ""
+        divisor = self.num_points + 1e-5
+        s += "Insts:%d||Segs:%d(%.3f)||Toks:%d(%.3f)->match:%d(%.3f),non:%d(%.3f)||" \
+             % (self.num_points, self.num_segs, self.num_segs/divisor, self.num_tokens, self.num_tokens/divisor,
+                self.num_good_tokens, self.num_good_tokens/divisor, self.num_bad_tokens, self.num_bad_tokens/divisor)
+        if self.t2_beam_loss == "per":
+            s += "Perc->minus(beam):%d/%.3f,plus(gold):%d/%.3f" \
+                 % (self.num_tok_minus, self.num_tok_minus/divisor, self.num_tok_plus, self.num_tok_plus/divisor)
+        elif self.t2_beam_loss == "err":
+            s += "Err->err0:%d/%.3f,err:%d/%.3f,match:%d/%.3f,gold:%d/%.3f" \
+                 % (self.num_tok_mod, self.num_tok_mod/divisor, self.num_tok_err, self.num_tok_err/divisor,
+                    self.num_tok_good, self.num_tok_good/divisor, self.num_tok_gold, self.num_tok_gold/divisor)
+        else:
+            pass
+        return s
+    # --------
 
-    def fb_branch_(self, insts, training, ret_value):
-        # this branches from gold which is different from the search_branch_ which branches from greedy-best
-        raise NotImplementedError("To be implemented")
-        pass
+    # build_one
+    def build_one(self, point, scale):
+        self.num_points += 1
+        segs = self.seq_build_f(point)
+        # reverse it here
+        length_segs = len(segs)
+        for idx in range(length_segs):
+            real_idx = length_segs-1-idx
+            this_seg, next_seg = segs[real_idx], segs[real_idx-1]
+            if real_idx <= 0:
+                next_seg = None
+            isMatch, beamSeg, goldSeg = segs[length_segs-1-idx]
+            # stat
+            self.num_segs += 1
+            self.num_tokens += len(beamSeg)
+            if isMatch:
+                self.num_good_tokens += len(beamSeg)
+            else:
+                self.num_bad_tokens += len(beamSeg)
+            # record into maps
+            self.loss_build_f(this_seg, next_seg, scale)
+
+    # loss
+    def get_loss(self):
+        def _sum_all(es):
+            if len(es) > 0:
+                return layers.BK.sum_batches(layers.BK.esum(es))
+            else:
+                utils.zcheck(False, "Empty list, non loss for this batch.", func="warn")
+                return layers.BK.zeros((1,))
+        # first gather as batched
+        beam_idxs = BeamLossBuilder.gather_loss_from_map(self.beam_maps)
+        if self.t2_beam_loss == "per":
+            beam_losses = [layers.BK.pick_batch(e,i)*layers.BK.inputVector_batch(m) for e,i,m in beam_idxs]
+            gold_idxs = BeamLossBuilder.gather_loss_from_map(self.gold_maps)
+            gold_losses = [layers.BK.pick_batch(e,i)*layers.BK.inputVector_batch(m) for e,i,m in gold_idxs]
+            return _sum_all(beam_losses) - _sum_all(gold_losses)
+        elif self.t2_beam_loss == "err":
+            beam_losses = [layers.BK.pickneglogsoftmax_batch(e,i)*layers.BK.inputVector_batch(m) for e,i,m in beam_idxs]
+            v = _sum_all(beam_losses)
+            if self.t2_err_gold_lambda > 0.:
+                gold_idxs = BeamLossBuilder.gather_loss_from_map(self.gold_maps)
+                gold_losses = [layers.BK.pickneglogsoftmax_batch(e,i)*layers.BK.inputVector_batch(m) for e,i,m in gold_idxs]
+                v += self.t2_err_gold_lambda * _sum_all(gold_losses)
+            return v
+        else:
+            raise NotImplementedError("Unknown beam loss %s." % (self.t2_beam_loss,))
+
+    # ---------- specific ones ---------- #
+    # update_points -> attaching sequences (reversed one)
+    def build_seq_default(self, point):
+        cur, cur_at = point, point.get(VNAME_ATT)
+        list_beam, list_att = [cur], [cur_at]
+        cur = cur.prev
+        cur_at = cur_at.prev
+        #
+        while cur.get(VNAME_GISTAT) is None:
+            list_beam.append(cur)
+            cur = cur.prev
+        #
+        att_end = cur.get(VNAME_ATT)
+        while cur_at.length > att_end.length:
+            list_att.append(cur_at)
+            cur_at = cur_at.prev
+        return [(False, list_beam, list_att)]
+
+    def build_seq_nga(self, point):
+        def _add_if_nonempty(sgs, one):
+            if len(one[1])>0 or len(one[2])>0:
+                sgs.append(one)
+        def _add_until(cur_at, trg_at, one):
+            while cur_at.length > trg_at.length:
+                one[2].append(cur_at)
+                cur_at = cur_at.prev
+            return cur_at
+        segs = []    # list of (ifMatch, [beam-states], [gold-states])
+        # get the interval
+        list_beam = [point]
+        list_att = [point.get(VNAME_ATT)]
+        cur = point.prev
+        while cur.get(VNAME_GISTAT) is None:
+            list_beam.append(cur)
+            list_att.append(cur.get(VNAME_ATT))
+            cur = cur.prev
+        att_bound = cur.get(VNAME_ATT)
+        # scan again
+        cur_at = list_att[0]    # must be there
+        idx = 0
+        while idx < len(list_beam):
+            # eat matched seg
+            s0 = (True, [], [])
+            while idx < len(list_beam):
+                p = list_beam[idx]
+                at = list_att[idx]
+                # new attachment
+                if at is not None:
+                    # maybe skip one unmatched gold-only-seq
+                    if at.length < cur_at.length:
+                        _add_if_nonempty(segs, s0)
+                        s0 = (True, [], [])
+                        s01 = (False, [], [])
+                        cur_at = _add_until(cur_at, at, s01)
+                        _add_if_nonempty(segs, s01)
+                    cur_at = at
+                # check equal
+                if cur_at.action_code == p.action_code and cur_at.length > att_bound.length:
+                    s0[1].append(p)
+                    s0[2].append(cur_at)
+                    idx += 1
+                    cur_at = cur_at.prev
+                else:
+                    break
+            _add_if_nonempty(segs, s0)
+            # eat unmatched seg
+            s1 = (False, [], [])
+            while idx < len(list_beam):
+                p = list_beam[idx]
+                at = list_att[idx]
+                # break to next att
+                if at is None or at.action_code != p.action_code:
+                    s1[1].append(p)
+                    idx += 1
+                else:
+                    cur_at = _add_until(cur_at, at, s1)
+                    break
+            if idx >= len(list_beam):
+                # fill in extra gold seqs at the final step
+                cur_at = _add_until(cur_at, att_bound, s1)
+            _add_if_nonempty(segs, s1)
+        return segs
+
+    def build_seq_med(self, point):
+        # obtain the two list
+        list_beam = [point]
+        list_gold = [point.get(VNAME_ATT)]
+        cur = point.prev
+        while cur.get(VNAME_GISTAT) is None:
+            list_beam.append(cur)
+            cur = cur.prev
+        end_att = cur.get(VNAME_ATT)
+        cur_att = list_gold[0].prev
+        while cur_att.length > end_att.length:
+            list_gold.append(cur_att)
+            cur_att = cur_att.prev
+        tokens_beam = [one.action_code for one in reversed(list_beam)]
+        tokens_gold = [one.action_code for one in reversed(list_gold)]
+        # dp for med
+        EDIT_DEL, EDIT_ADD, EDIT_SUB, EDIT_MATCH = 0,1,2,3
+        length_beam, length_gold = len(tokens_beam), len(tokens_gold)
+        tab_dis, tab_act = [[n for n in range(length_gold+1)]], [[EDIT_ADD]*(length_gold+1)]
+        for i, tok_beam in enumerate(tokens_beam):
+            last_dis = tab_dis[-1]
+            one_dis, one_act = [i+1], [EDIT_DEL]
+            tab_dis.append(one_dis)
+            tab_act.append(one_act)
+            for j, tok_gold in enumerate(tokens_gold):
+                v_ij, v_ipj, v_ijp = last_dis[j], one_dis[j], last_dis[j+1]
+                if tok_beam == tok_gold:
+                    this_dis = v_ij
+                    this_act = EDIT_MATCH
+                else:
+                    # using specific orders for the operations
+                    # sub
+                    this_dis = v_ij+1
+                    this_act = EDIT_SUB
+                    # add
+                    if this_dis > v_ipj+1:
+                        this_dis = v_ipj+1
+                        this_act = EDIT_ADD
+                    # del
+                    if this_dis > v_ijp+1:
+                        this_dis = v_ijp+1
+                        this_act = EDIT_DEL
+                #
+                one_dis.append(this_dis)
+                one_act.append(this_act)
+        # back-tracking and get segs
+        def _add_if_nonempty(sgs, one):
+            if len(one[1])>0 or len(one[2])>0:
+                sgs.append(one)
+        segs = []
+        cur_one = (True, [], [])
+        idx_beam, idx_gold = 0, 0
+        while idx_beam<length_beam:
+            _i, _j = length_beam-idx_beam, length_gold-idx_gold
+            act = tab_act[_i][_j]
+            if act == EDIT_MATCH:
+                if not cur_one[0]:
+                    _add_if_nonempty(segs, cur_one)
+                    cur_one = (True, [], [])
+                cur_one[1].append(list_beam[idx_beam])
+                idx_beam += 1
+                cur_one[2].append(list_gold[idx_gold])
+                idx_gold += 1
+            else:
+                if cur_one[0]:
+                    _add_if_nonempty(segs, cur_one)
+                    cur_one = (False, [], [])
+                if act == EDIT_SUB:
+                    cur_one[1].append(list_beam[idx_beam])
+                    idx_beam += 1
+                    cur_one[2].append(list_gold[idx_gold])
+                    idx_gold += 1
+                elif act == EDIT_ADD:
+                    cur_one[2].append(list_gold[idx_gold])
+                    idx_gold += 1
+                elif act == EDIT_DEL:
+                    cur_one[1].append(list_beam[idx_beam])
+                    idx_beam += 1
+                else:
+                    raise RuntimeError("Unlegal action for med.")
+        _add_if_nonempty(segs, cur_one)
+        return segs
+
+    # --------------
+    @staticmethod
+    def add_loss_to_map(m, cache, idx, token, scale):
+        # id -> (cache, {idx -> (token, scale)})
+        utils.zcheck(scale>0, "Bad scale %s" % scale, func="warn")
+        cid = id(cache)
+        if cid in m:
+            m2 = m[cid][1]
+            if idx in m2:
+                v = m2[idx]
+                if v[0] != token:
+                    utils.zcheck(False, "Unsupported multiple token loss: %s vs %s" % (v, [token, scale]), func="warn")
+                v[0] = token
+                v[1] += scale
+            else:
+                m2[idx] = [token, scale]
+        else:
+            m[cid] = (cache, {idx: [token, scale]})
+
+    @staticmethod
+    def gather_loss_from_map(m):
+        # list of (expr, idx, scales)
+        ret = []
+        for cid in m:
+            cache, idxs = m[cid]
+            out_expr = cache["out_s"]
+            bsize = layers.BK.bsize(out_expr)
+            #
+            out_idxs, out_scales = [0]*bsize, [0.]*bsize
+            for bid in idxs:
+                out_idxs[bid], out_scales[bid] = idxs[bid]
+            ret.append((out_expr, out_idxs, out_scales))
+        return ret
+
+    # attaching sequences -> loss building
+    def build_loss_per(self, this_seg, next_seg, scale):
+        # todo: not exactly max-margin
+        isMatch, beamSeg, goldSeg = this_seg
+        if isMatch:
+            # no updates for matched segs
+            pass
+        else:
+            # skip for one-side instances
+            if len(goldSeg)<=0 or len(beamSeg)<=0:
+                return
+            # check score
+            score_gold = sum(one.action_score() for one in goldSeg)
+            score_beam = sum(one.action_score() for one in beamSeg)
+            scale_gold = scale_beam = scale
+            if self.per_norm:
+                score_gold /= len(goldSeg)
+                scale_gold /= len(goldSeg)
+                score_beam /= len(beamSeg)
+                scale_beam /= len(beamSeg)
+            #
+            if score_gold - score_beam <= self.margin:
+                # add perceptron style loss
+                self.num_tok_minus += len(beamSeg)
+                self.num_tok_plus += len(goldSeg)
+                #
+                cur_lambda = 1. * scale_beam
+                for _i, one in enumerate(reversed(beamSeg)):
+                    # todo(warn): ignore some tokens
+                    if one.action_code in self.IGNORE_IDS:
+                        continue
+                    BeamLossBuilder.add_loss_to_map(self.beam_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
+                                                    one.action_code, cur_lambda)
+                    cur_lambda *= self.t2_bad_lambda
+                    if cur_lambda <= 0. or _i >= self.t2_bad_maxlen:
+                        break
+                cur_lambda = 1. * scale_gold
+                for _i, one in enumerate(reversed(goldSeg)):
+                    # todo(warn): ignore some tokens
+                    if one.action_code in self.IGNORE_IDS:
+                        continue
+                    BeamLossBuilder.add_loss_to_map(self.gold_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
+                                                    one.action_code, cur_lambda)
+                    cur_lambda *= self.t2_bad_lambda
+                    if cur_lambda <= 0. or _i >= self.t2_bad_maxlen:
+                        break
+
+    def build_loss_err(self, this_seg, next_seg, scale):
+        # build mle loss for prev state cache
+        isMatch, beamSeg, goldSeg = this_seg
+        if isMatch:
+            # good states
+            # todo(warn): ignore some tokens & the first token
+            for one in reversed(beamSeg[:-1]):
+                if one.action_code in self.IGNORE_IDS:
+                    continue
+                self.num_tok_good += 1
+                BeamLossBuilder.add_loss_to_map(self.beam_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
+                                                    one.action_code, scale)
+        else:
+            # correct states or err states
+            if len(goldSeg) == 0:
+                # find correct token in the next one
+                ynext = next_seg[2][-1].action_code
+            else:
+                ynext = goldSeg[-1].action_code
+            # modified one
+            cur_lambda = 1. * scale
+            cur_idx = len(beamSeg)-1
+            cur_thresh = max(0, len(beamSeg) - self.t2_bad_maxlen)
+            if cur_idx >= cur_thresh:
+                one = beamSeg[cur_idx]
+                BeamLossBuilder.add_loss_to_map(self.beam_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
+                                                    ynext, cur_lambda)
+                cur_lambda *= self.t2_bad_lambda
+                self.num_tok_mod += 1
+                cur_idx -= 1
+            # error states
+            while cur_lambda > 0. and cur_idx >= cur_thresh:
+                one = beamSeg[cur_idx]
+                BeamLossBuilder.add_loss_to_map(self.beam_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
+                                                    self.ERR_ID, cur_lambda)
+                cur_lambda *= self.t2_bad_lambda
+                self.num_tok_err += 1
+                cur_idx -= 1
+            # gold states
+            if self.t2_err_gold_lambda > 0.:
+                for one in reversed(goldSeg):
+                    self.num_tok_gold += 1
+                    BeamLossBuilder.add_loss_to_map(self.gold_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
+                                                    one.action_code, scale)

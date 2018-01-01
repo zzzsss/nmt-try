@@ -176,8 +176,11 @@ python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh -
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 train_margin 2.0 train_local_loss hinge_max" -z 6 -p 3
 # x48
 ##(acc-killed) python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.4 idrop_embedding 0.0 drop_hidden 0.4 drop_embedding 0.4 dicts_rthres 30000 lrate 0.0002 dec_type ngram dec_ngram_n 10" -z 6 -p 3
+# (ngram, 28+ for dev)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.4 idrop_embedding 0.0 drop_hidden 0.4 drop_embedding 0.4 dicts_rthres 30000 lrate 0.0002 dec_type ngram dec_ngram_n 12" -z 6 -p 4
+# (softmax-margin, 35.6 for dev)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 train_margin 2.0" -z 6 -p 5
+# (34.7 for dev, maybe no idrop for later running)
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.2 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002" -z 6 -p 6
 # -> fine-tuning
 # -- -0.1
@@ -188,3 +191,29 @@ python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../en_de_data_z5/ -t znmt -
 # inf gradient ...
 #python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0005 train_margin 2.0 train_local_loss hinge_max" -z 6 -p 7
 
+# ===================
+# from now on, fix drops and lr
+# z1228
+# x45 (21.0 good for this)
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../en_de_data_z5/ -t znmt --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 lrate 0.0002 train_margin 2.0 train_local_loss hinge_avg0 pr_local_diff 2.0" -z 8 -p 0
+# x46
+# x47
+# -> similar results: greedy slightly better, but (as expected with local training) not good for beam
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 train_margin 2.0 train_local_loss hinge_avg0" -z 6 -p 0
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 train_margin 4.0 train_local_loss hinge_avg0" -z 6 -p 1
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 train_margin 6.0 train_local_loss hinge_avg0" -z 6 -p 3
+
+# ===================
+# TODO(FINAL), again: baseline & margin !!
+# baseline for wmt_en_de is almost done: z1217x45_base/ z1229_x45amg/
+# baseline for ze_run: z1126_3 z1217_base z1228_amg_0
+# x45 z0104x45_basem
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../en_de_data_z5/ -t znmt --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 lrate 0.0002 train_margin 2.0 train_local_loss mle pr_local_diff 2.0" -z 8 -p 0
+# x48
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/de-en_2014/ -t znmt --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 train_margin 0.0 train_local_loss mle pr_local_diff 2.0" -z 6 -p 0
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/de-en_2014/ -t znmt --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 train_margin 2.0 train_local_loss mle pr_local_diff 2.0" -z 6 -p 1
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../data2/de-en_2014/ -t znmt --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 train_margin 2.0 train_local_loss hinge_avg0 pr_local_diff 2.0" -z 6 -p 4
+# x48
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 train_margin 0.0 train_local_loss mle pr_local_diff 2.0" -z 6 -p 5
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 train_margin 2.0 train_local_loss mle pr_local_diff 2.0" -z 6 -p 6
+python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --batch_size 80 --valid_batch_width 80 --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 dicts_rthres 30000 lrate 0.0002 train_margin 2.0 train_local_loss hinge_avg0 pr_local_diff 2.0" -z 6 -p 7

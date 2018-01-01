@@ -101,6 +101,8 @@ class State(object):
             self.length = prev.length + 1
             self._score_partial = action.score + prev._score_partial
             self.sg = prev.sg
+        else:   # just put it as a padding
+            self.action = Action(0, 0.)
         self.id = State._get_id()   # should be enough within python's int range
         if self.sg is not None:
             self.sg.reg(self)       # register in the search graph
@@ -114,15 +116,19 @@ class State(object):
     def __str__(self):
         return self.__repr__()
 
-    def show_words(self, td=None, print=True):
+    def show_words(self, td=None, print=True, verbose=False):
         if td is None:
             td = self.sg.target_dict
         s = []
         paths = self.get_path()
         for one in paths:
-            s.append("%s(%s|%.3f)" % (td.getw(one.action_code), one.action, one.score_partial))
+            if not verbose:
+                ones = "%s(%.3f)" % (td.getw(one.action_code), one.action.score)
+            else:
+                ones = "%s(%s|%.3f)" % (td.getw(one.action_code), one.action, one.score_partial)
+            s.append(ones)
         if print:
-            utils.zlog("; ".join(s))
+            utils.zlog(" ".join(s))
         return s
 
     @property

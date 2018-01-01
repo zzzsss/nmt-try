@@ -28,8 +28,8 @@ def init():
         # "--max_epochs": 100,
         # "--max_updates": 500000,
         # "--max_len": 50,
-        "--batch_size": 80,
-        "--valid_batch_width": 80,
+        # "--batch_size": 80,
+        # "--valid_batch_width": 80,
         # "--report_freq": 1000,
         "--valid_freq": 10000,
         # "--patience": 3,
@@ -124,10 +124,10 @@ def main():
             ["run_nematus_zh.sh", "_test.sh", args, {"_nematus_device":("cuda" if is_gpu else "cpu"), "_nematus_valid_script":"./_nematus_valid_zh.sh"}],
             ["_nematus_valid_zh.sh", "_nematus_valid_zh.sh", args, {}]
         ],
-        "xnmt": [
-            ["run_xnmt.sh", "_test.sh", args, {"_xnmt_yaml": "_xnmt.yaml"}],
-            ["_xnmt.yaml", "_xnmt.yaml", args, {"_xnmt_valid_every": args["valid_freq"]*args["batch_size"]}]
-        ],
+        # "xnmt": [
+        #     ["run_xnmt.sh", "_test.sh", args, {"_xnmt_yaml": "_xnmt.yaml"}],
+        #     ["_xnmt.yaml", "_xnmt.yaml", args, {"_xnmt_valid_every": args["valid_freq"]*args["batch_size"]}]
+        # ],
         "znmt": [
             ["run_znmt.sh", "_test.sh", args, {}]
         ],

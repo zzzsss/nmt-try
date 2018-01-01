@@ -89,7 +89,7 @@ def init(phase):
                          help="dropout for hidden layers (0: no dropout) (default: %(default)s)")
     network.add_argument('--drop_embedding', type=float, default=0.2, metavar="FLOAT",
                          help="dropout for embeddings (0: no dropout) (default: %(default)s)")
-    network.add_argument('--idrop_embedding', type=float, default=0.2, metavar="FLOAT",
+    network.add_argument('--idrop_embedding', type=float, default=0., metavar="FLOAT",
                          help="idrop for words (0: no dropout) (default: %(default)s)")
     network.add_argument('--gdrop_embedding', type=float, default=0., metavar="FLOAT",
                          help="gdrop for words (0: no dropout) (default: %(default)s)")
@@ -150,8 +150,8 @@ def init(phase):
                          help="learning rate decay on each restart (default: %(default)s)")
     validation.add_argument('--valid_metrics', type=str, default="bleu,ll,len",
                          help="type of metric for validation (separated by ',') (default: %(default)s)")
-    validation.add_argument('--validate_epoch', action='store_true',
-                             help="validate at the end of each epoch")
+    validation.add_argument('--validate_epoch', action='store_true', help="validate at the end of each epoch")
+    validation.add_argument('--validate0', action='store_true', help="validate at the start")
 
     # common
     common = parser.add_argument_group('common')
@@ -214,6 +214,7 @@ def init(phase):
     training2.add_argument('--t2_search_ratio', type=float, default=1.0, help="Max search steps ratio according to reference.")
     training2.add_argument('--t2_gold_run', action='store_true', help="First running a gold sequence.")
     training2.add_argument('--t2_beam_size', type=int, default=1, help="Beam size for beam training2.")
+    training2.add_argument('--t2_impl_bsize', type=int, default=40, help="Impl bsize for fb_beam.")
     #
     training2.add_argument('--t2_local_expand', type=int, default=100, help="Most expansions for each state.")
     training2.add_argument('--t2_local_diff', type=float, default=100., help="Local pruning diff/thres (1/e**D if transferring to prob.)")
@@ -221,16 +222,27 @@ def init(phase):
     training2.add_argument('--t2_global_diff', type=float, default=100., help="Global pruning normalized diff/thres (1/e**D if transferring to prob.)")
     training2.add_argument('--t2_bngram_n', type=int, default=5, help="Nth tailing ngram sig for pruning.")
     training2.add_argument('--t2_bngram_range', type=int, default=0, help="Number of the range of history for tngram, 0 for none.")
-    training2.add_argument('--t2_gngram_n', type=int, default=5, help="Nth tailing ngram sig for matching gold.")
-    training2.add_argument('--t2_gngram_range', type=int, default=0, help="Number of the range of history for matching gold, 0 for none, n for 2n-1.")
     #
-    # how gold will influence the searching (suggest using up=end if setting GI)
-    training2.add_argument('--t2_gi_mode', type=str, default="none", choices=["none", "laso", "ngatt"], help="How gold will influence the learning")
-    # about the loss function
+    # == synchronization (med or nga or [todo]both?)
+    training2.add_argument('--t2_sync_med', action='store_true', help="Fb-beam with med sync.")
+    training2.add_argument('--t2_med_range', type=int, default=100, help="Range of med, default might be enough, n for 2n-1")
+    training2.add_argument('--t2_sync_nga', action='store_true', help="Fb-beam with nga sync.")
+    training2.add_argument('--t2_nga_n', type=int, default=5, help="Nth tailing ngram sig for matching gold.")
+    training2.add_argument('--t2_nga_range', type=int, default=0, help="Number of the range of history for matching gold, 0 for none, n for 2n-1.")
+    #
+    # == gold interference (suggest using up=end if setting GI)
+    # -> mode: laso=laso, nga=nga-best, none=means single updating points
+    training2.add_argument('--t2_gi_mode', type=str, default="none", choices=["none", "laso", "ngab"], help="How gold will influence the learning")
+    #
+    # == loss function and updating
     # -> the final loss: perceptron; local-prob-with-err-states
     training2.add_argument('--t2_beam_loss', type=str, default="per", choices=["per", "err"], help="what is the loss for fb_beam?")
-    # -> updating point: early-update(first-gi-point:FG); max-violation; at-end(all-gi-points or end points)
-    training2.add_argument('--t2_beam_up', type=str, default="end", choices=["ag", "mv", "end"], help="The updating points")
+    training2.add_argument('--t2_bad_lambda', type=float, default=1.0, help="Scaling factor for bad-seq loss.")
+    training2.add_argument('--t2_bad_maxlen', type=int, default=100, help="Max seq-length for bad-seq loss.")
+    # >> especailly for err mode
+    training2.add_argument('--t2_err_gold_lambda', type=float, default=0., help="Lambda for traditional gold loss.")
+    # -> updating points: early-update(first-gi-point:FG); at-end(all-gi-points or end points:AG)
+    training2.add_argument('--t2_beam_up', type=str, default="ag", choices=["ag", "fg"], help="The updating points")
     # -> how to compare the state scores for attached points
     training2.add_argument('--t2_compare_at', type=str, default="norm", choices=["norm", "none"], help="Normalizing methods for fb_beam")
 
@@ -321,9 +333,15 @@ def check_options(args, phase):
         if args["dec_type"] == "ngram":
             assert args["train_mode"] != "std"
         if args["train_local_loss"].startswith("hinge"):
-            # assert args["no_model_softmax"]
             _warn_ifnot(args["no_model_softmax"], "no_model_softmax")
             args["no_model_softmax"] = True
+        if args["t2_beam_loss"] == "per":
+            _warn_ifnot(args["no_model_softmax"], "no_model_softmax")
+            args["no_model_softmax"] = True
+            _warn_ifnot(args["t2_gold_run"], "t2_gold_run")
+            args["t2_gold_run"] = True
+        if args["t2_err_gold_lambda"] > 0:
+            _warn_ifnot(args["t2_gold_run"], "t2_gold_run")
+            args["t2_gold_run"] = True
         # if args["train_local_loss"] == "hinge_avg":
         #     args["dynet-mem"] = "11111"
-        # for learning as searching for errors (LASER)

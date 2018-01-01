@@ -51,11 +51,11 @@ class TrainingProgress(object):
             if_best = True
         else:
             self.bad_counter += 1
-            self.bad_points.append(ss)
+            self.bad_points.append([ss, self.best_score, self.best_point])      # bad_point, .best-at-that-time
             utils.zlog("Bad++, now bad/anneal is %s/%s." % (self.bad_counter, self.anneal_restarts_done), func="info")
             if self.bad_counter >= self.patience:
                 self.bad_counter = 0
-                self.anneal_restarts_points.append(ss)
+                self.anneal_restarts_points.append([ss, self.best_score, self.best_point])
                 if self.anneal_restarts_done < self.anneal_restarts_cap:
                     self.anneal_restarts_done += 1
                     utils.zlog("Anneal plus one, now %s." % (self.anneal_restarts_done,), func="info")
@@ -185,6 +185,8 @@ class Trainer(object):
     # main training
     def train(self, train_iter, dev_iter):
         one_recorder = self._get_recorder("CHECK")
+        if self.opts["validate0"]:
+            self._validate(dev_iter, training_states=one_recorder.state())      # validate once before training
         while not self._finished():     # epochs
             # utils.printing("", func="info")
             with utils.Timer(tag="Train-Iter", info="Iter %s" % self._tp.eidx, print_date=True) as et:
@@ -213,5 +215,5 @@ class Trainer(object):
                 iter_recorder.report()
                 if self.opts["validate_epoch"]:
                     # here, also record one_recorder, might not be accurate
-                    self._validate(dev_iter, name=".e%s"%self._tp.eidx, training_states=one_recorder.get_state())
+                    self._validate(dev_iter, name=".e%s" % self._tp.eidx, training_states=one_recorder.state())
                 self._tp.eidx += 1
