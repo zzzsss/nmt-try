@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 zmt="../.."
-rundir="../z1126_3/"
+#rundir="../z1126_3/"
+rundir="../z1217_base/"
 TEST_SUBDIR="Test-set"
 EVAL_SUBDIR="Reference-for-evaluation"
 datadir="../../zh_en_data/"
@@ -27,7 +28,7 @@ function run
 # PYTHONPATH=$DY_ZROOT/cbuild/python python3.5 -m pdb ../../znmt/test.py -v --report_freq 128 --eval_metric ibleu -o debug -t ../../zh_en_data/Dev-set/nist_2002.{src,ref0} -d ./{"src","trg"}.v -m zbest.model --dynet-devices CPU --decode_output_r2l
 
 # analysis
-# PYTHONPATH=$DY_ZROOT/cbuild/python python3 ../../znmt/rerank.py -d ../z1126_3/src.v ../z1126_3/trg.v -m --gold ../../zh_en_data/Dev-set/nist_2002.ref* -t ../../zh_en_data/Dev-set/nist_2002.src ./z.nist_2002.t00.nbest
+# PYTHONPATH=$DY_ZROOT/cbuild/python python3 ../../znmt/rerank.py -d ../z1126_3/{src,trg}.v -m --gold ../../zh_en_data/Dev-set/nist_2002.ref* -t ../../zh_en_data/Dev-set/nist_2002.src ./z.nist_2002.t00.nbest
 # python3 ../../znmt/scripts/tools/extract_n.py ../../zh_en_data/Dev-set/nist_2002.* ./z.nist_2002.t00.nbest
 
 # rerank

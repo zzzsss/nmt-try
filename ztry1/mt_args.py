@@ -105,6 +105,8 @@ def init(phase):
                          help="gdrop for decoder (0: no dropout) (default: %(default)s)")
     network.add_argument('--gdrop_enc', type=float, metavar="FLOAT",
                          help="gdrop for encoder (0: no dropout) (default: %(default)s)")
+    # special option
+    network.add_argument('--drop_test', action="store_true", help="Special option for opening dropout for testing.")
 
     # training progress
     training = parser.add_argument_group('training parameters')
@@ -159,7 +161,7 @@ def init(phase):
     common.add_argument("--dynet-mem", type=str, default="4", dest="dynet-mem")
     common.add_argument("--dynet-devices", type=str, default="CPU", dest="dynet-devices")
     common.add_argument("--dynet-autobatch", type=str, default="0", dest="dynet-autobatch")
-    common.add_argument("--dynet-seed", type=str, default="12345", dest="dynet-seed")    # default will be of no use, need to specify it
+    common.add_argument("--dynet-seed", type=str, default="12345", dest="dynet-seed")
     common.add_argument("--dynet-immed", action='store_true', dest="dynet-immed")
     # -- bk init
     common.add_argument("--bk_init_enabled", action='store_true')
@@ -178,7 +180,7 @@ def init(phase):
     #                      help="type/mode of testing (decode, test, loop)")
     decode.add_argument('--decode_way', type=str, default="beam", choices=["greedy", "beam", "sample", "branch"],
                          help="decoding method (default: %(default)s)")
-    decode.add_argument('--beam_size', '-k', type=int, default=10, help="Beam size (default: %(default)s))")
+    decode.add_argument('--beam_size', '-k', type=int, default=5, help="Beam size (default: %(default)s))")
     decode.add_argument('--decode_len', type=int, default=80, metavar='INT',
                          help="maximum decoding sequence length (default: %(default)s)")
     decode.add_argument('--decode_ratio', type=float, default=5.,
@@ -240,7 +242,12 @@ def init(phase):
     training2.add_argument('--t2_bad_lambda', type=float, default=1.0, help="Scaling factor for bad-seq loss.")
     training2.add_argument('--t2_bad_maxlen', type=int, default=100, help="Max seq-length for bad-seq loss.")
     # >> especailly for err mode
-    training2.add_argument('--t2_err_gold_lambda', type=float, default=0., help="Lambda for traditional gold loss.")
+    training2.add_argument('--t2_err_gold_mode', type=str, default="no", choices=["no","gold","based"], help="How about err-s's corresponding golds.")
+    training2.add_argument('--t2_err_gold_lambda', type=float, default=1., help="Lambda for traditional gold loss.")
+    training2.add_argument('--t2_err_pred_lambda', type=float, default=1., help="Lambda for pred's loss.")
+    training2.add_argument('--t2_err_match_nope', action='store_true', help="No loss for the matched pred seg.")
+    training2.add_argument('--t2_err_match_addfirst', action='store_true', help="Add the first token for matched seg.")
+    training2.add_argument('--t2_err_match_addeos', action='store_true', help="Do not ignore eos for matched seg.")
     # -> updating points: early-update(first-gi-point:FG); at-end(all-gi-points or end points:AG)
     training2.add_argument('--t2_beam_up', type=str, default="ag", choices=["ag", "fg"], help="The updating points")
     # -> how to compare the state scores for attached points
@@ -259,9 +266,9 @@ def init(phase):
     # -- norm
     # todo(warn): have to be cautious about parameters, some model specification is also needed to construct model for decoding
     # todo(warn): only using the first model if using gaussian
-    decode2.add_argument('--normalize_way', type=str, default="none", choices=["none", "norm", "google", "add", "gaussian", "xgaussian"],
+    decode2.add_argument('--normalize_way', type=str, default="norm", choices=["none", "norm", "google", "add", "gaussian", "xgaussian"],
                          help="how to norm length (default: %(default)s)")
-    decode2.add_argument('--normalize_alpha', '-n', type=float, default=0.0, metavar="ALPHA",
+    decode2.add_argument('--normalize_alpha', '-n', type=float, default=1.0, metavar="ALPHA",
                          help="Normalize scores by sentence length or lambda for gaussian.")
     decode2.add_argument('--penalize_eos', type=float, default=0.0, help="Directly penalizing scores when decoding of EOS & '.'.")
     # -- pruning
@@ -293,6 +300,23 @@ def init(phase):
         #
         rerank.add_argument('--rr_mode', type=str, default="rerank", choices=["rerank", "gold"], help="Reranking mode.")
         rerank.add_argument('--rr_analysis_kbests', type=int, default=[10,1], nargs="+", help="Analysing kbests")
+
+    # some extras
+    extras = parser.add_argument_group('Extra options for comparisons.')
+    # - raml
+    extras.add_argument('--raml_samples', type=int, default=0, metavar='INT',
+                          help="augment outputs with n samples, 0 as turned off. (default: %(default)s)")
+    extras.add_argument('--raml_tau', type=float, default=0.85, metavar='FLOAT',
+                          help="temperature for sharpness of exponentiated payoff distribution (default: %(default)s)")
+    extras.add_argument('--raml_reward', type=str, default='hd', metavar='STR',  choices=["hd", "ed"],
+                          help="reward for sampling from exponentiated payoff distribution (default: %(default)s)")
+    # scheduled-sampling
+    extras.add_argument('--ss_mode', type=str, default="none", choices=["none", "linear", "exp", "isigm"])
+    extras.add_argument('--ss_min', type=float, default=0.5, help="Min value for ss.")
+    extras.add_argument('--ss_size', type=int, default=1, help="Select s-best to sample.")
+    extras.add_argument('--ss_start', type=int, default=0, help="Start uidx of ss.")
+    extras.add_argument('--ss_scale', type=int, default=1000, help="Scale for uidx.")
+    extras.add_argument('--ss_k', type=float, default=1.0, help="Various meanings for various ss-modes (1-ki, k^i, k/(k+e^(i/k))).")
 
     a = parser.parse_args()
 
@@ -335,13 +359,14 @@ def check_options(args, phase):
         if args["train_local_loss"].startswith("hinge"):
             _warn_ifnot(args["no_model_softmax"], "no_model_softmax")
             args["no_model_softmax"] = True
-        if args["t2_beam_loss"] == "per":
-            _warn_ifnot(args["no_model_softmax"], "no_model_softmax")
-            args["no_model_softmax"] = True
-            _warn_ifnot(args["t2_gold_run"], "t2_gold_run")
-            args["t2_gold_run"] = True
-        if args["t2_err_gold_lambda"] > 0:
-            _warn_ifnot(args["t2_gold_run"], "t2_gold_run")
-            args["t2_gold_run"] = True
+        if args["train_mode"] == "beam":
+            if args["t2_beam_loss"] == "per":
+                _warn_ifnot(args["no_model_softmax"], "no_model_softmax")
+                args["no_model_softmax"] = True
+                _warn_ifnot(args["t2_gold_run"], "t2_gold_run")
+                args["t2_gold_run"] = True
+            if args["t2_err_gold_lambda"] > 0 and args["t2_err_gold_mode"] == "gold":
+                _warn_ifnot(args["t2_gold_run"], "t2_gold_run")
+                args["t2_gold_run"] = True
         # if args["train_local_loss"] == "hinge_avg":
         #     args["dynet-mem"] = "11111"

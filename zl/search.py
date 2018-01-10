@@ -111,7 +111,11 @@ class State(object):
     # @property: action, prev, id, length
 
     def __repr__(self):
-        return "ID=%s|PID=%s|LEN=%s|SS=%.3f(%.3f)|ACT=%s" % (self.id, self.pid, self.length, self._score_partial, self.score_final, self.action)
+        x = "ID=%s|PID=%s|LEN=%s|SS=%.3f(%.3f)|ACT=%s" % (self.id, self.pid, self.length, self._score_partial, self.score_final, self.action)
+        td = self.sg.target_dict
+        if td is not None:
+            x += "|%s" % (td.getw(self.action_code),)
+        return x
 
     def __str__(self):
         return self.__repr__()

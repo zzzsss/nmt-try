@@ -83,10 +83,14 @@ class MTTrainer(Trainer):
 
     def _validate_bleu(self, dev_iter):
         # bleu score
-        # todo(warn): force greedy validating here
-        mt_decode("greedy", dev_iter, [self._mm], self._mm.target_dict, self.opts, self.opts["dev_output"])
+        # temp change bsize
+        origin_bs = dev_iter.bsize()
+        dev_iter.bsize(self.opts["test_batch_size"])
+        output_name = self.opts["dev_output"] + "%s" % self._tp.uidx
+        mt_decode("beam", dev_iter, [self._mm], self._mm.target_dict, self.opts, output_name)
+        dev_iter.bsize(origin_bs)
         # no restore specifies for the dev set
-        s = mt_eval.evaluate(self.opts["dev_output"], self.opts["dev"][1], self.opts["eval_metric"], True)
+        s = mt_eval.evaluate(output_name, self.opts["dev"][1], self.opts["eval_metric"], True)
         return s
 
     def _validate_them(self, dev_iter, metrics):
