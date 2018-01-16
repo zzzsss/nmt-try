@@ -370,6 +370,29 @@ class Helper(object):
             assert n==0
         return output
 
+class RangeStater(object):
+    def __init__(self, a, b, pieces):
+        # [a, b) / pieces
+        self.a = a
+        self.b = b
+        self.pieces = pieces
+        self.num = 0
+        self.counts = [0] * pieces
+        self.interval = (b-a)/pieces
+
+    def add(self, one):
+        idx = int((one-self.a)/self.interval)
+        idx = max(0, idx)
+        idx = min(self.pieces-1, idx)
+        self.counts[idx] += 1
+        self.num += 1
+
+    def descr(self):
+        divisor = self.num
+        if divisor == 0:
+            divisor = 1
+        return "/".join(["%s(%.3f)"%(x,x/divisor,) for x in self.counts])
+
 # constants
 class Constants(object):
     MAX_V = 12345678

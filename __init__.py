@@ -1,7 +1,3 @@
 class ZNMT:
-    VERSOIN = "0.1.2a0"
-    COMMENT = "Next will be the tryings on zl and ztry1 with a new framework (new version like 0.2)" \
-              " but with slight patches towards 0.1.1"
-    EXTRAS = "Move 0.1.* to ztry0 directory"
-
-    WARN = "what to do now? should I first jump back to ztry0?"
+    VERSOIN = "0.1.2a1"
+    COMMENT = "Now the codes seem to be almost done for this season, maybe too heavy on mt_mt"

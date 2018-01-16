@@ -126,13 +126,18 @@ class State(object):
         s = []
         paths = self.get_path()
         for one in paths:
-            if not verbose:
-                ones = "%s(%.3f)" % (td.getw(one.action_code), one.action.score)
-            else:
-                ones = "%s(%s|%.3f)" % (td.getw(one.action_code), one.action, one.score_partial)
-            s.append(ones)
+            s.append(one.descr_word(td, verbose))
         if print:
             utils.zlog(" ".join(s))
+        return s
+
+    def descr_word(self, td=None, verbose=False):
+        if td is None:
+            td = self.sg.target_dict
+        if not verbose:
+            s = "%s(%.3f)" % (td.getw(self.action_code), self.action.score)
+        else:
+            s = "%s(%s|%.3f)" % (td.getw(self.action_code), self.action, self.score_partial)
         return s
 
     @property

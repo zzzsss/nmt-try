@@ -213,10 +213,11 @@ def init(phase):
     # # # # #
     # -- start training with non-gold seq (reusing opts from other parts)
     # === fb_beam
-    training2.add_argument('--t2_search_ratio', type=float, default=1.0, help="Max search steps ratio according to reference.")
+    training2.add_argument('--t2_search_ratio', type=float, default=1.28, help="Max search steps ratio according to reference.")
     training2.add_argument('--t2_gold_run', action='store_true', help="First running a gold sequence.")
     training2.add_argument('--t2_beam_size', type=int, default=1, help="Beam size for beam training2.")
     training2.add_argument('--t2_impl_bsize', type=int, default=40, help="Impl bsize for fb_beam.")
+    training2.add_argument('--t2_beam_nodrop', action='store_true', help="First beam search with no drops and rerun gold & beam with dropouts.")
     #
     training2.add_argument('--t2_local_expand', type=int, default=100, help="Most expansions for each state.")
     training2.add_argument('--t2_local_diff', type=float, default=100., help="Local pruning diff/thres (1/e**D if transferring to prob.)")
@@ -238,7 +239,7 @@ def init(phase):
     #
     # == loss function and updating
     # -> the final loss: perceptron; local-prob-with-err-states
-    training2.add_argument('--t2_beam_loss', type=str, default="per", choices=["per", "err"], help="what is the loss for fb_beam?")
+    training2.add_argument('--t2_beam_loss', type=str, default="err", choices=["per", "err"], help="what is the loss for fb_beam?")
     training2.add_argument('--t2_bad_lambda', type=float, default=1.0, help="Scaling factor for bad-seq loss.")
     training2.add_argument('--t2_bad_maxlen', type=int, default=100, help="Max seq-length for bad-seq loss.")
     # >> especailly for err mode
@@ -248,6 +249,10 @@ def init(phase):
     training2.add_argument('--t2_err_match_nope', action='store_true', help="No loss for the matched pred seg.")
     training2.add_argument('--t2_err_match_addfirst', action='store_true', help="Add the first token for matched seg.")
     training2.add_argument('--t2_err_match_addeos', action='store_true', help="Do not ignore eos for matched seg.")
+    training2.add_argument('--t2_err_cor_nofirst', action='store_true', help="Do not include first token of correction for bad seq.")
+    # >> thresh
+    training2.add_argument('--t2_err_seg_minlen', type=int, default=1, help="Ignore & combine segs whose length is less than this thresh.")
+    training2.add_argument('--t2_err_mcov_thresh', type=float, default=0., help="Original loss if matched cover less than this thresh.")
     # -> updating points: early-update(first-gi-point:FG); at-end(all-gi-points or end points:AG)
     training2.add_argument('--t2_beam_up', type=str, default="ag", choices=["ag", "fg"], help="The updating points")
     # -> how to compare the state scores for attached points

@@ -27,3 +27,8 @@
 # 2.1 error states
 # 2.2 recombine
 # 2.3 MED
+
+# todo-list (18.01.18)
+# extract merges/segments
+# tuning the parameters of MED
+

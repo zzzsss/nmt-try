@@ -519,6 +519,7 @@ class s2sModel(Model):
         model_softmax = not self.get_prop("no_model_softmax")
         t2_gold_run = self.opts["t2_gold_run"]
         t2_gi_mode = self.opts["t2_gi_mode"]
+        t2_beam_nodrop = self.opts["t2_beam_nodrop"]
         # => START
         State.reset_id()
         f_new_sg = lambda _i: SearchGraph(target_dict=self.target_dict, src_info=insts[_i])
@@ -542,7 +543,7 @@ class s2sModel(Model):
                     gold_next.append(next_x)
                     if next_x.action_code == EOS_ID:
                         gold_ends[_i] = next_x
-            if t2_gold_run:
+            if t2_gold_run and not t2_beam_nodrop:  # todo(warn): rerun later with dropouts
                 # softmax for the "correct" score if needed
                 if step_gold == 0:
                     cc = self.start(xs, softmax=model_softmax)
@@ -565,6 +566,9 @@ class s2sModel(Model):
             gold_cur = gold_next
             gold_states.append(gold_next)
         # 2. then start the beam search (with the knowledge of gold-seq)
+        if t2_beam_nodrop:
+            Model.new_graph()
+            self.refresh(False)     # search with no dropouts
         beam_states = []
         beam_cur = [[PADDING_STATE for _j in range(esize_all)] for _i in range(bsize)]
         beam_states.append(beam_cur)
@@ -589,7 +593,7 @@ class s2sModel(Model):
             beam_continue_flag = False
             # running the caches
             if step_beam == 0:
-                if t2_gold_run:
+                if t2_gold_run and not t2_beam_nodrop:
                     # todo(warn): expand previously calculated values and also results
                     cc = self.repeat(gold_states[0][0].get(VNAME_CACHE)[0], bsize, esize_all, {"hid", "S", "V", "out_s", "results"})
                 else:
@@ -742,6 +746,46 @@ class s2sModel(Model):
             best_end = sorted(beam_ends[_i], key=_get_score_f, reverse=True)[0]
             if len(beam_update_points[_i])<=0 or best_end.length > beam_update_points[_i][-1].length:
                 beam_update_points[_i].append(best_end)
+        # ================================
+        # running gold states or re-run beam states with dropouts
+        if t2_beam_nodrop:
+            Model.new_graph()
+            self.refresh(training)     # run with dropouts when trained
+            # re-run and re-attach caches with dropouts
+            rerun_states = []
+            rerun_ys = []
+            for _i in range(bsize):
+                utils.zcheck(len(beam_update_points[_i])==1, "Currently unsupport rerun with more than one update points!!")
+                this_ends = [beam_update_points[_i][0]]
+                if t2_gold_run:
+                    this_ends.append(gold_ends[_i])
+                for one_end in this_ends:
+                    one_path = one_end.get_path()
+                    one_ys = [x.action_code for x in one_path]
+                    one_path = [one_path[0].prev] + one_path
+                    rerun_states.append(one_path)
+                    rerun_ys.append(one_ys)
+            # rerun
+            rerun_bsize = len(rerun_ys)
+            utils.zcheck(rerun_bsize%bsize==0, "Strange rerun bsize")
+            expand_size = rerun_bsize // bsize
+            #
+            rerun_ylens = [len(_y) for _y in rerun_ys]
+            rerun_maxlen = max(rerun_ylens) + 1     # todo(warn) +1 to get caches for the last state, which might be rebased
+            rerun_prevc, rerun_prevy = None, None
+            for rerun_i in range(rerun_maxlen):
+                ystep, mask_expr = prepare_y_step(rerun_ys, rerun_i)
+                if rerun_i == 0:
+                    cc = self.start(xs, repeat_time=expand_size, softmax=False)
+                else:
+                    cc = self.step(rerun_prevc, rerun_prevy, None, softmax=False)
+                rerun_prevc = cc
+                rerun_prevy = ystep
+                # assign caches
+                for tmp_idx in range(rerun_bsize):
+                    if rerun_i < len(rerun_states[tmp_idx]):
+                        rerun_states[tmp_idx][rerun_i].set(VNAME_CACHE, (cc, tmp_idx))
+        # ================================
         # -- collecting loss according to update_points and use masks for batching
         self.beam_losser_.refresh()
         for _i in range(bsize):
@@ -797,10 +841,14 @@ class BeamLossBuilder(object):
             self.t2_err_gold_mode = opts["t2_err_gold_mode"]
             self.eg_mode_gold = (self.t2_err_gold_mode=="gold")
             self.eg_mode_based = (self.t2_err_gold_mode=="based")
-            # for the matched part
+            # for the matched or correction part
             self.t2_err_match_nope = opts["t2_err_match_nope"]
             self.t2_err_match_addfirst = opts["t2_err_match_addfirst"]
             self.t2_err_match_addeos = opts["t2_err_match_addeos"]
+            self.t2_err_cor_nofirst = opts["t2_err_cor_nofirst"]
+            # matched thresholds
+            self.t2_err_seg_minlen = opts["t2_err_seg_minlen"]
+            self.t2_err_mcov_thresh = opts["t2_err_mcov_thresh"]
         else:
             self.loss_build_f = None
         #
@@ -810,23 +858,27 @@ class BeamLossBuilder(object):
     # refresh
     def refresh(self, clear_stat=False):
         # clear and start a new loss-building process
-        self.beam_maps = {}
-        self.gold_maps = {}
+        self.loss_maps = {}
         self.rebased_maps = []      # special ones for running re-based ones (rebased-basic-cache, tokens)
         if clear_stat:
             # stats
             self.num_points = 0
+            self.num_points_valid = 0   # points that are matched above thresh-2
             self.num_segs = 0
             self.num_tokens = 0
             self.num_bad_tokens = 0
             self.num_good_tokens = 0
             # stats2
             # err
-            self.num_tok_mod = 0
-            self.num_tok_err = 0
-            self.num_tok_good = 0
-            self.num_tok_gold = 0
-            self.num_tok_rebased = 0
+            self.num_tok_mod = 0        # modified (first err)
+            self.num_tok_err = 0        # err states (rest err)
+            self.num_tok_good = 0       # matched
+            self.num_tok_gold = 0       # gold running
+            self.num_tok_rebased = 0    # rebased gold running
+            self.num_tok_falsematch = 0     # regard as unmatched under thresh-1 (counted as bad_tokens)
+            # err stat
+            self.match_cov_stater = utils.RangeStater(0., 1., 10)
+            self.match_seg_stater = utils.RangeStater(1, 20, 10)
             # per
             self.num_tok_minus = 0
             self.num_tok_plus = 0
@@ -838,47 +890,114 @@ class BeamLossBuilder(object):
         #         r[n] = self.__dict__[n]
         # return r
         s = ""
-        divisor = self.num_points + 1e-5
-        s += "Insts:%d||Segs:%d(%.3f)||Toks:%d(%.3f)->match:%d(%.3f),non:%d(%.3f)||" \
-             % (self.num_points, self.num_segs, self.num_segs/divisor, self.num_tokens, self.num_tokens/divisor,
+        divisor = self.num_points_valid + 1e-5
+        divisor0 = self.num_points + 1e-5
+        s += "Insts:%d/%d=%.3f||Segs:%d(%.3f)||Toks:%d(%.3f)->match:%d(%.3f),non:%d(%.3f)||" \
+             % (self.num_points_valid, self.num_points, self.num_points_valid/divisor0,
+                self.num_segs, self.num_segs/divisor, self.num_tokens, self.num_tokens/divisor,
                 self.num_good_tokens, self.num_good_tokens/divisor, self.num_bad_tokens, self.num_bad_tokens/divisor)
         if self.t2_beam_loss == "per":
             s += "Perc->minus(beam):%d/%.3f,plus(gold):%d/%.3f" \
                  % (self.num_tok_minus, self.num_tok_minus/divisor, self.num_tok_plus, self.num_tok_plus/divisor)
         elif self.t2_beam_loss == "err":
-            s += "Err->err0:%d/%.3f,err:%d/%.3f,match:%d/%.3f,gold:%d/%.3f,rebased:%d/%.3f" \
+            s += "Err->err0:%d/%.3f,err:%d/%.3f,match:%d/%.3f,gold:%d/%.3f,rebased:%d/%.3f,falsematch:%d/%.3f" \
                  % (self.num_tok_mod, self.num_tok_mod/divisor, self.num_tok_err, self.num_tok_err/divisor,
                     self.num_tok_good, self.num_tok_good/divisor, self.num_tok_gold, self.num_tok_gold/divisor,
-                    self.num_tok_rebased, self.num_tok_rebased/divisor)
+                    self.num_tok_rebased, self.num_tok_rebased/divisor, self.num_tok_falsematch, self.num_tok_falsematch/divisor)
+            s += "||MC-ranges:%s, Seg-ranges:%s" % (self.match_cov_stater.descr(), self.match_seg_stater.descr())
         else:
             pass
         return s
     # --------
 
+    # BeamLossBuilder.pretty_descr(segs,True)
+    @staticmethod
+    def pretty_descr(segs, print=False):
+        s = ""
+        s += str(segs[0][1][0].sg.src_info) + "\n"
+        for one in reversed(segs):
+            if one[0]:
+                s += "YEP: \n"
+            else:
+                s += "NOP: \n"
+            for rr in [reversed(one[1]), reversed(one[2])]:
+                for ss in rr:
+                    s += ss.descr_word() + " "
+                s += "\n"
+        if print:
+            utils.zlog(s)
+        return s
+
     # build_one
     def build_one(self, point, scale):
         self.num_points += 1
-        segs = self.seq_build_f(point)
-        # reverse it here
-        length_segs = len(segs)
+        ori_segs = self.seq_build_f(point)
+        # ** Thresh 1: length of the matched segment
+        # merge short segments
+        cur_falsematch = 0
+        if self.t2_err_seg_minlen > 1:
+            segs = []
+            for ss in ori_segs:
+                if ss[0]:   # stat
+                    self.match_seg_stater.add(len(ss[1]))
+                real_flag = ss[0]
+                if len(ss[1]) < self.t2_err_seg_minlen and real_flag:
+                    cur_falsematch += len(ss[1])
+                    real_flag = False
+                if len(segs)>0 and segs[-1][0] == real_flag:
+                    # merge into one
+                    segs[-1] = (real_flag, segs[-1][1]+ss[1], segs[-1][2]+ss[2])
+                else:
+                    segs.append((real_flag, ss[1], ss[2]))
+        else:
+            segs = ori_segs
+        # count matches
+        len_all, len_match = 0, 0
         prev_seg = None
-        for idx in range(length_segs):
-            real_idx = length_segs-1-idx
-            this_seg, next_seg = segs[real_idx], segs[real_idx-1]
-            if real_idx <= 0:
-                next_seg = None
-            isMatch, beamSeg, goldSeg = segs[length_segs-1-idx]
-            # stat
-            self.num_segs += 1
-            self.num_tokens += len(beamSeg)
-            if isMatch:
-                self.num_good_tokens += len(beamSeg)
+        for ss in segs:
+            len_all += len(ss[1])
+            if ss[0]:
+                len_match += len(ss[1])
+        matched_cov = len_match/len_all
+        self.match_cov_stater.add(matched_cov)
+        # ** Thresh 2: matched ratio
+        if matched_cov >= self.t2_err_mcov_thresh:
+            length_segs = len(segs)
+            self.num_points_valid += 1
+            self.num_tok_falsematch += cur_falsematch
+            for idx in range(length_segs):
+                real_idx = length_segs-1-idx
+                this_seg, next_seg = segs[real_idx], segs[real_idx-1]
+                if real_idx <= 0:
+                    next_seg = None
+                isMatch, beamSeg, goldSeg = segs[length_segs-1-idx]
+                # stat
+                self.num_segs += 1
+                self.num_tokens += len(beamSeg)
+                if isMatch:
+                    self.num_good_tokens += len(beamSeg)
+                else:
+                    self.num_bad_tokens += len(beamSeg)
+                # record into maps
+                self.loss_build_f(this_seg, prev_seg, next_seg, scale)
+                #
+                prev_seg = this_seg
+        else:
+            # original loss
+            gold_end_state = point.get("AT")
+            if gold_end_state.get(VNAME_CACHE) is None:
+                # if not forward before, build in batch later
+                beam_start_point = point
+                while beam_start_point.prev is not None:
+                    beam_start_point = beam_start_point.prev
+                # share start cache
+                gold_path = gold_end_state.get_path()
+                gold_start_point = gold_path[0].prev
+                utils.zcheck(gold_start_point.get(VNAME_CACHE) is None, "Unreasonable partial calculated seq.")
+                gold_start_point.set(VNAME_CACHE, beam_start_point.get(VNAME_CACHE))
+                self.rebased_maps.append((gold_start_point, [one.action_code for one in gold_path]))
             else:
-                self.num_bad_tokens += len(beamSeg)
-            # record into maps
-            self.loss_build_f(this_seg, prev_seg, next_seg, scale)
-            #
-            prev_seg = this_seg
+                self.build_loss_ordinary(gold_end_state, scale)
 
     # loss
     def get_loss(self, mm):
@@ -889,20 +1008,14 @@ class BeamLossBuilder(object):
                 utils.zcheck(False, "Empty list, non loss for this batch.", func="warn")
                 return layers.BK.zeros((1,))
         # first gather as batched
-        beam_idxs = BeamLossBuilder.gather_loss_from_map(self.beam_maps)
+        loss_idxs = BeamLossBuilder.gather_loss_from_map(self.loss_maps)
         if self.t2_beam_loss == "per":
-            beam_losses = [layers.BK.pick_batch(e,i)*layers.BK.inputVector_batch(m) for e,i,m in beam_idxs]
-            gold_idxs = BeamLossBuilder.gather_loss_from_map(self.gold_maps)
-            gold_losses = [layers.BK.pick_batch(e,i)*layers.BK.inputVector_batch(m) for e,i,m in gold_idxs]
-            return _sum_all(beam_losses) - _sum_all(gold_losses)
+            losses = [layers.BK.pick_batch(e,i)*layers.BK.inputVector_batch(m) for e,i,m in loss_idxs]
+            return _sum_all(losses)
         elif self.t2_beam_loss == "err":
-            beam_losses = [layers.BK.pickneglogsoftmax_batch(e,i)*layers.BK.inputVector_batch(m) for e,i,m in beam_idxs]
-            v = self.t2_err_pred_lambda * _sum_all(beam_losses)
-            if self.eg_mode_gold:
-                gold_idxs = BeamLossBuilder.gather_loss_from_map(self.gold_maps)
-                gold_losses = [layers.BK.pickneglogsoftmax_batch(e,i)*layers.BK.inputVector_batch(m) for e,i,m in gold_idxs]
-                v += self.t2_err_gold_lambda * _sum_all(gold_losses)
-            if self.eg_mode_based:
+            losses = [layers.BK.pickneglogsoftmax_batch(e,i)*layers.BK.inputVector_batch(m) for e,i,m in loss_idxs]
+            v = _sum_all(losses)
+            if self.eg_mode_based or len(self.rebased_maps)>0:  # need to calc
                 rebased_losses = self.get_rebased_gold_losses(mm)
                 v += self.t2_err_gold_lambda * _sum_all(rebased_losses)
             return v
@@ -1170,7 +1283,7 @@ class BeamLossBuilder(object):
                     # todo(warn): ignore some tokens
                     if one.action_code in self.IGNORE_IDS:
                         continue
-                    BeamLossBuilder.add_loss_to_map(self.beam_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
+                    BeamLossBuilder.add_loss_to_map(self.loss_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
                                                     one.action_code, cur_lambda)
                     cur_lambda *= self.t2_bad_lambda
                     if cur_lambda <= 0. or _i >= self.t2_bad_maxlen:
@@ -1180,8 +1293,8 @@ class BeamLossBuilder(object):
                     # todo(warn): ignore some tokens
                     if one.action_code in self.IGNORE_IDS:
                         continue
-                    BeamLossBuilder.add_loss_to_map(self.gold_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
-                                                    one.action_code, cur_lambda)
+                    BeamLossBuilder.add_loss_to_map(self.loss_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
+                                                    one.action_code, -1*cur_lambda)
                     cur_lambda *= self.t2_bad_lambda
                     if cur_lambda <= 0. or _i >= self.t2_bad_maxlen:
                         break
@@ -1200,8 +1313,8 @@ class BeamLossBuilder(object):
                     if not self.t2_err_match_addeos and one.action_code in self.IGNORE_IDS:
                         continue    # ignore eos tokens
                     self.num_tok_good += 1
-                    BeamLossBuilder.add_loss_to_map(self.beam_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
-                                                        one.action_code, scale)
+                    BeamLossBuilder.add_loss_to_map(self.loss_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
+                                                        one.action_code, scale*self.t2_err_pred_lambda)
         else:
             # correct states or err states
             if len(goldSeg) == 0:
@@ -1215,16 +1328,17 @@ class BeamLossBuilder(object):
             cur_thresh = max(0, len(beamSeg) - self.t2_bad_maxlen)
             if cur_idx >= cur_thresh:
                 one = beamSeg[cur_idx]
-                BeamLossBuilder.add_loss_to_map(self.beam_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
-                                                    ynext, cur_lambda)
+                if not self.t2_err_cor_nofirst:
+                    self.num_tok_mod += 1
+                    BeamLossBuilder.add_loss_to_map(self.loss_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
+                                                    ynext, cur_lambda*self.t2_err_pred_lambda)
                 cur_lambda *= self.t2_bad_lambda
-                self.num_tok_mod += 1
                 cur_idx -= 1
             # error states
             while cur_lambda > 0. and cur_idx >= cur_thresh:
                 one = beamSeg[cur_idx]
-                BeamLossBuilder.add_loss_to_map(self.beam_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
-                                                    self.ERR_ID, cur_lambda)
+                BeamLossBuilder.add_loss_to_map(self.loss_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
+                                                    self.ERR_ID, cur_lambda*self.t2_err_pred_lambda)
                 cur_lambda *= self.t2_bad_lambda
                 self.num_tok_err += 1
                 cur_idx -= 1
@@ -1232,8 +1346,8 @@ class BeamLossBuilder(object):
             if self.eg_mode_gold:
                 for one in reversed(goldSeg):
                     self.num_tok_gold += 1
-                    BeamLossBuilder.add_loss_to_map(self.gold_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
-                                                    one.action_code, scale)
+                    BeamLossBuilder.add_loss_to_map(self.loss_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
+                                                    one.action_code, scale*self.t2_err_gold_lambda)
             if self.eg_mode_based:
                 self.num_tok_rebased += len(goldSeg)
                 if len(goldSeg) > 0:
@@ -1245,3 +1359,8 @@ class BeamLossBuilder(object):
                     else:
                         prev_state = beamSeg[-1].prev
                     self.rebased_maps.append((prev_state, [one.action_code for one in reversed(goldSeg)]))
+
+    def build_loss_ordinary(self, gold_end_state, scale):
+        for one in gold_end_state.get_path():
+            BeamLossBuilder.add_loss_to_map(self.loss_maps, one.prev.get(VNAME_CACHE)[0], one.prev.get(VNAME_CACHE)[1],
+                                                    one.action_code, scale*self.t2_err_gold_lambda)
