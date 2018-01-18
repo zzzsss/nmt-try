@@ -8,6 +8,8 @@ from . import mt_layers as layers
 from zl.search import State, SearchGraph, Action
 from .mt_search import Pruner as SPruner
 from .mt_extern import RAML, ScheduledSamplerSetter
+from .mt_par import do_med, MedSegMerger
+from .mt_rerank_analysis import bleu_single
 
 # consts
 from zl.backends.common import ResultTopk
@@ -81,6 +83,9 @@ def prepare_y_step(ys, i):
 class s2sModel(Model):
     def __init__(self, opts, source_dict, target_dict, length_info):
         super(s2sModel, self).__init__()
+        # helpers
+        self.prepare_y_step = prepare_y_step
+        #
         self.opts = opts
         self.source_dict = source_dict
         self.target_dict = target_dict
@@ -805,7 +810,7 @@ class s2sModel(Model):
         # return value?
         if ret_value == "loss":
             lossy_val = layers.BK.get_value_sca(loss)
-            return lossy_val*bsize
+            return lossy_val*real_bsize
         else:
             return 0.
 
@@ -849,8 +854,14 @@ class BeamLossBuilder(object):
             # matched thresholds
             self.t2_err_seg_minlen = opts["t2_err_seg_minlen"]
             self.t2_err_mcov_thresh = opts["t2_err_mcov_thresh"]
+            self.t2_err_pright_thresh = opts["t2_err_pright_thresh"]
+            self.t2_err_thresh_bleu = opts["t2_err_thresh_bleu"]
+            #
+            self.t2_err_debug_print = opts["t2_err_debug_print"]
         else:
             self.loss_build_f = None
+        self.med_ifsub = not opts["t2_med_nosub"]
+        self.med_seg_merger = MedSegMerger(opts, vocab)
         #
         self.refresh(True)
 
@@ -864,10 +875,13 @@ class BeamLossBuilder(object):
             # stats
             self.num_points = 0
             self.num_points_valid = 0   # points that are matched above thresh-2
+            self.num_points_pright = 0  # points turned to gold because matched too much
             self.num_segs = 0
             self.num_tokens = 0
             self.num_bad_tokens = 0
+            self.num_bad_tokens_rebasable = 0   # bad tokens following non-gold seq (rebase and gold will be different)
             self.num_good_tokens = 0
+            self.num_good_tokens_nostarts = 0   # good tokens not at start
             # stats2
             # err
             self.num_tok_mod = 0        # modified (first err)
@@ -892,10 +906,11 @@ class BeamLossBuilder(object):
         s = ""
         divisor = self.num_points_valid + 1e-5
         divisor0 = self.num_points + 1e-5
-        s += "Insts:%d/%d=%.3f||Segs:%d(%.3f)||Toks:%d(%.3f)->match:%d(%.3f),non:%d(%.3f)||" \
-             % (self.num_points_valid, self.num_points, self.num_points_valid/divisor0,
+        s += "Insts:%d/%d/%d=%.3f/%.3f||Segs:%d(%.3f)||Toks:%d(%.3f)->match:%d(%.3f)/ns:%d(%.3f),non:%d(%.3f)/rebasable:%d(%.3f)||" \
+             % (self.num_points_pright, self.num_points_valid, self.num_points, self.num_points_pright/divisor0, self.num_points_valid/divisor0,
                 self.num_segs, self.num_segs/divisor, self.num_tokens, self.num_tokens/divisor,
-                self.num_good_tokens, self.num_good_tokens/divisor, self.num_bad_tokens, self.num_bad_tokens/divisor)
+                self.num_good_tokens, self.num_good_tokens/divisor, self.num_good_tokens_nostarts, self.num_good_tokens_nostarts/divisor,
+                self.num_bad_tokens, self.num_bad_tokens/divisor, self.num_bad_tokens_rebasable, self.num_bad_tokens_rebasable/divisor,)
         if self.t2_beam_loss == "per":
             s += "Perc->minus(beam):%d/%.3f,plus(gold):%d/%.3f" \
                  % (self.num_tok_minus, self.num_tok_minus/divisor, self.num_tok_plus, self.num_tok_plus/divisor)
@@ -914,7 +929,10 @@ class BeamLossBuilder(object):
     @staticmethod
     def pretty_descr(segs, print=False):
         s = ""
-        s += str(segs[0][1][0].sg.src_info) + "\n"
+        if len(segs[0][1])>0:
+            s += str(segs[0][1][0].sg.src_info) + "\n"
+        else:
+            s += str(segs[0][2][0].sg.src_info) + "\n"
         for one in reversed(segs):
             if one[0]:
                 s += "YEP: \n"
@@ -932,39 +950,40 @@ class BeamLossBuilder(object):
     def build_one(self, point, scale):
         self.num_points += 1
         ori_segs = self.seq_build_f(point)
+        for ss in ori_segs:
+            if ss[0]:   # stat
+                self.match_seg_stater.add(len(ss[1]))
         # ** Thresh 1: length of the matched segment
-        # merge short segments
-        cur_falsematch = 0
-        if self.t2_err_seg_minlen > 1:
-            segs = []
-            for ss in ori_segs:
-                if ss[0]:   # stat
-                    self.match_seg_stater.add(len(ss[1]))
-                real_flag = ss[0]
-                if len(ss[1]) < self.t2_err_seg_minlen and real_flag:
-                    cur_falsematch += len(ss[1])
-                    real_flag = False
-                if len(segs)>0 and segs[-1][0] == real_flag:
-                    # merge into one
-                    segs[-1] = (real_flag, segs[-1][1]+ss[1], segs[-1][2]+ss[2])
-                else:
-                    segs.append((real_flag, ss[1], ss[2]))
-        else:
-            segs = ori_segs
+        # merge short & maybe unfit segments
+        segs, cur_falsematch = self.med_seg_merger.merge(ori_segs)
         # count matches
-        len_all, len_match = 0, 0
-        prev_seg = None
-        for ss in segs:
-            len_all += len(ss[1])
-            if ss[0]:
-                len_match += len(ss[1])
-        matched_cov = len_match/len_all
+        if self.t2_err_thresh_bleu:
+            tokens_beam = [one.action_code for one in point.get_path()]
+            tokens_gold = [one.action_code for one in point.get("AT").get_path()]
+            matched_cov = bleu_single(tokens_beam, [tokens_gold])
+        else:
+            len_all, len_match = 0, 0
+            for ss in segs:
+                len_all += len(ss[1])
+                if ss[0]:
+                    len_match += len(ss[1])
+            matched_cov = len_match/len_all
         self.match_cov_stater.add(matched_cov)
+        # debug print
+        if self.t2_err_debug_print:
+            utils.zlog("===== Another match-cov is zz%.3f" % matched_cov)
+            BeamLossBuilder.pretty_descr(segs, True)
         # ** Thresh 2: matched ratio
-        if matched_cov >= self.t2_err_mcov_thresh:
+        # todo(warn): currently(18.01.18) no longer consider multiple update points
+        if matched_cov >= self.t2_err_pright_thresh:
+            self.num_points_pright += 1
+            self.build_loss_ordinary(point, scale)
+        elif matched_cov >= self.t2_err_mcov_thresh:
             length_segs = len(segs)
+            prev_seg = None
             self.num_points_valid += 1
             self.num_tok_falsematch += cur_falsematch
+            bad_flag = False
             for idx in range(length_segs):
                 real_idx = length_segs-1-idx
                 this_seg, next_seg = segs[real_idx], segs[real_idx-1]
@@ -976,28 +995,21 @@ class BeamLossBuilder(object):
                 self.num_tokens += len(beamSeg)
                 if isMatch:
                     self.num_good_tokens += len(beamSeg)
+                    if idx != 0:
+                        self.num_good_tokens_nostarts += len(beamSeg)
                 else:
                     self.num_bad_tokens += len(beamSeg)
+                    if bad_flag:
+                        self.num_bad_tokens_rebasable += len(beamSeg)
+                    bad_flag = True
                 # record into maps
                 self.loss_build_f(this_seg, prev_seg, next_seg, scale)
                 #
                 prev_seg = this_seg
         else:
-            # original loss
-            gold_end_state = point.get("AT")
-            if gold_end_state.get(VNAME_CACHE) is None:
-                # if not forward before, build in batch later
-                beam_start_point = point
-                while beam_start_point.prev is not None:
-                    beam_start_point = beam_start_point.prev
-                # share start cache
-                gold_path = gold_end_state.get_path()
-                gold_start_point = gold_path[0].prev
-                utils.zcheck(gold_start_point.get(VNAME_CACHE) is None, "Unreasonable partial calculated seq.")
-                gold_start_point.set(VNAME_CACHE, beam_start_point.get(VNAME_CACHE))
-                self.rebased_maps.append((gold_start_point, [one.action_code for one in gold_path]))
-            else:
-                self.build_loss_ordinary(gold_end_state, scale)
+            # give up the matched segments
+            whole_seg = self.build_seq_default(point)
+            self.loss_build_f(whole_seg[0], None, None, scale)
 
     # loss
     def get_loss(self, mm):
@@ -1005,7 +1017,7 @@ class BeamLossBuilder(object):
             if len(es) > 0:
                 return layers.BK.sum_batches(layers.BK.esum(es))
             else:
-                utils.zcheck(False, "Empty list, non loss for this batch.", func="warn")
+                utils.zcheck(False, "Empty list, non loss for this list.", func="warn")
                 return layers.BK.zeros((1,))
         # first gather as batched
         loss_idxs = BeamLossBuilder.gather_loss_from_map(self.loss_maps)
@@ -1013,8 +1025,10 @@ class BeamLossBuilder(object):
             losses = [layers.BK.pick_batch(e,i)*layers.BK.inputVector_batch(m) for e,i,m in loss_idxs]
             return _sum_all(losses)
         elif self.t2_beam_loss == "err":
-            losses = [layers.BK.pickneglogsoftmax_batch(e,i)*layers.BK.inputVector_batch(m) for e,i,m in loss_idxs]
-            v = _sum_all(losses)
+            v = layers.BK.zeros((1,))
+            if len(loss_idxs) > 0:
+                losses = [layers.BK.pickneglogsoftmax_batch(e,i)*layers.BK.inputVector_batch(m) for e,i,m in loss_idxs]
+                v += _sum_all(losses)
             if self.eg_mode_based or len(self.rebased_maps)>0:  # need to calc
                 rebased_losses = self.get_rebased_gold_losses(mm)
                 v += self.t2_err_gold_lambda * _sum_all(rebased_losses)
@@ -1151,71 +1165,7 @@ class BeamLossBuilder(object):
         tokens_beam = [one.action_code for one in reversed(list_beam)]
         tokens_gold = [one.action_code for one in reversed(list_gold)]
         # dp for med
-        EDIT_DEL, EDIT_ADD, EDIT_SUB, EDIT_MATCH = 0,1,2,3
-        length_beam, length_gold = len(tokens_beam), len(tokens_gold)
-        tab_dis, tab_act = [[n for n in range(length_gold+1)]], [[EDIT_ADD]*(length_gold+1)]
-        for i, tok_beam in enumerate(tokens_beam):
-            last_dis = tab_dis[-1]
-            one_dis, one_act = [i+1], [EDIT_DEL]
-            tab_dis.append(one_dis)
-            tab_act.append(one_act)
-            for j, tok_gold in enumerate(tokens_gold):
-                v_ij, v_ipj, v_ijp = last_dis[j], one_dis[j], last_dis[j+1]
-                if tok_beam == tok_gold:
-                    this_dis = v_ij
-                    this_act = EDIT_MATCH
-                else:
-                    # using specific orders for the operations
-                    # sub
-                    this_dis = v_ij+1
-                    this_act = EDIT_SUB
-                    # add
-                    if this_dis > v_ipj+1:
-                        this_dis = v_ipj+1
-                        this_act = EDIT_ADD
-                    # del
-                    if this_dis > v_ijp+1:
-                        this_dis = v_ijp+1
-                        this_act = EDIT_DEL
-                #
-                one_dis.append(this_dis)
-                one_act.append(this_act)
-        # back-tracking and get segs
-        def _add_if_nonempty(sgs, one):
-            if len(one[1])>0 or len(one[2])>0:
-                sgs.append(one)
-        segs = []
-        cur_one = (True, [], [])
-        idx_beam, idx_gold = 0, 0
-        while idx_beam<length_beam:
-            _i, _j = length_beam-idx_beam, length_gold-idx_gold
-            act = tab_act[_i][_j]
-            if act == EDIT_MATCH:
-                if not cur_one[0]:
-                    _add_if_nonempty(segs, cur_one)
-                    cur_one = (True, [], [])
-                cur_one[1].append(list_beam[idx_beam])
-                idx_beam += 1
-                cur_one[2].append(list_gold[idx_gold])
-                idx_gold += 1
-            else:
-                if cur_one[0]:
-                    _add_if_nonempty(segs, cur_one)
-                    cur_one = (False, [], [])
-                if act == EDIT_SUB:
-                    cur_one[1].append(list_beam[idx_beam])
-                    idx_beam += 1
-                    cur_one[2].append(list_gold[idx_gold])
-                    idx_gold += 1
-                elif act == EDIT_ADD:
-                    cur_one[2].append(list_gold[idx_gold])
-                    idx_gold += 1
-                elif act == EDIT_DEL:
-                    cur_one[1].append(list_beam[idx_beam])
-                    idx_beam += 1
-                else:
-                    raise RuntimeError("Unlegal action for med.")
-        _add_if_nonempty(segs, cur_one)
+        segs = do_med(tokens_beam, tokens_gold, list_beam, list_gold, self.med_ifsub)
         return segs
 
     # --------------
@@ -1229,9 +1179,9 @@ class BeamLossBuilder(object):
             if idx in m2:
                 v = m2[idx]
                 if v[0] != token:
-                    utils.zcheck(False, "Unsupported multiple token loss: %s vs %s" % (v, [token, scale]), func="warn")
-                v[0] = token
-                v[1] += scale
+                    utils.zcheck(False, "Ignoring: unsupported multiple token loss: %s vs %s" % (v, [token, scale]), func="warn")
+                else:
+                    utils.zcheck(False, "Ignoring: strange multiple token loss: %s vs %s" % (v, [token, scale]), func="warn")
             else:
                 m2[idx] = [token, scale]
         else:

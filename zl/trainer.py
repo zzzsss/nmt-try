@@ -30,6 +30,7 @@ class TrainingProgress(object):
         self.patience = patience
         self.anneal_restarts_cap = anneal_restarts
         #
+        self.hists = []
         self.sortings = []
 
     @property
@@ -63,6 +64,9 @@ class TrainingProgress(object):
                 else:
                     utils.zlog("Sorry, Early Update !!", func="warn")
                     self.estop = True
+        #
+        self.hists = [(_1, _getv(_2)) for _1,_2 in zip(self.hist_points, self.hist_scores)]
+        self.sortings = sorted(self.hists, key=lambda x: x[-1], reverse=True)[:10]
         return if_best, if_anneal
 
     def report(self):
@@ -70,9 +74,7 @@ class TrainingProgress(object):
             return utils.Constants.MIN_V if z is None else z[0]
         for k in sorted(self.__dict__):
             utils.zlog("Training progress results: %s = %s." % (k, self.__dict__[k]), func="score")
-        # ranking
-        self.sortings = sorted([(_1, _getv(_2)) for _1,_2 in zip(self.hist_points, self.hist_scores)], key=lambda x: x[-1], reverse=True)[:10]
-        utils.zlog("Ranking top10 is: %s" % self.sortings)
+        # utils.zlog("Ranking top10 is: %s" % self.sortings)
 
     def link_bests(self, basename):
         utils.Helper.system("rm ztop_model*")
@@ -206,7 +208,7 @@ class Trainer(object):
                     if self.opts["verbose"] and self._tp.uidx % self.opts["report_freq"] == 0:
                         one_recorder.report("Training process: ")
                     # time to validate and save best model ??
-                    if self._tp.uidx % self.opts["valid_freq"] == 0:    # update when _update
+                    if self.opts["validate_freq"] and self._tp.uidx % self.opts["valid_freq"] == 0:    # update when _update
                         one_recorder.report()
                         self._validate(dev_iter, training_states=one_recorder.state())
                         one_recorder.reset()
@@ -215,5 +217,7 @@ class Trainer(object):
                 iter_recorder.report()
                 if self.opts["validate_epoch"]:
                     # here, also record one_recorder, might not be accurate
-                    self._validate(dev_iter, name=".e%s" % self._tp.eidx, training_states=one_recorder.state())
+                    one_recorder.report()
+                    self._validate(dev_iter, name=".ev%s" % self._tp.eidx, training_states=one_recorder.state())
+                    one_recorder.reset()
                 self._tp.eidx += 1

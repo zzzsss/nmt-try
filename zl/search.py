@@ -120,21 +120,23 @@ class State(object):
     def __str__(self):
         return self.__repr__()
 
-    def show_words(self, td=None, print=True, verbose=False):
+    def show_words(self, td=None, print=False, verbose_level=0):
         if td is None:
             td = self.sg.target_dict
         s = []
         paths = self.get_path()
         for one in paths:
-            s.append(one.descr_word(td, verbose))
+            s.append(one.descr_word(td, verbose_level))
         if print:
             utils.zlog(" ".join(s))
         return s
 
-    def descr_word(self, td=None, verbose=False):
+    def descr_word(self, td=None, verbose_level=0):
         if td is None:
             td = self.sg.target_dict
-        if not verbose:
+        if verbose_level==0:
+            s = td.getw(self.action_code)
+        elif verbose_level==1:
             s = "%s(%.3f)" % (td.getw(self.action_code), self.action.score)
         else:
             s = "%s(%s|%.3f)" % (td.getw(self.action_code), self.action, self.score_partial)

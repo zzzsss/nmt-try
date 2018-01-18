@@ -23,7 +23,7 @@ def search_init():
 
 # a padding version of greedy search
 # todo(warn) normers and pruners are not used for this greedy decoding (mostly used for dev)
-def search_greedy(models, insts, target_dict, opts, normer, sstater):
+def search_greedy(models, insts, target_dict, opts, normer, sstater, para_extractor):
     xs = [i[0] for i in insts]
     xwords = [i.get_words(0) for i in insts]
     Model.new_graph()
@@ -86,11 +86,14 @@ def search_greedy(models, insts, target_dict, opts, normer, sstater):
         if finish_size >= bsize:
             break
     # return them
-    return [[s] for s in ends]
+    ret = [[s] for s in ends]
+    for ranked_beam in ret:
+        para_extractor.record(ranked_beam)
+    return ret
 
 # a padding version of sampling
 # todo(warn) normers and local pruners are utilized
-def search_sample(models, insts, target_dict, opts, normer, sstater):
+def search_sample(models, insts, target_dict, opts, normer, sstater, para_extractor):
     xs = [i[0] for i in insts]
     Model.new_graph()
     for _m in models:
@@ -167,6 +170,8 @@ def search_sample(models, insts, target_dict, opts, normer, sstater):
     # final normer
     normer(ends, pred_lens)
     final_list = [sorted(beam, key=lambda x: x.score_final, reverse=True) for beam in ends]
+    for ranked_beam in final_list:
+        para_extractor.record(ranked_beam)
     return final_list
 
 class BatchedHelper(object):
@@ -218,7 +223,7 @@ class BatchedHelper(object):
             return None, None, new_ys
 
 # synchronized with y-steps
-def search_beam(models, insts, target_dict, opts, normer, sstater):
+def search_beam(models, insts, target_dict, opts, normer, sstater, para_extractor):
     xs = [i[0] for i in insts]
     xwords = [i.get_words(0) for i in insts]
     Model.new_graph()
@@ -229,8 +234,10 @@ def search_beam(models, insts, target_dict, opts, normer, sstater):
     esize_all = opts["beam_size"]
     decode_maxlen = opts["decode_len"]
     decode_maxratio = opts["decode_ratio"]
-    # if need to get att-weights (todo(warn))
+    # if need to get att-weights (todo(warn), some cohesion)
     need_att = opts["decode_replace_unk"]
+    decode_dump_hiddens = opts["decode_dump_hiddens"]
+    decode_gold_run = decode_dump_hiddens
     # pruners
     pr_local_expand = min(opts["pr_local_expand"],esize_all)
     pr_local_diff = opts["pr_local_diff"]
@@ -261,6 +268,38 @@ def search_beam(models, insts, target_dict, opts, normer, sstater):
             pred_lens_sigma = np.average([_m.lg.get_real_sigma() for _m in models], axis=0)
             pr_len_upper = pred_lens + opts["pr_len_khigh"] * pred_lens_sigma
             pr_len_lower = pred_lens - opts["pr_len_klow"] * pred_lens_sigma
+            # for printing hiddens (same as static-training)
+            if decode_gold_run:
+                tooling_model = models[0]
+                _, gr_ys = tooling_model.prepare_xy_(insts)
+                gr_caches = one_cache.copy()
+                gr_opens = [one[0] for one in opens]
+                gr_ylens = [len(_y) for _y in gr_ys]
+                gr_maxlen = max(gr_ylens)
+                gr_yprev = None
+                for gr_step in range(gr_maxlen):
+                    gr_ystep, gr_mask_expr = tooling_model.prepare_y_step(gr_ys, gr_step)
+                    for gr_midx, gr_m in enumerate(models):
+                        if gr_step > 0:
+                            gr_cc = gr_m.step(gr_caches[gr_midx], gr_yprev, None)
+                            gr_caches[gr_midx] = gr_cc
+                    gr_yprev = gr_ystep
+                    # set up the hiddens
+                    gr_hids_e = layers.BK.average([one['hid'][0]['H'] for one in gr_caches])
+                    gr_hids_v = layers.BK.get_value_np(gr_hids_e)
+                    gr_results_all = layers.BK.average([one["results"] for one in gr_caches])
+                    gr_results_pick = layers.BK.pick_batch(gr_results_all, gr_ystep)
+                    gr_results_v = layers.BK.get_value_vec(gr_results_pick)
+                    for gr_j in range(bsize):
+                        if gr_opens[gr_j] is not None:
+                            gr_opens[gr_j].set("hidv", gr_hids_v[gr_j])
+                            gr_tok, gr_score = gr_ystep[gr_j], np.log(gr_results_v[gr_j])
+                            gr_next = State(prev=gr_opens[gr_j], action=Action(gr_tok, gr_score))
+                            gr_next.state("GOLD")
+                            if gr_tok == eos_id:
+                                gr_opens[gr_j] = None
+                            else:
+                                gr_opens[gr_j] = gr_next
         else:
             for mi, _m in enumerate(models):
                 cc = _m.step(caches[-1][mi], yprev, utils.Helper.stream_rec(opens))
@@ -269,11 +308,18 @@ def search_beam(models, insts, target_dict, opts, normer, sstater):
         results = layers.BK.average([one["results"] for one in one_cache])
         this_bsize = layers.BK.bsize(results)
         results_topk = layers.BK.topk(results, pr_local_expand)
+        ## need to store more values
         if need_att:
             atts_e = layers.BK.average([one["att"] for one in one_cache])
             atts_v = layers.BK.get_value_np(atts_e)
         else:
             atts_v = [None for _ in range(this_bsize)]
+        #
+        if decode_dump_hiddens:
+            hids_e = layers.BK.average([one['hid'][0]['H'] for one in one_cache])
+            hids_v = layers.BK.get_value_np(hids_e)
+        else:
+            hids_v = [None for _ in range(this_bsize)]
         nexts = []
         for i in range(bsize):
             # cur off if one of the criteria says it is time to end.
@@ -289,6 +335,8 @@ def search_beam(models, insts, target_dict, opts, normer, sstater):
                 rr0 = results_topk[r_start+j]
                 rr = _m0.explain_result_topkp(rr0)
                 one_attv = atts_v[r_start+j]
+                one_hidv = hids_v[r_start+j]
+                prev_states[j].set("hidv", one_hidv)
                 # todo(warn): force end for the last step
                 if force_end:
                     # todo(warn): ignore eos score
@@ -345,6 +393,8 @@ def search_beam(models, insts, target_dict, opts, normer, sstater):
     final_list = [sorted(beam, key=lambda x: x.score_final, reverse=True) for beam in ends]
     # data.Vocab.i2w(target_dict, final_list[0][0])
     # final_list[0][0].sg.show_graph(target_dict)
+    for ranked_beam in final_list:
+        para_extractor.record(ranked_beam)
     return final_list
 
 class Pruner(object):
@@ -452,7 +502,7 @@ class Pruner(object):
         return temp_ret
 
 # dfs style searching, currently only follow the branching of the greedy one
-def search_branch(models, insts, target_dict, opts, normer, sstater):
+def search_branch(models, insts, target_dict, opts, normer, sstater, para_extractor):
     # todo(warn) currently only one pass
     _get_score_f = (lambda x: x.score_partial/x.length)
     xs = [i[0] for i in insts]
@@ -692,9 +742,11 @@ def search_branch(models, insts, target_dict, opts, normer, sstater):
         ends = [extract_nbest(ol[0].sg, esize_all, length_reward=opts["decode_latnbest_lreward"], normalizing_alpha=opts["decode_latnbest_nalpha"], max_repeat_times=opts["decode_latnbest_rtimes"]) for ol in ends]
     normer(ends, pred_lens)
     final_list = [sorted(beam, key=lambda x: x.score_final, reverse=True) for beam in ends]
+    for ranked_beam in final_list:
+        para_extractor.record(ranked_beam)
     return final_list
 
-def search_rerank(models, inst_pairs, target_dict, opts, normer, sstater):
+def search_rerank(models, inst_pairs, target_dict, opts, normer, sstater, para_extractor):
     # inst_pairs -> (x, ys(multis), ...), golds
     adding_gold = (opts["rr_mode"] == "gold")
     Model.new_graph()

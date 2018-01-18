@@ -15,7 +15,7 @@ def main():
     # -- here usually no need for test[1], but for convenience ...
     if not looping:
         dicts = [source_dict] + [target_dict for _ in opts["test"][1:]]
-        test_iter = get_arranger(opts["test"], dicts, multis=False, shuffling_corpus=False, shuflling_buckets=False, sort_prior=[0], batch_size=opts["test_batch_size"], maxibatch_size=-1, max_len=utils.Constants.MAX_V, min_len=0, one_len=opts["max_len"]+1)
+        test_iter = get_arranger(opts["test"], dicts, multis=False, shuffling_corpus=False, shuflling_buckets=False, sort_prior=[0], batch_size=opts["test_batch_size"], maxibatch_size=-1, max_len=utils.Constants.MAX_V, min_len=0, one_len=opts["max_len"]+1, shuffling0=False)
     # 2. model
     mm = []
     for mn in opts["models"]:

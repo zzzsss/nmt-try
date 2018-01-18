@@ -31,4 +31,7 @@
 # todo-list (18.01.18)
 # extract merges/segments
 # tuning the parameters of MED
+# mt_select -> maybe select good pred sentences as gold (** maybe later)
 
+# todo (18.01.27)
+# merging for decoding: cov heuristics & checking

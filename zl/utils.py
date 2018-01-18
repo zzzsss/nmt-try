@@ -4,11 +4,11 @@ import numpy as np
 from collections import Iterable
 
 # Part 0: loggings
-def zopen(filename, mode='r'):
+def zopen(filename, mode='r', encoding="utf-8"):
     if filename.endswith('.gz'):
-        return gzip.open(filename, mode, encoding="utf-8")
+        return gzip.open(filename, mode, encoding=encoding)
     else:
-        return open(filename, mode, encoding="utf-8")
+        return open(filename, mode, encoding=encoding)
 
 def zlog(s, func="plain", flush=True):
     Logger._instance._log(str(s), func, flush)
@@ -379,6 +379,9 @@ class RangeStater(object):
         self.num = 0
         self.counts = [0] * pieces
         self.interval = (b-a)/pieces
+        # end points
+        self.counts_a = 0
+        self.counts_b = 0
 
     def add(self, one):
         idx = int((one-self.a)/self.interval)
@@ -386,12 +389,17 @@ class RangeStater(object):
         idx = min(self.pieces-1, idx)
         self.counts[idx] += 1
         self.num += 1
+        if one <= self.a:
+            self.counts_a += 1
+        elif one >= self.b:
+            self.counts_b += 1
 
     def descr(self):
         divisor = self.num
         if divisor == 0:
             divisor = 1
-        return "/".join(["%s(%.3f)"%(x,x/divisor,) for x in self.counts])
+        return "/".join(["%s(%.3f)"%(x,x/divisor,) for x in self.counts]) + \
+               "|ends:(%s(%.3f),%s(%.3f))" % (self.counts_a, self.counts_a/divisor, self.counts_b, self.counts_b/divisor)
 
 # constants
 class Constants(object):

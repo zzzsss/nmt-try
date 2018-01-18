@@ -82,3 +82,22 @@ class StateStater(object):
             utils.zlog("num=%s, steps=%s, steps/num=%.3f" % (self.num, self.step, (self.step+0.)/self.num), func="info")
             for k in sorted(list(self.rr.keys())):
                 utils.zlog("-> %s=%s(%.3f||%.3f)" % (k, self.rr[k], (self.rr[k]+0.)/self.num, (self.rr[k]+0.)/self.step), func="info")
+
+# extract all the states from a sg
+def extract_states(sg):
+    HID_NAME = "hidv"
+    target_dict = sg.target_dict
+    src_inst = sg.src_info
+    src_str = str(src_inst)
+    states = []
+    them = sg.bfs()
+    for s0, s1 in them:
+        for one in s0+s1:
+            hid = one.get(HID_NAME)
+            if hid is not None:
+                pruner = one.get("PR_PRUNER")
+                pruner_id = None if pruner is None else pruner.id
+                state_value = {HID_NAME:hid.tolist(), "repr":str(one), "path":one.show_words(),
+                               "id":one.id, "pruner":pruner_id, "state":one.state()}
+                states.append(state_value)
+    return [src_str, states]

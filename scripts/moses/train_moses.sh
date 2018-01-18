@@ -12,9 +12,9 @@ LANG_E=en
 CORPUS_LM=`pwd`/../zh_en_data/train.final
 CORPUS=`pwd`/../zh_en_data/train.final
 DEV_F=`pwd`/../zh_en_data/Dev-set/nist_2002.src
-DEV_E=`pwd`/../zh_en_data/Dev-set/nist_2002.trg
+DEV_E=`pwd`/../zh_en_data/Dev-set/nist_2002.ref
 TEST=`pwd`/../zh_en_data/Dev-set/nist_2002.src
-REF=`pwd`/../zh_en_data/Dev-set/nist_2002.trg
+REF=`pwd`/../zh_en_data/Dev-set/nist_2002.ref
 LM_ORDER=5
 JOBS=16
 

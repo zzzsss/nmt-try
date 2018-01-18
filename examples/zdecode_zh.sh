@@ -2,7 +2,8 @@
 
 zmt="../.."
 #rundir="../z1126_3/"
-rundir="../z1217_base/"
+#rundir="../z1217_base/"
+rundir="../../baselines/ze_ev/"
 TEST_SUBDIR="Test-set"
 EVAL_SUBDIR="Reference-for-evaluation"
 datadir="../../zh_en_data/"
@@ -10,7 +11,7 @@ dataname="nist_2002"
 output="z"
 src="zh"
 trg="en"
-gpuid=7
+gpuid=0
 #pyargs="-m pdb"
 pyargs=""
 baseextras=""
@@ -28,12 +29,15 @@ function run
 # test
 # PYTHONPATH=$DY_ZROOT/gbuild/python python3.5 -m pdb ../../znmt/test.py -v --report_freq 128 --eval_metric ibleu -o debug -t ../../zh_en_data/Dev-set/nist_2002.{src,ref0} -d ../z1217_base//{"src","trg"}.v -m ../z1217_base/zbest.model --dynet-devices ?
 
+# paraf
+#PYTHONPATH=$DY_ZROOT/gbuild/python python3.5 -m pdb ../../znmt/test.py -v --report_freq 128 --eval_metric ibleu -o debug -d ../z1217_base//{"src","trg"}.v -m ../z1217_base/zbest.model --dynet-devices GPU:2 --decode_extract_paraf --pr_global_expand 1 --pr_tngram_n 4 --pr_tngram_range 4 --pr_local_diff 2.0 -t ../../zh_en_data/Dev-set/nist_2002.{src,ref0,ref1,ref2,ref3}
+
 # analysis
 # PYTHONPATH=$DY_ZROOT/cbuild/python python3 ../../znmt/rerank.py -d ../z1217_base/{src,trg}.v -m --gold ../../zh_en_data/Dev-set/nist_2002.ref* -t ../../zh_en_data/Dev-set/nist_2002.src ./z.nist_2002.t00.nbest
 # python3 ../../znmt/scripts/tools/extract_n.py ../../zh_en_data/Dev-set/nist_2002.* ./z.nist_2002.t00.nbest
 
 # rerank
-PYTHONPATH=$DY_ZROOT/gbuild/python python3.5 -m pdb ../../znmt/rerank.py -v --report_freq 128 --eval_metric ibleu -o ./z.nist_2002.debug.rr -t ../../zh_en_data/Dev-set/nist_2002.src ./z.nist_2002.t00.nbest --gold ../../zh_en_data/Dev-set/nist_2002.ref* -d ../z1126_3/{"src","trg"}.v --dynet-devices GPU:7 -m ../z1126_3/{model.e21-u320000,model.e22-u330000,model.e23-u340000} --normalize_way norm --normalize_alpha 1.0
+# PYTHONPATH=$DY_ZROOT/gbuild/python python3.5 -m pdb ../../znmt/rerank.py -v --report_freq 128 --eval_metric ibleu -o ./z.nist_2002.debug.rr -t ../../zh_en_data/Dev-set/nist_2002.src ./z.nist_2002.t00.nbest --gold ../../zh_en_data/Dev-set/nist_2002.ref* -d ../z1126_3/{"src","trg"}.v --dynet-devices GPU:7 -m ../z1126_3/{model.e21-u320000,model.e22-u330000,model.e23-u340000} --normalize_way norm --normalize_alpha 1.0
 
 function run_rerank
 {
@@ -206,3 +210,65 @@ run s12 "--test_batch_size 1 --beam_size 10 --pr_local_diff 2.0 --normalize_way 
 run s13 "--test_batch_size 1 --beam_size 10 --pr_local_diff 2. --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4"
 run s14 "--test_batch_size 1 --beam_size 10 --pr_local_diff 2.0 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4"
 run s15 "--test_batch_size 1 --beam_size 10 --pr_local_diff 2.0 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"
+
+## rerun again with ze_ev
+run s00 "--beam_size 1"
+run s01 "--beam_size 5 --pr_local_diff 2.0 --normalize_alpha 0.0"
+run s02 "--beam_size 5 --pr_local_diff 2.0 --normalize_alpha 1.0"
+run s03 "--beam_size 5 --pr_local_diff 2.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 3 --pr_tngram_n 3"
+run s04 "--beam_size 5 --pr_local_diff 2.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 3 --pr_tngram_n 3 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s05 "--beam_size 5 --pr_local_diff 2.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4"
+run s06 "--beam_size 5 --pr_local_diff 2.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s07 "--beam_size 5 --pr_local_diff 2.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 5 --pr_tngram_n 5"
+run s08 "--beam_size 5 --pr_local_diff 2.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 5 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s09 "--beam_size 10 --pr_local_diff 2.0 --normalize_alpha 0.0"
+run s10 "--beam_size 10 --pr_local_diff 2.0 --normalize_alpha 1.0"
+run s11 "--beam_size 10 --pr_local_diff 2.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 3 --pr_tngram_n 3"
+run s12 "--beam_size 10 --pr_local_diff 2.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 3 --pr_tngram_n 3 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s13 "--beam_size 10 --pr_local_diff 2.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4"
+run s14 "--beam_size 10 --pr_local_diff 2.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s15 "--beam_size 10 --pr_local_diff 2.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 5 --pr_tngram_n 5"
+run s16 "--beam_size 10 --pr_local_diff 2.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 5 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0"
+
+#run s20 "--beam_size 10 --pr_local_diff 2.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 5 --pr_tngram_n 5 --decode_dump_hiddens"
+#
+# rerun, diff-1.0 is bad ...
+run check_sg "--beam_size 3 --pr_local_diff 2.0 --normalize_alpha 1.0 --decode_dump_hiddens"
+run s21 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 1 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s22 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s23 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 3 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s24 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s25 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 5 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s26 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 6 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s27 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 7 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s28 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 1 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s29 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s30 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 3 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s31 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s32 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 5 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s33 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 6 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s34 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 7 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0"
+#
+run s35 "--beam_size 10 --pr_local_diff 3.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 1 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s36 "--beam_size 10 --pr_local_diff 3.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s37 "--beam_size 10 --pr_local_diff 3.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 3 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s38 "--beam_size 10 --pr_local_diff 3.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s39 "--beam_size 10 --pr_local_diff 3.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 5 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s40 "--beam_size 10 --pr_local_diff 3.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 6 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s41 "--beam_size 10 --pr_local_diff 3.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 7 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s42 "--beam_size 10 --pr_local_diff 3.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 1 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s43 "--beam_size 10 --pr_local_diff 3.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s44 "--beam_size 10 --pr_local_diff 3.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 3 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s45 "--beam_size 10 --pr_local_diff 3.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s46 "--beam_size 10 --pr_local_diff 3.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 5 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s47 "--beam_size 10 --pr_local_diff 3.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 6 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0"
+run s48 "--beam_size 10 --pr_local_diff 3.0 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 7 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0"
+
+run s50 "--beam_size 2 --pr_local_diff 2.3 --normalize_alpha 1.0 --decode_dump_hiddens"
+run s51 "--beam_size 3 --pr_local_diff 2.3 --normalize_alpha 1.0 --decode_dump_hiddens"
+run s52 "--beam_size 5 --pr_local_diff 2.3 --normalize_alpha 1.0 --decode_dump_hiddens"
+run s53 "--beam_size 8 --pr_local_diff 2.3 --normalize_alpha 1.0 --decode_dump_hiddens"
+run s54 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --decode_dump_hiddens"
+run s55 "--beam_size 12 --pr_local_diff 2.3 --normalize_alpha 1.0 --decode_dump_hiddens"
+run s56 "--beam_size 16 --pr_local_diff 2.3 --normalize_alpha 1.0 --decode_dump_hiddens"
+run s57 "--beam_size 20 --pr_local_diff 2.3 --normalize_alpha 1.0 --decode_dump_hiddens"

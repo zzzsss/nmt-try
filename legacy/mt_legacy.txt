@@ -950,3 +950,24 @@ def fb_standard_(self, insts, training, ret_value="loss"):
             return reshaped_values
         else:
             return {}
+
+# =====================
+# 18.01.19
+if not giveup_beam_thresh:
+    pass
+else:
+    # original loss
+    gold_end_state = point.get("AT")
+    if gold_end_state.prev.get(VNAME_CACHE) is None:
+        # if not forward before, build in batch later
+        beam_start_point = point
+        while beam_start_point.prev is not None:
+            beam_start_point = beam_start_point.prev
+        # share start cache
+        gold_path = gold_end_state.get_path()
+        gold_start_point = gold_path[0].prev
+        utils.zcheck(gold_start_point.get(VNAME_CACHE) is None, "Unreasonable partial calculated seq.")
+        gold_start_point.set(VNAME_CACHE, beam_start_point.get(VNAME_CACHE))
+        self.rebased_maps.append((gold_start_point, [one.action_code for one in gold_path]))
+    else:
+        self.build_loss_ordinary(gold_end_state, scale)

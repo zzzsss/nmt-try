@@ -66,7 +66,7 @@ class BleuCalculator(object):
                         for k in onegram_one_pred:
                             cc += min(onegram_gold[k], onegram_one_pred[k])
                         info.append(cc)
-                    one_sb = BleuCalculator.bleu4(info[0], info2[0], info[1:], info2[1:], smoothing=True)
+                    one_sb = BleuCalculator.bleu4(info[0], info2[0], info[1:], info2[1:], smoothing=True, ss_short=True)
                     sbs.append(one_sb)
                     infos.append(info)
                     infos2.append(info2)
@@ -86,7 +86,7 @@ class BleuCalculator(object):
             return math.exp(1 - closest_ref_len / hyp_len)
 
     @staticmethod
-    def bleu4(length_gold, length_pred, counts_hit, counts_all, smoothing=False, report=False):
+    def bleu4(length_gold, length_pred, counts_hit, counts_all, smoothing=False, report=False, ss_short=False):
         s, cc = 0., 0
         them = {}
         bp = BleuCalculator.brevity_penalty(length_gold, length_pred)
@@ -108,11 +108,14 @@ class BleuCalculator(object):
         s /= cc
         bleu = bp * math.exp(s)
         them["bleu"] = bleu
-        ss = "BLEU = %.2f, %.1f/%.1f/%.1f/%.1f (BP=%.3f, hyp_len=%d, ref_len=%d)" \
-                  % (them["bleu"]*100, them[0]*100, them[1]*100, them[2]*100, them[3]*100, bp, length_pred, length_gold)
+        ss = None
         if report:
             # utils.zlog("BLEU4-Counts: %s-%s" % (counts_hit, counts_all))
+            ss = "BLEU = %.2f, %.1f/%.1f/%.1f/%.1f (BP=%.3f, hyp_len=%d, ref_len=%d)" \
+                  % (them["bleu"]*100, them[0]*100, them[1]*100, them[2]*100, them[3]*100, bp, length_pred, length_gold)
             utils.zlog(ss)
+        if ss_short:
+            ss = "%.2f(BP=%.3f,L=%d)" % (them["bleu"]*100, bp, length_pred)
         return bleu, ss
 
     @staticmethod
@@ -338,3 +341,30 @@ class BleuCalculator(object):
         if len(preds) > 1:
             BleuCalculator.analyse_multi(golds, preds, 1, n)
             utils.zlog("", func="time")
+
+# single sentence bleu
+def bleu_single(hyp, refs, n=4):
+    # hyp: list of tokens; refs: list of list of tokens
+    ngrams_ref = [defaultdict(int) for _ in range(n)]
+    lengths_ref = []
+    # count refs
+    for one_ref in refs:
+        lengths_ref.append(len(one_ref))
+        ngrams_one_ref = BleuCalculator.count_ngrams(one_ref, n)
+        for onegram_ref, onegram_one_ref in zip(ngrams_ref, ngrams_one_ref):
+            for k in onegram_one_ref:
+                onegram_ref[k] = max(onegram_ref[k], onegram_one_ref[k])
+    # count hyp
+    ngrams_hyp = BleuCalculator.count_ngrams(hyp, n)
+    length_hyp = len(hyp)
+    crl = BleuCalculator.closest_ref_length(lengths_ref, length_hyp)
+    info, info2 = [crl], [length_hyp]
+    for _i in range(n):
+        info2.append(max(info2[0]-_i, 0))
+    for onegram_gold, onegram_one_pred in zip(ngrams_ref, ngrams_hyp):
+        cc = 0
+        for k in onegram_one_pred:
+            cc += min(onegram_gold[k], onegram_one_pred[k])
+        info.append(cc)
+    one_sb = BleuCalculator.bleu4(info[0], info2[0], info[1:], info2[1:], smoothing=True, report=False)
+    return one_sb[0]

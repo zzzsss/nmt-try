@@ -334,7 +334,7 @@ class TextInstanceLengthSorter(object):
 
 # read from files
 class TextFileReader(InstanceReader):
-    def __init__(self, files, vocabs, multis, shuffling):
+    def __init__(self, files, vocabs, multis, shuffling, shuffling0):
         utils.zcheck_matched_length(files, vocabs, _forced=True)
         if not isinstance(multis, Iterable):
             utils.zcheck_type(multis, bool, _forced=True)
@@ -350,6 +350,10 @@ class TextFileReader(InstanceReader):
         if shuffling and any(multis):
             utils.zfatal("Not implemented for shuffling multi-line files.")
         self._readers = [TextFileReader._read_one if not m else TextFileReader._read_one_multi for m in multis]
+        #
+        if shuffling0:
+            with utils.Timer(tag="shuffle", info="shuffle the file corpus before training."):
+                self.files = TextFileReader.shuffle_corpus(self.files, openfd=False)
 
     def __len__(self):
         # return num of instances (use cached value)
@@ -358,7 +362,7 @@ class TextFileReader(InstanceReader):
         return self.num_insts
 
     @staticmethod
-    def shuffle_corpus(files):
+    def shuffle_corpus(files, openfd=True):
         # global shuffle, creating tmp files on current dir
         with utils.zopen(files[0]) as f:
             lines = [[i.strip()] for i in f]
@@ -375,9 +379,12 @@ class TextFileReader(InstanceReader):
             with utils.zopen(filenames_shuf[-1], 'w') as f:
                 for l in lines:
                     f.write(l[ii]+"\n")
-        # read
-        fds = [utils.zopen(_f) for _f in filenames_shuf]
-        return fds
+        if openfd:
+            # read
+            fds = [utils.zopen(_f) for _f in filenames_shuf]
+            return fds
+        else:
+            return filenames_shuf
 
     @staticmethod
     def _read_one(fd, vv):
@@ -439,14 +446,14 @@ class TextFileReader(InstanceReader):
             ffd.close()
 
 # one call for convenience
-def get_arranger(files, vocabs, multis, shuffling_corpus, shuflling_buckets, sort_prior, batch_size, maxibatch_size, max_len, min_len, one_len):
-    streamer = TextFileReader(files, vocabs, multis, shuffling_corpus)
+def get_arranger(files, vocabs, multis, shuffling_corpus, shuflling_buckets, sort_prior, batch_size, maxibatch_size, max_len, min_len, one_len, shuffling0):
+    streamer = TextFileReader(files, vocabs, multis, shuffling_corpus, shuffling0)
     tracking_order = True if maxibatch_size<=0 else False   # todo(warn): -1 for dev/test
     arranger = BatchArranger(streamer=streamer, batch_size=batch_size, maxibatch_size=maxibatch_size, outliers=[TextInstanceRangeOutlier(min_len, max_len)], single_outlier=TextInstanceRangeOutlier(min_len, one_len), sorting_keyer=TextInstanceLengthSorter(sort_prior), tracking_order=tracking_order,shuffling=shuflling_buckets)
     return arranger
 
 def get_arranger_simple(files, vocabs, multis, batch_size):
-    streamer = TextFileReader(files, vocabs, multis, False)
+    streamer = TextFileReader(files, vocabs, multis, False, False)
     tracking_order = False
     arranger = BatchArranger(streamer=streamer, batch_size=batch_size, maxibatch_size=1, outliers=None, single_outlier=None, sorting_keyer=None, tracking_order=tracking_order,shuffling=False)
     return arranger

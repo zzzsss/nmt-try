@@ -110,6 +110,7 @@ def init(phase):
 
     # training progress
     training = parser.add_argument_group('training parameters')
+    training.add_argument('--shuffle_training_data_onceatstart', action='store_true', help="first shuffle before training.")
     training.add_argument('--no_shuffle_training_data', action='store_false', dest='shuffle_training_data',
                              help="don't shuffle training data before each epoch")
     network.add_argument('--training_sort_type', type=str, default="trg-src", choices=["src", "trg", "src-trg", "trg-src"],
@@ -154,6 +155,7 @@ def init(phase):
                          help="type of metric for validation (separated by ',') (default: %(default)s)")
     validation.add_argument('--validate_epoch', action='store_true', help="validate at the end of each epoch")
     validation.add_argument('--validate0', action='store_true', help="validate at the start")
+    validation.add_argument('--no_validate_freq', action='store_false', dest="validate_freq", help="no validating at freq points.")
 
     # common
     common = parser.add_argument_group('common')
@@ -228,6 +230,7 @@ def init(phase):
     #
     # == synchronization (med or nga or [todo]both?)
     training2.add_argument('--t2_sync_med', action='store_true', help="Fb-beam with med sync.")
+    training2.add_argument('--t2_med_nosub', action='store_true', help="No sub when calculating med.")
     training2.add_argument('--t2_med_range', type=int, default=100, help="Range of med, default might be enough, n for 2n-1")
     training2.add_argument('--t2_sync_nga', action='store_true', help="Fb-beam with nga sync.")
     training2.add_argument('--t2_nga_n', type=int, default=5, help="Nth tailing ngram sig for matching gold.")
@@ -248,11 +251,18 @@ def init(phase):
     training2.add_argument('--t2_err_pred_lambda', type=float, default=1., help="Lambda for pred's loss.")
     training2.add_argument('--t2_err_match_nope', action='store_true', help="No loss for the matched pred seg.")
     training2.add_argument('--t2_err_match_addfirst', action='store_true', help="Add the first token for matched seg.")
-    training2.add_argument('--t2_err_match_addeos', action='store_true', help="Do not ignore eos for matched seg.")
+    training2.add_argument('--t2_err_match_addeos', action='store_true', dest="t2_err_match_addeos", help="Add eos for matched seg.")
     training2.add_argument('--t2_err_cor_nofirst', action='store_true', help="Do not include first token of correction for bad seq.")
     # >> thresh
-    training2.add_argument('--t2_err_seg_minlen', type=int, default=1, help="Ignore & combine segs whose length is less than this thresh.")
     training2.add_argument('--t2_err_mcov_thresh', type=float, default=0., help="Original loss if matched cover less than this thresh.")
+    training2.add_argument('--t2_err_pright_thresh', type=float, default=1.01, help="Consider pred as gold if matched >= this one.")
+    training2.add_argument('--t2_err_thresh_bleu', action='store_true', help="Using bleu rather than matched ratio as thresh criterion.")
+    # >>> special control for threshing
+    training2.add_argument('--t2_err_seg_minlen', type=int, default=1, help="Ignore & combine segs whose length is less than this thresh.")
+    training2.add_argument('--t2_err_seg_freq_token', type=int, default=0, help="Regard as freq token if <= this thresh.")
+    training2.add_argument('--t2_err_seg_extend_range', type=int, default=0, help="Checking range for extends for a matched seg.")
+    #
+    training2.add_argument('--t2_err_debug_print', action='store_true')
     # -> updating points: early-update(first-gi-point:FG); at-end(all-gi-points or end points:AG)
     training2.add_argument('--t2_beam_up', type=str, default="ag", choices=["ag", "fg"], help="The updating points")
     # -> how to compare the state scores for attached points
@@ -262,12 +272,18 @@ def init(phase):
     decode2 = parser.add_argument_group('decoding parameters section2')
     # -- general
     decode2.add_argument('--no_output_kbest', action='store_false', help="Output special files with all outputs.", dest="decode_output_kbest")
+    decode2.add_argument('--decode_dump_hiddens', action='store_true', help="Dump hiddens for all states.")
     decode2.add_argument('--decode_replace_unk', action='store_true', help="Copy max-attention src for UNK.")
     decode2.add_argument('--decode_latnbest', action='store_true', help="Re-generate n-best from lattice.")
     decode2.add_argument('--decode_latnbest_nalpha', type=float, default=0.0, help="Length normalizer for lattice n-best.")
     decode2.add_argument('--decode_latnbest_lreward', type=float, default=0.0, help="Length reward for lattice n-best.")
     decode2.add_argument('--decode_latnbest_rtimes', type=int, default=1, help="Maximum repeating times of link in the stack.")
     decode2.add_argument('--decode_output_r2l', action='store_true', help="r2l model")
+    # -- para_extractor
+    decode2.add_argument('--decode_extract_paraf', action='store_true', help="Extract paraf as a by-product when decoding.")
+    # -> re-using t2_*
+    # decode2.add_argument('--decode_paraf_nosub', action='store_true', help="Equiv to t2_med_nosub.")
+    # decode2.add_argument('--decode_paraf_matched_minlen', type=int, default=1,  help="Equiv to t2_err_seg_minlen.")
     # -- norm
     # todo(warn): have to be cautious about parameters, some model specification is also needed to construct model for decoding
     # todo(warn): only using the first model if using gaussian
@@ -293,6 +309,8 @@ def init(phase):
     # --- specific tailing ngram params
     decode2.add_argument('--pr_tngram_n', type=int, default=5, help="Nth tailing ngram sig for pruning.")
     decode2.add_argument('--pr_tngram_range', type=int, default=0, help="Number of the range of history for tngram, 0 for none.")
+    # ---- and possible cov heuristics
+
     #
     decode2.add_argument('--branching_fullfill_ratio', type=float, default=1., help="How many states to visit according to the length of first greedy one.")
     decode2.add_argument('--branching_criterion', type=str, default="abs", choices=["abs", "rel", "b_abs", "b_rel"],
@@ -321,7 +339,7 @@ def init(phase):
     extras.add_argument('--ss_size', type=int, default=1, help="Select s-best to sample.")
     extras.add_argument('--ss_start', type=int, default=0, help="Start uidx of ss.")
     extras.add_argument('--ss_scale', type=int, default=1000, help="Scale for uidx.")
-    extras.add_argument('--ss_k', type=float, default=1.0, help="Various meanings for various ss-modes (1-ki, k^i, k/(k+e^(i/k))).")
+    extras.add_argument('--ss_k', type=float, default=1.0, help="Various meanings for various ss-modes (1-ki, k^i, k/(k+e^i/k)).")
 
     a = parser.parse_args()
 
