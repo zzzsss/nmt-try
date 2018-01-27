@@ -3,18 +3,21 @@
 zmt="../.."
 #rundir="../z1126_3/"
 #rundir="../z1217_base/"
-rundir="../../baselines/ze_ev/"
+#rundir="../../baselines/ze_ev/"
+rundir="../../baselines/ze_ev_drop/"
 TEST_SUBDIR="Test-set"
 EVAL_SUBDIR="Reference-for-evaluation"
 datadir="../../zh_en_data/"
-dataname="nist_2002"
+#dataname="nist_2002"
+dataname="nist_36"
 output="z"
 src="zh"
 trg="en"
-gpuid=0
-#pyargs="-m pdb"
+gpuid=2
 pyargs=""
+#pyargs="-m pdb"
 baseextras=""
+
 function run
 {
     echo "running with $1, and with extras $2"
@@ -24,6 +27,15 @@ function run
     prof_param=""
     PYTHONPATH=$DY_ZROOT/gbuild/python python3.5 ${pyargs} ${prof_param} ${zmt}/znmt/test.py -v --report_freq 128 --eval_metric ibleu -o ${output}.$dataname.$1 -t $datadir/$TEST_SUBDIR/$dataname.src $datadir/$EVAL_SUBDIR/$dataname/$dataname.ref0 -d ${rundir}/{"src","trg"}.v -m ${rundir}/zbest.model --dynet-devices GPU:${gpuid} ${baseextras} ${extras}
     perl ${zmt}/znmt/scripts/multi-bleu.perl $datadir/$EVAL_SUBDIR/$dataname/$dataname < ${output}.$dataname.$1
+}
+
+function run_rerank0
+{
+    echo "running reranking0 with $1, and with extras $2"
+    name=$1
+    extras=$2
+    PYTHONPATH=$DY_ZROOT/gbuild/python python3.5 ${pyargs} ${prof_param} ${zmt}/znmt/rerank.py -v --report_freq 128 --eval_metric ibleu -o ${output}.rr.$dataname.$1.rr -t $datadir/$TEST_SUBDIR/$dataname.src ${output}.$dataname.$1.nbest --gold $datadir/$EVAL_SUBDIR/$dataname/$dataname.ref* -d ${rundir}/{"src","trg"}.v -m ${rundir}/zbest.model --dynet-devices GPU:${gpuid} ${baseextras} ${extras}
+    perl ${zmt}/znmt/scripts/multi-bleu.perl $datadir/$EVAL_SUBDIR/$dataname/$dataname < ${output}.rr.$dataname.$1.rr
 }
 
 # test
@@ -272,3 +284,140 @@ run s54 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --decode_dump_
 run s55 "--beam_size 12 --pr_local_diff 2.3 --normalize_alpha 1.0 --decode_dump_hiddens"
 run s56 "--beam_size 16 --pr_local_diff 2.3 --normalize_alpha 1.0 --decode_dump_hiddens"
 run s57 "--beam_size 20 --pr_local_diff 2.3 --normalize_alpha 1.0 --decode_dump_hiddens"
+
+run debug "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --cov_record_mode max"
+
+# 18.01.29
+# for all beam sizes
+for i in `python3 -c '[print(z+1) for z in range(30)]'`; do
+    echo run zo$i "--beam_size $i --normalize_alpha 1.0";
+    run zo$i "--beam_size $i --normalize_alpha 1.0";
+    echo run zn$i "--beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0";
+    run zn$i "--beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0";
+    echo run zm$i "--beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    run zm$i "--beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+done
+run zz1 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --cov_record_mode max --cov_l1_thresh 0.1 --cov_upper_bound 1"
+run zz2 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --cov_record_mode max --cov_l1_thresh 0.1 --cov_upper_bound 2"
+run zz3 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --cov_record_mode sum --cov_l1_thresh 0.1 --cov_upper_bound 1"
+run zz4 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --cov_record_mode sum --cov_l1_thresh 0.1 --cov_upper_bound 2"
+run zz5 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --cov_record_mode sum --cov_l1_thresh 0.1 --cov_upper_bound 1 --cov_average"
+run zz6 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --cov_record_mode sum --cov_l1_thresh 0.1 --cov_upper_bound 2 --cov_average"
+
+# 18.01.30
+for i in `python3 -c '[print(z+1) for z in range(1, 20)]'`; do
+    echo run y0m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0";
+    run y0m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0";
+    echo run y1m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 1 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    run y1m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 1 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    echo run y2m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    run y2m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    echo run y3m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 3 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    run y3m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 3 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    echo run y4m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    run y4m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+done
+
+# 18.01.31
+for i in `python3 -c '[print(z+1) for z in range(1, 20)];print(25);print(30)'`; do
+    #
+    run x0a-$i "--test_batch_size 4 --beam_size $i --normalize_way none";
+    run x0b-$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_way none";
+    run x0c-$i "--test_batch_size 4 --beam_size $i --normalize_alpha 1.0";
+    run x0d-$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0";
+    #
+    run x1a-$i "--test_batch_size 4 --beam_size $i --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --normalize_way none";
+    run x1b-$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --normalize_way none";
+    run x1c-$i "--test_batch_size 4 --beam_size $i --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    run x1d-$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    #
+    run x2a-$i "--test_batch_size 4 --beam_size $i --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 5 --normalize_way none";
+    run x2b-$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 5 --normalize_way none";
+    run x2c-$i "--test_batch_size 4 --beam_size $i --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    run x2d-$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    #
+    run x3a-$i "--test_batch_size 4 --beam_size $i --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 5 --normalize_way none";
+    run x4b-$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 5 --normalize_way none";
+    run x5c-$i "--test_batch_size 4 --beam_size $i --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    run x6d-$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0";
+done
+
+# 18.02.05: sdec0205
+run z0 "--test_batch_size 8 --beam_size 10 --normalize_way none";
+run z1 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way none";
+run z2 "--test_batch_size 8 --beam_size 10 --normalize_alpha 1.0";
+run z3 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0";
+#
+run za0 "--test_batch_size 8 --beam_size 10 --normalize_way add --normalize_alpha 0.5";
+run za1 "--test_batch_size 8 --beam_size 10 --normalize_way add --normalize_alpha 1.0";
+run za2 "--test_batch_size 8 --beam_size 10 --normalize_way add --normalize_alpha 1.5";
+run za3 "--test_batch_size 8 --beam_size 10 --normalize_way add --normalize_alpha 2.0";
+run zn0 "--test_batch_size 8 --beam_size 10 --normalize_way norm --normalize_alpha 0.5";
+run zn1 "--test_batch_size 8 --beam_size 10 --normalize_way norm --normalize_alpha 1.0";
+run zn2 "--test_batch_size 8 --beam_size 10 --normalize_way norm --normalize_alpha 1.5";
+run zn3 "--test_batch_size 8 --beam_size 10 --normalize_way norm --normalize_alpha 2.0";
+run zp0 "--test_batch_size 8 --beam_size 10 --normalize_way none --penalize_eos 0.5";
+run zp1 "--test_batch_size 8 --beam_size 10 --normalize_way none --penalize_eos 1.0";
+run zp2 "--test_batch_size 8 --beam_size 10 --normalize_way none --penalize_eos 1.5";
+run zp3 "--test_batch_size 8 --beam_size 10 --normalize_way none --penalize_eos 2.0";
+run zda0 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 0.5";
+run zda1 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 1.0";
+run zda2 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 1.5";
+run zda3 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 2.0";
+run zdn0 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 0.5";
+run zdn1 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0";
+run zdn2 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.5";
+run zdn3 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 2.0";
+run zdp0 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way none --penalize_eos 0.5";
+run zdp1 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way none --penalize_eos 1.0";
+run zdp2 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way none --penalize_eos 1.5";
+run zdp3 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way none --penalize_eos 2.0";
+#
+run z4 "--test_batch_size 8 --beam_size 10 --normalize_way none --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4";
+run z5 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way none --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4";
+run z6 "--test_batch_size 8 --beam_size 10 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4";
+run z7 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4";
+run z8 "--test_batch_size 8 --beam_size 10 --normalize_way none --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest";
+run z9 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way none --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest";
+run z10 "--test_batch_size 8 --beam_size 10 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+run z11 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+run_rerank0 z4
+run_rerank0 z5
+run_rerank0 z6
+run_rerank0 z7
+run_rerank0 z8
+run_rerank0 z9
+run_rerank0 z10
+run_rerank0 z11
+
+# sdec0205_2
+#
+run d01 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 1.0";
+run d02 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 1.1";
+run d03 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 1.2";
+run d04 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 1.3";
+run d05 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 1.4";
+run d06 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 1.5";
+#
+run d11 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0";
+run d12 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.1";
+run d13 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.2";
+run d14 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.3";
+run d15 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.4";
+run d16 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.5";
+#
+run d21 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+run d22 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --hid_sim_metric cos --hid_sim_thresh 0.1";
+run d23 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --hid_sim_metric cos --hid_sim_thresh 0.01";
+run d24 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --hid_sim_metric cos --hid_sim_thresh 0.005";
+run d25 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --merge_diff_metric med --merge_diff_thresh 2";
+run d26 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --merge_diff_metric med --merge_diff_thresh 5";
+run d27 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --merge_diff_metric med --merge_diff_thresh 10";
+#
+run d31 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 1.0 --decode_latnbest --decode_latnbest_lreward 1.0";
+run d32 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 1.0 --decode_latnbest --decode_latnbest_lreward 1.0 --hid_sim_metric cos --hid_sim_thresh 0.1";
+run d33 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 1.0 --decode_latnbest --decode_latnbest_lreward 1.0 --hid_sim_metric cos --hid_sim_thresh 0.01";
+run d34 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 1.0 --decode_latnbest --decode_latnbest_lreward 1.0 --hid_sim_metric cos --hid_sim_thresh 0.005";
+run d35 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 1.0 --decode_latnbest --decode_latnbest_lreward 1.0 --merge_diff_metric med --merge_diff_thresh 2";
+run d36 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 1.0 --decode_latnbest --decode_latnbest_lreward 1.0 --merge_diff_metric med --merge_diff_thresh 5";
+run d37 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 1.0 --decode_latnbest --decode_latnbest_lreward 1.0 --merge_diff_metric med --merge_diff_thresh 10";

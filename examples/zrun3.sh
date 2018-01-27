@@ -42,6 +42,7 @@ python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh -
 #python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../en_de_data_z5/ -t znmt --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 lrate 0.0001 dicts ../../baselines/ed1/{src,trg}.v reload_model_name ../../baselines/ed1/zbest.model reload ZZ no_reload_training_progress ZZ no_rebuild_dicts ZZ valid_freq 5000 validate0 ZZ ss_mode linear ss_scale 10000 ss_k 0.1" -p -1
 
 # no drops baseline --once-shuffle
-# x44/x45, ze_ev_nodrop/ze_ev_drop
+# x44/x45, ze_ev_nodrop/2/ze_ev_drop
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --extras "gdrop_rec 0.0 idrop_embedding 0.0 drop_hidden 0.0 drop_embedding 0.0 lrate 0.0001 dicts_rthres 30000 no_validate_freq ZZ validate_epoch ZZ max_epochs 50 shuffle_training_data_onceatstart ZZ no_shuffle_training_data ZZ patience 10 anneal_restarts 0" -z 8 -p 0
+# -> ze_ev_nodrop2: patience=5
 python3 ../../znmt/run/zprepare.py --zmt ../.. -d ../../zh_en_data/ -t znmt_zh --extras "gdrop_rec 0.2 idrop_embedding 0.0 drop_hidden 0.2 drop_embedding 0.2 lrate 0.0001 dicts_rthres 30000 no_validate_freq ZZ validate_epoch ZZ max_epochs 50 shuffle_training_data_onceatstart ZZ no_shuffle_training_data ZZ patience 10 anneal_restarts 0" -z 8 -p 0

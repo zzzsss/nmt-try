@@ -87,3 +87,13 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+# for d in *;
+# do
+#     echo $d;
+#     cd $d;
+#     for name in train dev test;
+#     do ln -s $name.conll $name.auto;
+#     done
+#     cd ..;
+# done

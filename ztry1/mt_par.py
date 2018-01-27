@@ -1,5 +1,106 @@
 # paraf: about med & alignments
-import json
+import json, numpy
+# from scipy.spatial import distance
+
+VNAME_ATTW = "attw"
+VNAME_CREC = "crec"
+
+class CovChecker(object):
+    # --- statistic summaries ---
+    all_cov_dists = []
+    all_hid_dists = []
+    all_med_dists = []
+
+    @staticmethod
+    def clear():
+        CovChecker.all_cov_dists = []
+        CovChecker.all_hid_dists = []
+        CovChecker.all_med_dists = []
+
+    @staticmethod
+    def report():
+        return "c:%.3f*%d,h:%.3f*%d,m%.3f*%d" % \
+               (numpy.average(CovChecker.all_cov_dists), len(CovChecker.all_cov_dists),
+                numpy.average(CovChecker.all_hid_dists), len(CovChecker.all_hid_dists),
+                numpy.average(CovChecker.all_med_dists), len(CovChecker.all_med_dists))
+    # --- statistic summaries ---
+
+    def __init__(self, opts):
+        self.opts = opts
+        self.cov_record_mode = opts["cov_record_mode"]
+        self.cov_l1_thresh = opts["cov_l1_thresh"]
+        self.cov_upper_bound = opts["cov_upper_bound"]
+        self.cov_average = opts["cov_average"]
+        #
+        self.hid_sim_metric = opts["hid_sim_metric"]
+        self.hid_sim_thresh = opts["hid_sim_thresh"]
+        #
+        self.merge_diff_metric = opts["merge_diff_metric"]
+        self.merge_diff_thresh = opts["merge_diff_thresh"]
+        #
+        self._update_f = {"none": lambda prev,cur:prev,
+                          "max": CovChecker.update_max,
+                          "sum": lambda prev,cur:prev+cur}[self.cov_record_mode]
+        # distance as [0,1]
+        self._dist_f_collections = {"none": lambda x,y: 1.0,
+                        "cos": lambda x,y: (1.0 - numpy.dot(x, y)/(numpy.linalg.norm(x)*numpy.linalg.norm(y)))/2,
+                        "c1": lambda x,y: numpy.sum(numpy.abs(x-y)/(numpy.sum(numpy.abs(x))+numpy.sum(numpy.abs(y)))),
+                        "c2": lambda x,y: numpy.sqrt(numpy.sum(numpy.square(x-y))/(numpy.sum(numpy.abs(x))+numpy.sum(numpy.abs(y))))
+                        }
+        self._dist_f = self._dist_f_collections[self.hid_sim_metric]
+
+    def cov_ok(self, a, b):
+        ret = True
+        if self.cov_record_mode != "none":
+            cov_a = self._get_cov_record(a)
+            cov_b = self._get_cov_record(b)
+            cov_a = numpy.minimum(cov_a, self.cov_upper_bound)
+            cov_b = numpy.minimum(cov_b, self.cov_upper_bound)
+            if self.cov_average:
+                cov_a /= a.length
+                cov_b /= b.length
+            d0 = numpy.sum(numpy.abs(cov_a-cov_b))
+            CovChecker.all_cov_dists.append(d0)
+            if d0 > self.cov_l1_thresh:
+                ret = False
+        if self.hid_sim_metric != "none":
+            hid_a = a.prev.values["hidv"]
+            hid_b = b.prev.values["hidv"]
+            d1 = self._dist_f(hid_a, hid_b)
+            CovChecker.all_hid_dists.append(d1)
+            if d1 > self.hid_sim_thresh:
+                ret = False
+            # ret = ret and (d <= self.hid_sim_thresh)
+        if self.merge_diff_metric == "med":
+            seq_a = [x.action_code for x in a.get_path()]
+            seq_b = [x.action_code for x in b.get_path()]
+            d2 = do_med(seq_a, seq_b, None, None, True, True)
+            CovChecker.all_med_dists.append(d2)
+            if d2 > self.merge_diff_thresh:
+                ret = False
+        return ret
+
+    #
+    @staticmethod
+    def update_max(prev, cur):
+        adding = numpy.zeros(cur.shape)
+        max_idx = cur.argmax()
+        adding[max_idx] += 1
+        ret = prev + adding
+        return ret
+
+    def _get_cov_record(self, one):
+        ret = one.get(VNAME_CREC)
+        if ret is None:
+            if one.is_start():
+                ret = 0
+            else:
+                prev_rec = self._get_cov_record(one.prev)
+                cur = one.get(VNAME_ATTW)
+                ret = self._update_f(prev_rec, cur)
+            one.set(VNAME_CREC, ret)
+        return ret
+
 
 class MedSegMerger(object):
     # eliminate suspicious matched seq (maybe MedSegJudger is a better name)
@@ -8,6 +109,7 @@ class MedSegMerger(object):
         self.seg_minlen = opts["t2_err_seg_minlen"]
         self.seg_freq_token = opts["t2_err_seg_freq_token"]
         self.seg_extends = opts["t2_err_seg_extend_range"]
+        self.cov_checker = CovChecker(opts)
 
     def get_tok(self, x):
         if hasattr(x, 'action_code'):
@@ -33,9 +135,15 @@ class MedSegMerger(object):
         for ss in ori_segs:
             real_flag = ss[0]
             length_nofreq = sum(0 if self.is_freq(tok) else 1 for tok in ss[1])
-            if length_nofreq < self.seg_minlen and real_flag:
-                cur_falsematch += len(ss[1])
-                real_flag = False
+            if real_flag:
+                cancelling = False
+                if length_nofreq < self.seg_minlen:
+                    cancelling = True
+                elif not self.cov_checker.cov_ok(ss[1][0], ss[2][0]):   # #0 is the last one because of reversing
+                    cancelling = True
+                if cancelling:
+                    cur_falsematch += len(ss[1])
+                    real_flag = False
             if len(segs)>0 and segs[-1][0] == real_flag:
                 # merge into one
                 segs[-1] = (real_flag, segs[-1][1]+ss[1], segs[-1][2]+ss[2])
@@ -75,7 +183,7 @@ class MedSegMerger(object):
         return segs2, cur_falsematch
 
 # return rev-list of (if-matched, rev-beam, rev-gold)
-def do_med(tokens_beam, tokens_gold, rev_list_beam, rev_list_gold, if_sub):
+def do_med(tokens_beam, tokens_gold, rev_list_beam, rev_list_gold, if_sub, return_dist=False):
     EDIT_DEL, EDIT_ADD, EDIT_SUB, EDIT_MATCH = 0,1,2,3
     length_beam, length_gold = len(tokens_beam), len(tokens_gold)
     max_edits = length_beam + length_gold
@@ -112,6 +220,8 @@ def do_med(tokens_beam, tokens_gold, rev_list_beam, rev_list_gold, if_sub):
             #
             one_dis.append(this_dis)
             one_act.append(this_act)
+    if return_dist:
+        return tab_dis[-1][-1]
     # back-tracking and get segs
     def _add_if_nonempty(sgs, one):
         if len(one[1])>0 or len(one[2])>0:
@@ -363,9 +473,7 @@ if __name__ == '__main__':
             self.record(cmd, descr)
 
         # driver
-        def once(self):
-            self.printing(">> ", end="")
-            line = sys.stdin.readline()
+        def once(self, line):
             if len(line) == 0:
                 self.op_exit(line)
             fields = line.split()
@@ -399,9 +507,23 @@ if __name__ == '__main__':
                 raise NotImplementedError("Unkown command %s in %s" % (c, line))
 
         def loop(self):
+            if len(sys.argv) > 1:
+                # reload instructions
+                self.printing("Load instructions from %s." % sys.argv[1])
+                pre_cmds = []
+                with open(sys.argv[1]) as f:
+                    for line in f:
+                        line = line.strip()
+                        if len(line) > 0:
+                            self.printing("-> %s" % line)
+                        pre_cmds.append(line)
+                for line in pre_cmds:
+                    self.once(line)
             while not self.exit:
                 try:
-                    self.once()
+                    self.printing(">> ", end="")
+                    line = sys.stdin.readline()
+                    self.once(line)
                 except:
                     self.printing(traceback.format_exc(), err=True)
 

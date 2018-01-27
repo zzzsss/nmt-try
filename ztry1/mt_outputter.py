@@ -39,8 +39,8 @@ class Outputter(object):
         ret = ""
         if not kbest:
             states = [states[0]]
-        if verbose:
-            ret += "# znumber%s" % self.inst_count + "\n"
+        # if verbose:
+        #     ret += "# znumber%s" % self.inst_count + "\n"
             # ret += states[0].sg.show_graph(target_dict, False) + "\n"
         self.inst_count += 1
         for s in states:
@@ -75,14 +75,14 @@ class Outputter(object):
                 if verbose:
                     if unk_replace:
                         ret += "<UNK>"
-                    ret += ("(%.3f)" % one.action_score())
+                    ret += ("|%.3f" % one.action_score())
                 ret += " "
             # last one
             if verbose:
                 one = paths[-1]
                 ret += target_dict.getw(one.action_code)
-                ret += ("(%.3f)" % one.action_score())
-                ret += " -> (OVERALL:%.3f,%.3f,%d)" % (one.score_partial, one.score_final, one.length)
+                ret += ("|%.3f" % one.action_score())
+                ret += "FINALLY|%d|%.3f|%.3f" % (one.length, one.score_partial, one.score_final)
             ret += "\n"
         if kbest:
             ret += "\n"

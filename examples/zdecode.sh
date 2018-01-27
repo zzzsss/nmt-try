@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 
 zmt="../.."
-rundir="."
-datadir="../../data2/wit3-en-fr_z5/"
+rundir="../../baselines/ed_ev/"
+#datadir="../../data2/wit3-en-fr_z5/"
+datadir="../../en_de_data_z5/"
 output="z"
 src="en"
-trg="fr"
-gpuid=3
+trg="de"
+gpuid=0
 #pyargs="-m pdb"
 pyargs=""
-baseextras="--dim_word 500 --hidden_att 500 --rnn_type gru2"
+#baseextras="--dim_word 500 --hidden_att 500 --rnn_type gru2"
 function run
 {
     echo "running with $1, and with extras $2"
@@ -235,3 +236,39 @@ run t6 "--test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --pr_global_expan
 run t7 "--test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --pr_global_expand 1 --pr_tngram_range 1 --pr_tngram_n 5 --normalize_way add --normalize_alpha 0.1 --decode_latnbest"
 run t8 "--decode_way branch --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --pr_global_expand 1 --pr_tngram_range 1 --pr_tngram_n 5 --normalize_way add --normalize_alpha 0.1"
 run t9 "--decode_way branch --test_batch_size 1 --beam_size 10 --pr_local_diff 2.3 --pr_global_expand 1 --pr_tngram_range 1 --pr_tngram_n 5 --normalize_way add --normalize_alpha 0.1 --decode_latnbest"
+
+
+## run on en_de: 18.01.29
+# 18.01.29
+# for all beam sizes
+for i in `python3 -c '[print(z+1) for z in range(20)]'`; do
+    echo run zo$i "--beam_size $i --normalize_alpha 1.0";
+    run zo$i "--beam_size $i --normalize_alpha 1.0";
+    echo run zn$i "--beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0";
+    run zn$i "--beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0";
+    echo run zm0$i "--beam_size $i --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    run zm0$i "--beam_size $i --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    echo run zm1$i "--beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    run zm1$i "--beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+done
+run zz1 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --cov_record_mode max --cov_l1_thresh 0.1 --cov_upper_bound 1"
+run zz2 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --cov_record_mode max --cov_l1_thresh 0.1 --cov_upper_bound 2"
+run zz3 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --cov_record_mode sum --cov_l1_thresh 0.1 --cov_upper_bound 1"
+run zz4 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --cov_record_mode sum --cov_l1_thresh 0.1 --cov_upper_bound 2"
+run zz5 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --cov_record_mode sum --cov_l1_thresh 0.1 --cov_upper_bound 1 --cov_average"
+run zz6 "--beam_size 10 --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0 --cov_record_mode sum --cov_l1_thresh 0.1 --cov_upper_bound 2 --cov_average"
+
+#
+# 18.01.30
+for i in `python3 -c '[print(z+1) for z in range(1, 20)]'`; do
+    echo run y0m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0";
+    run y0m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0";
+    echo run y1m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 1 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    run y1m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 1 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    echo run y2m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    run y2m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    echo run y3m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 3 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    run y3m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 3 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    echo run y4m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+    run y4m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
+done

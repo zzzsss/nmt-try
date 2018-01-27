@@ -7,12 +7,20 @@ from . import utils, data
 
 # the searching graph (tracking the relations between states)
 class SearchGraph(object):
-    def __init__(self, target_dict=None, src_info=None):
+    def __init__(self, target_dict=None, src_info=None, origin_sg=None):
         self.target_dict = target_dict
         self.src_info = src_info
         self.ch_recs = defaultdict(list)
         self.root = None
         self.ends = []
+        self.origin_sg = origin_sg
+
+    #
+    def get_real_self(self):
+        if self.origin_sg is not None:
+            return self.origin_sg
+        else:
+            return self
 
     def reg(self, state):
         if state.prev is not None:
@@ -97,6 +105,7 @@ class State(object):
         self._score_final = None
         self._score_partial = 0
         self._state = "NAN"     # nan, expand, end, pr*
+        self._tags = []
         if prev is not None:
             self.length = prev.length + 1
             self._score_partial = action.score + prev._score_partial
@@ -170,10 +179,18 @@ class State(object):
             self.action.score = s
         return self.action.score
 
+    # ---
+    # each State only has one state
     def state(self, s=None):
         if s is not None:
             self._state = s
         return self._state
+
+    # but could have multiple tags
+    def tags(self, s=None):
+        if s is not None:
+            self._tags.append(s)
+        return self._tags
 
     def set_score_final(self, s):
         utils.zcheck(self.ended, "Nonlegal final calculation for un-end states.")

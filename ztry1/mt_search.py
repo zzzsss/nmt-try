@@ -9,6 +9,7 @@ from . import mt_layers as layers
 import numpy as np
 from collections import defaultdict
 from queue import PriorityQueue
+from .mt_par import CovChecker
 
 ##
 from zl.backends.common import ResultTopk
@@ -75,11 +76,11 @@ def search_greedy(models, insts, target_dict, opts, normer, sstater, para_extrac
                     next_y, next_score = eos_id, 0.
                 # check eos
                 if next_y == eos_id:
-                    ends[j] = State(prev=opens[j], action=Action(next_y, next_score), attention_weights=one_attv, attention_src=cur_xsrc)
+                    ends[j] = State(prev=opens[j], action=Action(next_y, next_score), attw=one_attv, attention_src=cur_xsrc)
                     ends[j].mark_end()
                     finish_size += 1
                 else:
-                    opens[j] = State(prev=opens[j], action=Action(next_y, next_score), attention_weights=one_attv, attention_src=cur_xsrc)
+                    opens[j] = State(prev=opens[j], action=Action(next_y, next_score), attw=one_attv, attention_src=cur_xsrc)
             else:
                 next_y = 0
             yprev[j] = next_y
@@ -234,9 +235,10 @@ def search_beam(models, insts, target_dict, opts, normer, sstater, para_extracto
     esize_all = opts["beam_size"]
     decode_maxlen = opts["decode_len"]
     decode_maxratio = opts["decode_ratio"]
-    # if need to get att-weights (todo(warn), some cohesion)
-    need_att = opts["decode_replace_unk"]
-    decode_dump_hiddens = opts["decode_dump_hiddens"]
+    # if need to get att-weights (todo(warn), some cohesion) (todo(WARN2) only add cov for search_beam)
+    need_att = opts["decode_replace_unk"] or (opts["cov_record_mode"] != "none")
+    Pruner.cov_checker = CovChecker(opts)
+    decode_dump_hiddens = opts["decode_dump_hiddens"] or (opts["hid_sim_metric"] != "none")
     decode_gold_run = decode_dump_hiddens
     # pruners
     pr_local_expand = min(opts["pr_local_expand"],esize_all)
@@ -248,6 +250,9 @@ def search_beam(models, insts, target_dict, opts, normer, sstater, para_extracto
     pr_global_penalty = opts["pr_global_penalty"]
     pr_tngram_n = opts["pr_tngram_n"]
     pr_tngram_range = opts["pr_tngram_range"]
+    ##
+    pr_global_nalpha = opts["pr_global_nalpha"]
+    pr_global_lreward = opts["pr_global_lreward"]
     #
     remain_sizes = [esize_all for _ in range(bsize)]
     opens = [[State(sg=SearchGraph(target_dict=target_dict, src_info=insts[_nn]))] for _nn in range(bsize)]
@@ -344,13 +349,13 @@ def search_beam(models, insts, target_dict, opts, normer, sstater, para_extracto
                 # local pruning
                 cand_states = []
                 for onep in rr:
-                    cand_states.append(State(prev=prev_states[j], action=Action(onep[IDX_DIM], onep[VAL_DIM]), attention_weights=one_attv, attention_src=cur_xsrc, _tmp_prev_idx=j))
+                    cand_states.append(State(prev=prev_states[j], action=Action(onep[IDX_DIM], onep[VAL_DIM]), attw=one_attv, attention_src=cur_xsrc, _tmp_prev_idx=j))
                 survive_local_cands = Pruner.local_prune(cand_states, pr_local_expand, pr_local_diff, pr_local_penalty)
                 cur_cands += survive_local_cands
             # sorting them all
             cur_cands.sort(key=(lambda x: x.score_partial), reverse=True)
             # global pruning
-            ok_cands = Pruner.global_prune_ngram_greedy(cand_states=cur_cands, rest_beam_size=remain_sizes[i], sig_beam_size=pr_global_expand, thresh=pr_global_diff, penalty=pr_global_penalty, ngram_n=pr_tngram_n, ngram_range=pr_tngram_range)
+            ok_cands = Pruner.global_prune_ngram_greedy(cand_states=cur_cands, rest_beam_size=remain_sizes[i], sig_beam_size=pr_global_expand, thresh=pr_global_diff, penalty=pr_global_penalty, ngram_n=pr_tngram_n, ngram_range=pr_tngram_range, pr_global_lreward=pr_global_lreward, pr_global_nalpha=pr_global_nalpha, )
             # prepare for next steps
             cur_nexts = []
             opens[i] = []
@@ -398,6 +403,8 @@ def search_beam(models, insts, target_dict, opts, normer, sstater, para_extracto
     return final_list
 
 class Pruner(object):
+    cov_checker = None
+
     # ----- for sample
     @staticmethod
     def local_prune_score(rr, maxsize, thresh, penalty):
@@ -442,11 +449,12 @@ class Pruner(object):
         return ret
 
     @staticmethod
-    def global_prune_ngram_greedy(cand_states, rest_beam_size, sig_beam_size, thresh, penalty, ngram_n, ngram_range):
+    def global_prune_ngram_greedy(cand_states, rest_beam_size, sig_beam_size, thresh, penalty, ngram_n, ngram_range, pr_global_lreward=0., pr_global_nalpha=1.):
         # on sorted list, comparing according to normalized scores -- greedy pruning
         # todo: how could we compare diff length states? -> normalize partial score
         # todo: how to do pruning and sig-max (there might be crossings)? -> take the greedy way
-        _get_score_f = (lambda x: x.score_partial/x.length)
+        # _get_score_f = (lambda x: x.score_partial/x.length)
+        _get_score_f = lambda x: (x.score_partial + pr_global_lreward*x.length) / (x.length ** pr_global_nalpha)
         sig_ngram_maxs = {}     # all-step max (for survived ones)
         sig_ngram_curnum = defaultdict(int)     # last-step state lists for sig
         sig_ngram_allnum = defaultdict(int)     # all-step state counts for sig
@@ -474,6 +482,13 @@ class Pruner(object):
                         elif this_score <= high_score - thresh:
                             one.state("PR_NGRAM_DIFF")
                             this_pruned = True
+                # check cov for pruning
+                if this_pruned:
+                    pruner_one = sig_ngram_maxs[cur_sig]
+                    if not Pruner.cov_checker.cov_ok(one, pruner_one):
+                        one.state("ZZ")
+                        one.tags("FAIL_PR_COV")
+                        this_pruned = False
                 # adding
                 if not this_pruned:
                     # todo(warn) penalize here according to two criteria
@@ -492,8 +507,8 @@ class Pruner(object):
                     sig_ngram_curnum[cur_sig] += 1      # only last step
                     temp_ret.append(one)
                 else:
-                    # set pruners and record in the sg
                     pruner_one = sig_ngram_maxs[cur_sig]
+                    # set pruners and record in the sg
                     one.set("PR_PRUNER", pruner_one)
                     pruner_one.add_list("PRUNING_LIST", one)
             else:
@@ -642,7 +657,7 @@ def search_branch(models, insts, target_dict, opts, normer, sstater, para_extrac
                     # local pruning
                     cand_states = []
                     for onep in rr:
-                        cand_states.append(State(prev=prev_state, action=Action(onep[IDX_DIM], onep[VAL_DIM]), attention_weights=one_attv, attention_src=cur_xsrc, _tmp_prev_idx=batched_results_base, _tmp_prev_cache=one_cache))
+                        cand_states.append(State(prev=prev_state, action=Action(onep[IDX_DIM], onep[VAL_DIM]), attw=one_attv, attention_src=cur_xsrc, _tmp_prev_idx=batched_results_base, _tmp_prev_cache=one_cache))
                     survive_local_cands = Pruner.local_prune(cand_states, pr_local_expand, pr_local_diff, pr_local_penalty)
                     # record branching points, could only for the first run with more than 1 expansions
                     survive_best_score = survive_local_cands[0].action_score()

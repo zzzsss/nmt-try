@@ -306,17 +306,30 @@ def init(phase):
     decode2.add_argument('--pr_global_expand', type=int, default=100, help="How many states could survive in one global-beam.")
     decode2.add_argument('--pr_global_diff', type=float, default=100., help="Global pruning normalized diff/thres (1/e**D if transferring to prob.)")
     decode2.add_argument('--pr_global_penalty', type=float, default=0., help="penalize candidates from the same sig.")
+    ## TODO(CHANGE): should be changed for the same for t2_*
+    decode2.add_argument('--pr_global_nalpha', type=float, default=1.0, help="Length normalizer for combining.")
+    decode2.add_argument('--pr_global_lreward', type=float, default=0.0, help="Length reward for combining.")
     # --- specific tailing ngram params
     decode2.add_argument('--pr_tngram_n', type=int, default=5, help="Nth tailing ngram sig for pruning.")
     decode2.add_argument('--pr_tngram_range', type=int, default=0, help="Number of the range of history for tngram, 0 for none.")
-    # ---- and possible cov heuristics
-
     #
     decode2.add_argument('--branching_fullfill_ratio', type=float, default=1., help="How many states to visit according to the length of first greedy one.")
     decode2.add_argument('--branching_criterion', type=str, default="abs", choices=["abs", "rel", "b_abs", "b_rel"],
                          help="When select next branches, based on which criterion.")
     decode2.add_argument('--branching_expand_run', type=int, default=1, help="How many runs to consider other branchings on later paths.")
 
+    # cov: specific about coverage or similarities between hidden layers
+    cov = parser.add_argument_group('options about cov')
+    cov.add_argument('--cov_record_mode', type=str, default="none", choices=["none","max","sum"], help="heuristics about how to record cov.")
+    cov.add_argument('--cov_l1_thresh', type=float, default=0.1, help="Considered as match if L1-distance <= this.")
+    cov.add_argument('--cov_upper_bound', type=int, default=1, help="Upper bound for accumulated cov-att.")
+    cov.add_argument('--cov_average', action='store_true', help="Average att by length.")
+    #
+    cov.add_argument('--hid_sim_metric', type=str, default="none", choices=["none","cos","c1","c2"], help="metrics of deciding similarities of hiddens.")
+    cov.add_argument('--hid_sim_thresh', type=float, default=1.0, help="Threshold for sim of hidden vectors.")
+    #
+    cov.add_argument('--merge_diff_metric', type=str, default="none", choices=["none", "med"], help="Another metric for diff of merged points.")
+    cov.add_argument('--merge_diff_thresh', type=int, default=100, help="Threshold for diff of merged points.")
     # specific for re-ranking & analyzing
     if phase == "rerank":
         rerank = parser.add_argument_group('options for reranking and analysing')

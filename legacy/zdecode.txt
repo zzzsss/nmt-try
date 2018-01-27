@@ -1,0 +1,75 @@
+# decoding tuning
+
+def run(task):
+    confs = [
+        # basic
+        ("0a", "--normalize_way none"),
+        ("0b", "--pr_local_diff 2.3 --normalize_way none"),
+        ("0c", "--normalize_way norm --normalize_alpha 1.0"),
+        ("0d", "--pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0"),
+        # merge
+        ("1a", "--normalize_way none --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest"),
+        ("1b", "--pr_local_diff 2.3 --normalize_way none --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest"),
+        ("1c", "--normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"),
+        ("1d", "--pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"),
+        # merge more
+        # ("2a", "--normalize_way none --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest"),
+        # ("2b", "--pr_local_diff 2.3 --normalize_way none --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4"),
+        # ("2c", "--normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"),
+        # ("2d", "--pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0"),
+    ]
+    for dataname in task["DATA_NAMES"]:
+        for beam_size in [1,2,4,6,8,10,12,16,20,40,60,80,100]:
+            for name, extras in confs:
+                runname = name + "-%d" % beam_size
+                extras = extras + " --beam_size %d" % beam_size
+                d = {"dataname":dataname, "runname":runname, "extras":extras, "dirname":task["DIR_NAME"]}
+                CMD_RUN = task["CMD_RUN"] % d
+                CMD_EVAL = task["CMD_EVAL"] % d
+                #
+                out0 = system(CMD_RUN)
+                out1 = system(CMD_EVAL)
+                printing("zzzzz %s %s" % (runname, out1))
+    return None
+
+# -------------------------
+def run2():
+    confs = [
+        "--normalize_way norm",
+        "--pr_local_diff 2.3 --normalize_way none",
+        "--normalize_way norm --normalize_alpha 1.0",
+        "--pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0"
+        #
+        "--normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0",
+        "--normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 3 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0",
+        "--normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0",
+        "--normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 5 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0",
+        "--normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0",
+        "--normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 3 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0",
+        "--normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0",
+        "--normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 5 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0",
+        "--pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0",
+        "--pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 3 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0",
+        "--pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0",
+        "--pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 5 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0",
+        "--pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0",
+        "--pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 3 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0",
+        "--pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0",
+        "--pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 5 --pr_tngram_n 5 --decode_latnbest --decode_latnbest_nalpha 1.0",
+    ]
+    for beam_size in [8, 10, 16]:
+        for i, extras in enumerate(confs):
+            for task in [TasksZhEn, TasksEnDE]:
+                dataname = task["DATA_NAMES"][0]    # the first task
+                runname = "r%d-%d" % (i, beam_size)
+                extras2 = extras + " --beam_size %d" % beam_size
+                d = {"dataname":dataname, "runname":runname, "extras":extras2, "dirname":task["DIR_NAME"]}
+                CMD_RUN = task["CMD_RUN"] % d
+                CMD_EVAL = task["CMD_EVAL"] % d
+                #
+                out0 = system(CMD_RUN)
+                out1 = system(CMD_EVAL)
+                printing("zzzzz %s %s" % (runname, out1))
+    zhold()
+    return None
+

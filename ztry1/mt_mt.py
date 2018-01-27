@@ -23,6 +23,7 @@ VNAME_ATT = "AT"        # State: attach to which gold state if possible
 VNAME_ATT_BASE = "AB"   # int: baselength for attaching (last attaching length)
 VNAME_SYNCLEN = "SY"    # int: sync length
 VNAME_GISTAT = "GI"     # gold-interf mode: means the ends of updating frags
+VNAME_ATTW = "attw"     # attention-weights
 #
 PADDING_STATE = None
 PADDING_ACTION = 0
@@ -503,6 +504,7 @@ class s2sModel(Model):
         ylens = [len(_y) for _y in ys]
         ylens_max = [int(np.ceil(_yl*self.opts["t2_search_ratio"])) for _yl in ylens]   # todo: currently, just cut off according to ref length
         # pruners (no diversity penalty here for training)
+        need_att = (self.opts["cov_record_mode"] != "none")
         # -> local
         t2_local_expand = max(2, min(self.opts["t2_local_expand"], esize_all))      # todo(warn): could have err-states
         t2_local_diff = self.opts["t2_local_diff"]
@@ -559,6 +561,8 @@ class s2sModel(Model):
                 # attach caches
                 sc_expr = layers.BK.pick_batch(cc["results"], ystep)
                 sc_val = layers.BK.get_value_vec(sc_expr)
+                if need_att:
+                    atts_v = layers.BK.get_value_np(cc["att"])
                 # todo(warn): here not calling explain for simplicity
                 if model_softmax:
                     sc_val = np.log(sc_val)
@@ -568,6 +572,8 @@ class s2sModel(Model):
                         # todo(warn): not updating the accumulated scores
                         if gold_next[_i] is not PADDING_STATE:
                             gold_next[_i].action_score(sc_val[_i])
+                            if need_att:
+                                gold_next[_i].set(VNAME_ATTW, atts_v[_i])
             gold_cur = gold_next
             gold_states.append(gold_next)
         # 2. then start the beam search (with the knowledge of gold-seq)
@@ -613,6 +619,8 @@ class s2sModel(Model):
                         one.set(VNAME_CACHE, (cc, _i*esize_all+_j))
             # compare for the next steps --- almost same as beam_search, but all-batched and simplified
             results_topk = layers.BK.topk(cc["results"], t2_local_expand)
+            if need_att:
+                atts_v = layers.BK.get_value_np(cc["att"])
             for i in range(bsize):
                 # collect local candidates
                 global_cands = []
@@ -626,12 +634,17 @@ class s2sModel(Model):
                     rr = self.explain_result_topkp(rr0)
                     local_cands = []
                     for onep in rr:
-                        local_cands.append(State(prev=prev, action=Action(onep[IDX_DIM], onep[VAL_DIM])))
+                        if need_att:
+                            local_one = State(prev=prev, action=Action(onep[IDX_DIM], onep[VAL_DIM]), attw=atts_v[inbatch_idx])
+                        else:
+                            local_one = State(prev=prev, action=Action(onep[IDX_DIM], onep[VAL_DIM]))
+                        local_cands.append(local_one)
                     survived_local_cands = SPruner.local_prune(local_cands, t2_local_expand, t2_local_diff, 0.)
                     global_cands += survived_local_cands
                 # sort them all
                 global_cands.sort(key=(lambda x: x.score_partial), reverse=True)
                 # global pruning (if no bngram, then simply get the first remains[i] ones)
+                # TODO (using some default values for _score_f here)
                 survived_global_cands = SPruner.global_prune_ngram_greedy(cand_states=global_cands, rest_beam_size=beam_remains[i], sig_beam_size=t2_global_expand, thresh=t2_global_diff, penalty=0., ngram_n=t2_bngram_n, ngram_range=t2_bngram_range)
                 # =========================
                 # setting states properties
@@ -786,6 +799,7 @@ class s2sModel(Model):
                     cc = self.step(rerun_prevc, rerun_prevy, None, softmax=False)
                 rerun_prevc = cc
                 rerun_prevy = ystep
+                # todo(warn): about the scores and attw
                 # assign caches
                 for tmp_idx in range(rerun_bsize):
                     if rerun_i < len(rerun_states[tmp_idx]):

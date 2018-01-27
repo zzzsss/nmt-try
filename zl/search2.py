@@ -30,7 +30,7 @@ def _set_recusively_one(one, sg, n, sort_k, stack_map, max_repeat_times):
     if one.get(_TMP_KEY) is None:
         if one.is_start():
             # rebuild without search-graph
-            v = [State(sg=SearchGraph())]
+            v = [State(sg=SearchGraph(origin_sg=one.sg))]
             one.set(_TMP_KEY, v)
         else:
             combined_list = one.get(_PRUNE_KEY)
@@ -65,7 +65,8 @@ def _set_recusively_one(one, sg, n, sort_k, stack_map, max_repeat_times):
 # todo(1. how many non-best actions, 2. expands (effective) rate and more analysis, 3. extract merging points)
 class StateStater(object):
     def __init__(self):
-        self.rr = defaultdict(int)
+        self.states = defaultdict(int)
+        self.tags = defaultdict(int)
         self.num = 0
         self.step = 0
 
@@ -75,13 +76,16 @@ class StateStater(object):
         self.step += len(them)
         for s0, s1 in them:
             for one in s0+s1:
-                self.rr[one.state()] += 1
+                self.states[one.state()] += 1
+                for t in one.tags():
+                    self.tags[t] += 1
 
     def report(self):
         if self.num > 0:
             utils.zlog("num=%s, steps=%s, steps/num=%.3f" % (self.num, self.step, (self.step+0.)/self.num), func="info")
-            for k in sorted(list(self.rr.keys())):
-                utils.zlog("-> %s=%s(%.3f||%.3f)" % (k, self.rr[k], (self.rr[k]+0.)/self.num, (self.rr[k]+0.)/self.step), func="info")
+            for ds in (self.states, self.tags):
+                for k in sorted(list(ds.keys())):
+                    utils.zlog("-> %s=%s(%.3f||%.3f)" % (k, ds[k], (ds[k]+0.)/self.num, (ds[k]+0.)/self.step), func="info")
 
 # extract all the states from a sg
 def extract_states(sg):

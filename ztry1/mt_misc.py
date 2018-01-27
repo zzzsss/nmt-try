@@ -7,7 +7,7 @@ from .mt_outputter import Outputter
 from . import mt_search, mt_eval
 from collections import defaultdict, Iterable
 import numpy as np
-from .mt_par import ParafMap, do_med, MedSegMerger
+from .mt_par import ParafMap, do_med, MedSegMerger, CovChecker
 import pickle
 
 ValidResult = list
@@ -188,7 +188,7 @@ def mt_decode(decode_way, test_iter, mms, target_dict, opts, outf, gold_iter=Non
             ot.report()
         with utils.zopen(outf+".nbestg", "w") as f:
             for i, r in enumerate(results):
-                f.write("# znumber%s\n%s\n" % (i, r[0].sg.show_graph(target_dict, False)))
+                f.write("# znumber%s\n%s\n" % (i, r[0].sg.get_real_self().show_graph(target_dict, False)))
         # dump state hiddens
         if decode_dump_hiddens:
             # todo: dump sg
@@ -197,6 +197,7 @@ def mt_decode(decode_way, test_iter, mms, target_dict, opts, outf, gold_iter=Non
             with utils.zopen(outf+".hid", "wb", None) as f:
                 pickle.dump([extract_states(r[0].sg) for r in results], f)
     para_extractor.save_parafs(outf)
+    utils.zlog("COV-LOG: " + CovChecker.report())
     return results
 
 # only for beam_searcher and branch_searcher
