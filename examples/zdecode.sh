@@ -8,8 +8,8 @@ output="z"
 src="en"
 trg="de"
 gpuid=0
-#pyargs="-m pdb"
 pyargs=""
+#pyargs="-m pdb"
 #baseextras="--dim_word 500 --hidden_att 500 --rnn_type gru2"
 function run
 {
@@ -21,6 +21,16 @@ function run
     PYTHONPATH=$DY_ZROOT/gbuild/python python3.5 ${pyargs} ${prof_param} ${zmt}/znmt/test.py -v --report_freq 128 -o ${output}.$1 -t ${datadir}/test.final.{${src},${trg}.restore} -d ${rundir}/{"src","trg"}.v -m ${rundir}/zbest.model --dynet-devices GPU:${gpuid} ${baseextras} ${extras}
     ZMT=${zmt} bash ${zmt}/znmt/scripts/restore.sh <${output}.$1 | perl ${zmt}/znmt/scripts/multi-bleu.perl ${datadir}/test.final.${trg}.restore
 }
+
+function run_rerank0
+{
+    echo "running reranking0 with $1, and with extras $2"
+    name=$1
+    extras=$2
+    PYTHONPATH=$DY_ZROOT/gbuild/python python3.5 ${pyargs} ${prof_param} ${zmt}/znmt/rerank.py -v --report_freq 128 -o ${output}.$1.rr -t ${datadir}/test.final.${src} ${output}.$1.nbest --gold ${datadir}/test.final.${trg}.restore -d ${rundir}/{"src","trg"}.v -m ${rundir}/zbest.model --dynet-devices GPU:${gpuid} ${baseextras} ${extras}
+    ZMT=${zmt} bash ${zmt}/znmt/scripts/restore.sh <${output}.$1.rr | perl ${zmt}/znmt/scripts/multi-bleu.perl ${datadir}/test.final.${trg}.restore
+}
+
 
 ### based on z1117_0 ##
 ## basic one         (BLEU = 36.41, 64.4/42.3/30.0/21.5 (BP=1.000, ratio=1.000, hyp_len=25251, ref_len=25263)
@@ -272,3 +282,17 @@ for i in `python3 -c '[print(z+1) for z in range(1, 20)]'`; do
     echo run y4m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
     run y4m$i "--test_batch_size 4 --beam_size $i --pr_local_diff 2.3 --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 4 --pr_tngram_n 4 --decode_latnbest --decode_latnbest_nalpha 1.0";
 done
+
+# sdec0206
+run z1 "--test_batch_size 1 --beam_size 40 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 0.0 --decode_latnbest --decode_latnbest_lreward 0.0";
+run z2 "--test_batch_size 1 --beam_size 60 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 0.0 --decode_latnbest --decode_latnbest_lreward 0.0";
+run z3 "--test_batch_size 1 --beam_size 80 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 0.0 --decode_latnbest --decode_latnbest_lreward 0.0";
+run z4 "--test_batch_size 1 --beam_size 40 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 0.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 0.0 --decode_latnbest --decode_latnbest_lreward 0.0";
+run z5 "--test_batch_size 1 --beam_size 60 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 0.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 0.0 --decode_latnbest --decode_latnbest_lreward 0.0";
+run z6 "--test_batch_size 1 --beam_size 80 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 0.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 0.0 --decode_latnbest --decode_latnbest_lreward 0.0";
+run_rerank0 z1
+run_rerank0 z2
+run_rerank0 z3
+run_rerank0 z4 "--normalize_way add --normalize_alpha 0.0"
+run_rerank0 z5 "--normalize_way add --normalize_alpha 0.0"
+run_rerank0 z6 "--normalize_way add --normalize_alpha 0.0"

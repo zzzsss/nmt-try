@@ -124,9 +124,12 @@ def main():
             return -1
     cmp_bleus = [0,0,0]
     cmp_scores_all = [0,0,0]
-    cmp_scores_1better= [0,0,0]
-    cmp_scores_2better= [0,0,0]
+    cmp_scores_1better = [0,0,0]
+    cmp_scores_2better = [0,0,0]
+    same_best = 0
     for inst1, inst2 in zip(r1, r2):
+        if inst1.tokens[0] == inst2.tokens[0]:
+            same_best += 1
         bleu1, bleu2 = inst1.sbleus[0], inst2.sbleus[0]
         score1, score2 = inst1.scores[0], inst2.scores[0]
         c_b = _cmp_f(bleu1, bleu2)
@@ -139,6 +142,7 @@ def main():
             cmp_scores_2better[c_s] += 1
     for cc in [cmp_bleus, cmp_scores_all, cmp_scores_1better, cmp_scores_2better]:
         print("%s // %s" % (cc, [x/num_insts for x in cc]))
+    print("%s // %s" % (same_best, same_best/num_insts))
 
 if __name__ == '__main__':
     main()

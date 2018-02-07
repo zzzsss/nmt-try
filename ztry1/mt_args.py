@@ -272,6 +272,7 @@ def init(phase):
     decode2 = parser.add_argument_group('decoding parameters section2')
     # -- general
     decode2.add_argument('--no_output_kbest', action='store_false', help="Output special files with all outputs.", dest="decode_output_kbest")
+    decode2.add_argument('--decode_write_once', action='store_true', help="Output the results only once at the end (need larger cpu mem to store the results.)")
     decode2.add_argument('--decode_dump_hiddens', action='store_true', help="Dump hiddens for all states.")
     decode2.add_argument('--decode_replace_unk', action='store_true', help="Copy max-attention src for UNK.")
     decode2.add_argument('--decode_latnbest', action='store_true', help="Re-generate n-best from lattice.")

@@ -239,7 +239,7 @@ def search_beam(models, insts, target_dict, opts, normer, sstater, para_extracto
     need_att = opts["decode_replace_unk"] or (opts["cov_record_mode"] != "none")
     Pruner.cov_checker = CovChecker(opts)
     decode_dump_hiddens = opts["decode_dump_hiddens"] or (opts["hid_sim_metric"] != "none")
-    decode_gold_run = decode_dump_hiddens
+    decode_gold_run = opts["decode_dump_hiddens"]
     # pruners
     pr_local_expand = min(opts["pr_local_expand"],esize_all)
     pr_local_diff = opts["pr_local_diff"]

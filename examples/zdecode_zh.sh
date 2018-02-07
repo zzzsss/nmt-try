@@ -421,3 +421,17 @@ run d34 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way 
 run d35 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 1.0 --decode_latnbest --decode_latnbest_lreward 1.0 --merge_diff_metric med --merge_diff_thresh 2";
 run d36 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 1.0 --decode_latnbest --decode_latnbest_lreward 1.0 --merge_diff_metric med --merge_diff_thresh 5";
 run d37 "--test_batch_size 8 --beam_size 10 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 1.0 --decode_latnbest --decode_latnbest_lreward 1.0 --merge_diff_metric med --merge_diff_thresh 10";
+
+# sdec0206
+run z1 "--test_batch_size 1 --beam_size 40 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 1.0 --decode_latnbest --decode_latnbest_lreward 1.0";
+run z2 "--test_batch_size 1 --beam_size 60 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 1.0 --decode_latnbest --decode_latnbest_lreward 1.0";
+run z3 "--test_batch_size 1 --beam_size 80 --pr_local_diff 2.3 --normalize_way norm --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 1.0 --decode_latnbest --decode_latnbest_lreward 1.0";
+run z4 "--test_batch_size 1 --beam_size 40 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 1.0 --decode_latnbest --decode_latnbest_lreward 1.0";
+run z5 "--test_batch_size 1 --beam_size 60 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 1.0 --decode_latnbest --decode_latnbest_lreward 1.0";
+run z6 "--test_batch_size 1 --beam_size 80 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 1.0 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 1.0 --decode_latnbest --decode_latnbest_lreward 1.0";
+run_rerank0 z1
+run_rerank0 z2
+run_rerank0 z3
+run_rerank0 z4 "--normalize_way add --normalize_alpha 1.0"
+run_rerank0 z5 "--normalize_way add --normalize_alpha 1.0"
+run_rerank0 z6 "--normalize_way add --normalize_alpha 1.0"

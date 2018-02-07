@@ -159,3 +159,27 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+# from table
+import re, numpy
+
+def draw():
+    all_results = []
+    while True:
+        try:
+            line = input()
+        except:
+            break
+        if len(line) == 0:
+            break
+        res = re.findall('([0-9][0-9]\.[0-9][0-9])', line)
+        if len(res) > 0:
+            all_results.append([float(r) for r in res])
+    them = numpy.asarray(all_results)
+    print(them)
+    print(them.T)
+    print(numpy.average(them, axis=0))
+    #
+    print()
+    for ones in all_results:
+        print("\t".join([str(r) for r in ones]))

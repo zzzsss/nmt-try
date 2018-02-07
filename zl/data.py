@@ -240,17 +240,20 @@ class BatchArranger(object):
             else:
                 break
 
-    def restore_order(self, x):
-        # rearrange back according to self.tracking_list (caused by sorting and shuffling)
-        if not self.tracking_order:
-            return x
-        # utils.zcheck(self.tracking_order, "Tracking function has not been opened", _forced=True)
-        utils.zcheck_matched_length(self.tracking_list, x, _forced=True)
-        ret = [None for _ in x]
-        for idx, one in zip(self.tracking_list, x):
-            utils.zcheck_type(ret[idx], type(None), "Wrong tracking list, internal error!!", _forced=True)
-            ret[idx] = one
-        return ret
+    def get_tracking_list(self):
+        return self.tracking_list
+
+    # def restore_order(self, x):
+    #     # rearrange back according to self.tracking_list (caused by sorting and shuffling)
+    #     if not self.tracking_order:
+    #         return x
+    #     # utils.zcheck(self.tracking_order, "Tracking function has not been opened", _forced=True)
+    #     utils.zcheck_matched_length(self.tracking_list, x, _forced=True)
+    #     ret = [None for _ in x]
+    #     for idx, one in zip(self.tracking_list, x):
+    #         utils.zcheck_type(ret[idx], type(None), "Wrong tracking list, internal error!!", _forced=True)
+    #         ret[idx] = one
+    #     return ret
 
 # single instance, batched-version should be handled when modeling since it will be quite different for different models
 class Instance(object):
