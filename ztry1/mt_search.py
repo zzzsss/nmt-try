@@ -511,6 +511,8 @@ class Pruner(object):
                     # set pruners and record in the sg
                     one.set("PR_PRUNER", pruner_one)
                     pruner_one.add_list("PRUNING_LIST", one)
+                    if one == pruner_one:
+                        utils.zlog("WHAT? Self-pruning?")
             else:
                 # for example, the first several steps
                 temp_ret.append(one)

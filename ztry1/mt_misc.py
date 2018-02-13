@@ -123,6 +123,7 @@ class ResultLogger(object):
         self.output_r2l = opts["decode_output_r2l"]
         self.output_kbest = opts["decode_output_kbest"]
         self.decode_dump_hiddens = opts["decode_dump_hiddens"]
+        self.decode_dump_sg = opts["decode_dump_sg"]
         #
         if not self.decode_write_once:
             self.tmp_fd_maps = self._create_fdm(self.outf+".tmp")
@@ -162,18 +163,17 @@ class ResultLogger(object):
             fdm["kb"] = utils.zopen(outf+".nbest", mode)
             fdm["kbs"] = utils.zopen(outf+".nbests", mode)
             fdm["kbg"] = utils.zopen(outf+".nbestg", mode)
+            if self.decode_dump_sg:
+                fdm["sg"] = utils.zopen(outf+".sg", mode+"b", None)
             if self.decode_dump_hiddens:
                 fdm["hid"] = utils.zopen(outf+".hid", mode+"b", None)
         return fdm
 
     def _close_fdm(self, fdm):
-        fdm["r"].close()
-        if self.output_kbest:
-            fdm["kb"].close()
-            fdm["kbs"].close()
-            fdm["kbg"].close()
-            if self.decode_dump_hiddens:
-                fdm["hid"].close()
+        for name in fdm:
+            fd = fdm[name]
+            if fd is not None:
+                fd.close()
 
     def _write_fdm(self, fdm, results):
         ot = Outputter(self.opts)
@@ -198,13 +198,15 @@ class ResultLogger(object):
                 f = fdm["kbg"]
                 for i, r in enumerate(results):
                     f.write("# znumber%s\n%s\n" % (i+self.write_count, r[0].sg.get_real_self().show_graph(self.target_dict, False)))
+            if self.decode_dump_sg:
+                f = fdm["sg"]
+                for r in results:
+                    pickle.dump(r[0].sg.get_real_self(), f)
             # dump state hiddens
             if self.decode_dump_hiddens:
-                # todo: dump sg
-                # with utils.zopen(outf+".sg", "w") as f:
-                #     pickle.dump([r[0].sg for r in results], f)
                 f = fdm["hid"]
-                pickle.dump([extract_states(r[0].sg.get_real_self()) for r in results], f)
+                for r in results:
+                    pickle.dump(extract_states(r[0].sg.get_real_self()), f)
         self.write_count += len(results)
 
     def add(self, rs):
@@ -250,8 +252,9 @@ class ResultLogger(object):
     def _rw_pickle(self, infd, outfd, _ff):
         records = []
         try:
-            one = pickle.load(infd)
-            records.append(one)
+            while True:
+                one = pickle.load(infd)
+                records.append(one)
         except EOFError:
             pass
         wrecords = _ff(records)
@@ -270,6 +273,8 @@ class ResultLogger(object):
                 self._rw_multi(rfdm["kb"], wfdm["kb"], ff)
                 self._rw_multi(rfdm["kbs"], wfdm["kbs"], ff)
                 self._rw_multi(rfdm["kbg"], wfdm["kbg"], ff)
+                if self.decode_dump_sg:
+                    self._rw_pickle(rfdm["sg"], wfdm["sg"], ff)
                 if self.decode_dump_hiddens:
                     self._rw_pickle(rfdm["hid"], wfdm["hid"], ff)
         else:
@@ -299,7 +304,8 @@ def count_states(sg):
                 if combined_list is None:
                     combined_list = []
                 utils.zcheck_ff_iter(combined_list, lambda x: x.get(_TMP_KEY) is None, "Not scientific pruning states!!")
-                combined_list.append(one)
+                # todo(warn): be careful that returning is modifiable
+                combined_list = combined_list + [one]
                 c = 0
                 for z in combined_list:
                     # _add_map(z)

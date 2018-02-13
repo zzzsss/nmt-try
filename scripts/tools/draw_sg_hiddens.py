@@ -58,6 +58,8 @@ def show(data):
     # list of [a, b, props, texts]
     x,y,props,texts = data
     if HAS_PLOT:
+        plt.rcParams['xtick.labelsize'] = 14
+        plt.rcParams['ytick.labelsize'] = 14
         fig = plt.figure()
         ax = fig.add_subplot(111, aspect='equal')
         plt.axis([-15, 15, -10, 10])
