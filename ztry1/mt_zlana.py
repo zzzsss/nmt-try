@@ -621,4 +621,15 @@ if __name__ == '__main__':
 # PYTHONPATH=$DY_ZROOT/cbuild/python:../../znmt python3 -m pdb ../../znmt/ztry1/mt_zlana.py
 
 # en_zh
-# PYTHONPATH=$DY_ZROOT/cbuild/python:../../znmt python3 ../../znmt/ztry1/mt_zlana.py ../decode_zcurve0/z.nist_36.0b-10.nbests z.nist_36.ana-10.sg ../decode_gold/gold.out.nbests MAXN:-1 |& tee log_zlana_0217
+# for n in 10 30 50 100; do
+# PYTHONPATH=$DY_ZROOT/cbuild/python:../../znmt python3 ../../znmt/ztry1/mt_zlana.py z.nist_36.0b-${n}.nbests z.nist_36.ana-10.sg ../decode_gold/gold.out.nbests MAXN:-1 |& tee log_zlana_sg10vsnb${n}_0217
+# done
+
+# en_de (z.10.bpe, gold.out)
+# PYTHONPATH=$DY_ZROOT/gbuild/python python3.5 ../../znmt/test.py -v --test_batch_size 8 -o z.10.bpe -t ../../en_de_data_z5/data46.bpe.en ../../en_de_data_z5/data46.tok.de -d ../../baselines/ed_ev/{"src","trg"}.v -m ../../baselines/ed_ev/zbest.model --dynet-devices GPU:5 --pr_local_diff 2.3 --normalize_way add --normalize_alpha 0.4 --pr_global_expand 1 --pr_tngram_range 2 --pr_tngram_n 4 --pr_global_nalpha 0.0 --pr_global_lreward 0.4 --decode_latnbest --decode_latnbest_lreward 0.4 --decode_dump_sg -k 10
+# PYTHONPATH=$DY_ZROOT/gbuild/python python3.5 ../../znmt/rerank.py -v --eval_metric bleu -o gold.out -t ../../en_de_data_z5/data46.bpe.en ../../en_de_data_z5/data46.bpe.de.list --gold ../../en_de_data_z5/data46.tok.de -d ../../baselines/ed_ev/{"src","trg"}.v --dynet-devices GPU:5 -m ../../baselines/ed_ev/zbest.model
+#
+# for n in 10 30 50 100; do
+# PYTHONPATH=$DY_ZROOT/cbuild/python:../../znmt python3 ../../znmt/ztry1/mt_zlana.py z.data46.n4-${n}.bpe.nbests z.10.bpe.sg gold.out.nbests MAXN:-1 EVAL_NAME:ed |& tee log_zlana_0217_sg10vsnb${n}_r0
+# PYTHONPATH=$DY_ZROOT/cbuild/python:../../znmt python3 ../../znmt/ztry1/mt_zlana.py z.data46.n4-${n}.bpe.nbests z.10.bpe.sg gold.out.nbests MAXN:-1 EVAL_NAME:ed EVAL_RESTORE:1 |& tee log_zlana_0217_sg10vsnb${n}_r1
+# done

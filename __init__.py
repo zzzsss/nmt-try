@@ -1,3 +1,3 @@
 class ZNMT:
-    VERSOIN = "0.1.2a2"
-    COMMENT = "Now the codes seem to be almost done for this season, maybe too heavy on mt_mt"
+    VERSOIN = "0.1.2"
+    COMMENT = "At the end of 2018.2, pausing for a period and re-thinking."
