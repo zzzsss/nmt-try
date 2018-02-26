@@ -64,8 +64,8 @@ class CovChecker(object):
             if d0 > self.cov_l1_thresh:
                 ret = False
         if self.hid_sim_metric != "none":
-            hid_a = a.prev.values["hidv"]
-            hid_b = b.prev.values["hidv"]
+            hid_a = a.prev.get_hidv()[0]
+            hid_b = b.prev.get_hidv()[0]
             d1 = self._dist_f(hid_a, hid_b)
             CovChecker.all_hid_dists.append(d1)
             if d1 > self.hid_sim_thresh:
@@ -129,7 +129,7 @@ class MedSegMerger(object):
 
     # return (possibly merged segs, #false_match)
     def merge(self, ori_segs):
-        cur_falsematch = 0
+        cur_falsematch = {"len":0,"cov":0}
         segs = []
         # first scan of length
         for ss in ori_segs:
@@ -139,10 +139,11 @@ class MedSegMerger(object):
                 cancelling = False
                 if length_nofreq < self.seg_minlen:
                     cancelling = True
+                    cur_falsematch["len"] += len(ss[1])
                 elif not self.cov_checker.cov_ok(ss[1][0], ss[2][0]):   # #0 is the last one because of reversing
                     cancelling = True
+                    cur_falsematch["cov"] += len(ss[1])
                 if cancelling:
-                    cur_falsematch += len(ss[1])
                     real_flag = False
             if len(segs)>0 and segs[-1][0] == real_flag:
                 # merge into one

@@ -10,6 +10,7 @@ from .mt_search import Pruner as SPruner
 from .mt_extern import RAML, ScheduledSamplerSetter
 from .mt_par import do_med, MedSegMerger
 from .mt_rerank_analysis import bleu_single
+from collections import defaultdict
 
 # consts
 from zl.backends.common import ResultTopk
@@ -627,7 +628,7 @@ class s2sModel(Model):
                 for j in range(esize_all):
                     prev = beam_cur[i][j]
                     # skip ended states
-                    if prev is PADDING_STATE or prev.action_code == EOS_ID:
+                    if prev is PADDING_STATE or prev.is_end():
                         continue
                     inbatch_idx = i*esize_all+j
                     rr0 = results_topk[inbatch_idx]
@@ -903,7 +904,7 @@ class BeamLossBuilder(object):
             self.num_tok_good = 0       # matched
             self.num_tok_gold = 0       # gold running
             self.num_tok_rebased = 0    # rebased gold running
-            self.num_tok_falsematch = 0     # regard as unmatched under thresh-1 (counted as bad_tokens)
+            self.num_tok_falsematch = defaultdict(int)     # regard as unmatched under thresh-1 (counted as bad_tokens)
             # err stat
             self.match_cov_stater = utils.RangeStater(0., 1., 10)
             self.match_seg_stater = utils.RangeStater(1, 20, 10)
@@ -929,10 +930,12 @@ class BeamLossBuilder(object):
             s += "Perc->minus(beam):%d/%.3f,plus(gold):%d/%.3f" \
                  % (self.num_tok_minus, self.num_tok_minus/divisor, self.num_tok_plus, self.num_tok_plus/divisor)
         elif self.t2_beam_loss == "err":
-            s += "Err->err0:%d/%.3f,err:%d/%.3f,match:%d/%.3f,gold:%d/%.3f,rebased:%d/%.3f,falsematch:%d/%.3f" \
+            falsematch_s0 = "/".join("%s:%d"%(k,v) for k,v in self.num_tok_falsematch.items())
+            falsematch_s1 = "/".join("%s:%.3f"%(k,v/divisor) for k,v in self.num_tok_falsematch.items())
+            s += "Err->err0:%d/%.3f,err:%d/%.3f,match:%d/%.3f,gold:%d/%.3f,rebased:%d/%.3f,falsematch:%s/%s" \
                  % (self.num_tok_mod, self.num_tok_mod/divisor, self.num_tok_err, self.num_tok_err/divisor,
                     self.num_tok_good, self.num_tok_good/divisor, self.num_tok_gold, self.num_tok_gold/divisor,
-                    self.num_tok_rebased, self.num_tok_rebased/divisor, self.num_tok_falsematch, self.num_tok_falsematch/divisor)
+                    self.num_tok_rebased, self.num_tok_rebased/divisor, falsematch_s0, falsematch_s1)
             s += "||MC-ranges:%s, Seg-ranges:%s" % (self.match_cov_stater.descr(), self.match_seg_stater.descr())
         else:
             pass
@@ -996,7 +999,8 @@ class BeamLossBuilder(object):
             length_segs = len(segs)
             prev_seg = None
             self.num_points_valid += 1
-            self.num_tok_falsematch += cur_falsematch
+            for k in cur_falsematch:
+                self.num_tok_falsematch[k] += cur_falsematch[k]
             bad_flag = False
             for idx in range(length_segs):
                 real_idx = length_segs-1-idx
@@ -1111,12 +1115,18 @@ class BeamLossBuilder(object):
         # get the interval
         list_beam = [point]
         list_att = [point.get(VNAME_ATT)]
+        list_att_notnone = [point.get(VNAME_ATT)]
         cur = point.prev
         while cur.get(VNAME_GISTAT) is None:
             list_beam.append(cur)
-            list_att.append(cur.get(VNAME_ATT))
+            cur_at = cur.get(VNAME_ATT)
+            list_att.append(cur_at)
+            if cur_at is not None:
+                list_att_notnone.append(cur_at)
             cur = cur.prev
+        list_att_notnone.reverse()  # list_att_notnone[-1] is the latest one
         att_bound = cur.get(VNAME_ATT)
+        att_prev_length = 0
         # scan again
         cur_at = list_att[0]    # must be there
         idx = 0
@@ -1136,8 +1146,15 @@ class BeamLossBuilder(object):
                         cur_at = _add_until(cur_at, at, s01)
                         _add_if_nonempty(segs, s01)
                     cur_at = at
+                    # previous at's constrain (there can be repeated two-way matches, prefer the previous one)
+                    while len(list_att_notnone) > 0 and list_att_notnone[-1].length >= at.length:
+                        list_att_notnone = list_att_notnone[:-1]
+                    if len(list_att_notnone) > 0:
+                        att_prev_length = list_att_notnone[-1].length
+                    else:
+                        att_prev_length = 0
                 # check equal
-                if cur_at.action_code == p.action_code and cur_at.length > att_bound.length:
+                if cur_at.action_code == p.action_code and cur_at.length > max(att_prev_length, att_bound.length):
                     s0[1].append(p)
                     s0[2].append(cur_at)
                     idx += 1

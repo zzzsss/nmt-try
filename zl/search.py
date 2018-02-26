@@ -4,6 +4,7 @@
 from collections import defaultdict, Iterable
 import numpy as np
 from . import utils, data
+from .backends import BK
 
 # the searching graph (tracking the relations between states)
 class SearchGraph(object):
@@ -282,6 +283,14 @@ class State(object):
         if "_il" not in self.caches:
             self.caches["_il"] = "%s|%s" % (self.id, self.pid)
         return self.caches["_il"]
+
+    # special: use specific names "hidv", "CC"
+    def get_hidv(self):
+        if "hidv" not in self.values:
+            cc, idx = self.values["CC"]
+            slice = BK.pick_batch_elem(cc['hid'][0]['H'], idx)
+            self.values["hidv"] = BK.get_value_np(slice)
+        return self.values["hidv"]
 
 # action
 class Action(object):

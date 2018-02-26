@@ -406,5 +406,9 @@ def check_options(args, phase):
             if args["t2_err_gold_lambda"] > 0 and args["t2_err_gold_mode"] == "gold":
                 _warn_ifnot(args["t2_gold_run"], "t2_gold_run")
                 args["t2_gold_run"] = True
+            # compare hidden layers
+            if args["t2_err_gold_lambda"]>0 and (args["t2_err_gold_mode"]=="based" and args["hid_sim_metric"]!="none"):
+                _warn_ifnot(args["t2_gold_run"], "t2_gold_run")
+                args["t2_gold_run"] = True
         # if args["train_local_loss"] == "hinge_avg":
         #     args["dynet-mem"] = "11111"
