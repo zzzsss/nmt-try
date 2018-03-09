@@ -121,9 +121,9 @@ def init(phase):
                          help="minibatch size (default: %(default)s)")
     training.add_argument('--rand_skip', type=float, default=0., metavar='INT',
                          help="randomly skip batches for training (default: %(default)s)")
-    training.add_argument('--max_epochs', type=int, default=150, metavar='INT',
+    training.add_argument('--max_epochs', type=int, default=50, metavar='INT',
                          help="maximum number of epochs (default: %(default)s)")
-    training.add_argument('--max_updates', type=int, default=500000, metavar='INT',
+    training.add_argument('--max_updates', type=int, default=1000000, metavar='INT',
                          help="maximum number of updates (minibatches) (default: %(default)s)")
     # -- trainer
     network.add_argument('--trainer_type', type=str, default="adam", choices=["adam", "sgd", "momentum"],
@@ -141,9 +141,9 @@ def init(phase):
                          help="validation frequency (default: %(default)s)")
     validation.add_argument('--valid_batch_size', '--valid_batch_width', type=int, default=40, metavar='INT',
                          help="validating minibatch-size (default: %(default)s)")
-    validation.add_argument('--patience', type=int, default=3, metavar='INT',
+    validation.add_argument('--patience', type=int, default=10, metavar='INT',
                          help="early stopping patience (default: %(default)s)")
-    validation.add_argument('--anneal_restarts', type=int, default=2, metavar='INT',
+    validation.add_argument('--anneal_restarts', type=int, default=0, metavar='INT',
                          help="when patience runs out, restart training INT times with annealed learning rate (default: %(default)s)")
     validation.add_argument('--anneal_no_renew_trainer', action='store_false',  dest='anneal_renew_trainer',
                          help="don't renew trainer (discard moments or grad info) when anneal")
@@ -182,7 +182,7 @@ def init(phase):
     #                      help="type/mode of testing (decode, test, loop)")
     decode.add_argument('--decode_way', type=str, default="beam", choices=["greedy", "beam", "sample", "branch"],
                          help="decoding method (default: %(default)s)")
-    decode.add_argument('--beam_size', '-k', type=int, default=5, help="Beam size (default: %(default)s))")
+    decode.add_argument('--beam_size', '-k', type=int, default=10, help="Beam size (default: %(default)s))")
     decode.add_argument('--decode_len', type=int, default=80, metavar='INT',
                          help="maximum decoding sequence length (default: %(default)s)")
     decode.add_argument('--decode_ratio', type=float, default=5.,
@@ -201,7 +201,7 @@ def init(phase):
                          help="(train2) how to norm length with score scales (default: %(default)s)")
     # length fitting for training
     # todo(warn): these options are also used for decoding process
-    training2.add_argument('--train_len_uidx', type=int, default=1000000,
+    training2.add_argument('--train_len_uidx', type=int, default=10000000,
                          help="start to fit len after this updates (default: %(default)s)")
     training2.add_argument('--train_len_lambda', type=float, default=1.0, help="lambda for length loss (default: %(default)s)")
     training2.add_argument('--train_len_xadd', action='store_true', help="adding xsrc for length fitting")
@@ -289,9 +289,9 @@ def init(phase):
     # -- norm
     # todo(warn): have to be cautious about parameters, some model specification is also needed to construct model for decoding
     # todo(warn): only using the first model if using gaussian
-    decode2.add_argument('--normalize_way', type=str, default="norm", choices=["none", "norm", "google", "add", "gaussian", "xgaussian"],
+    decode2.add_argument('--normalize_way', type=str, default="none", choices=["none", "norm", "google", "add", "gaussian", "xgaussian"],
                          help="how to norm length (default: %(default)s)")
-    decode2.add_argument('--normalize_alpha', '-n', type=float, default=1.0, metavar="ALPHA",
+    decode2.add_argument('--normalize_alpha', '-n', type=float, default=0.0, metavar="ALPHA",
                          help="Normalize scores by sentence length or lambda for gaussian.")
     decode2.add_argument('--penalize_eos', type=float, default=0.0, help="Directly penalizing scores when decoding of EOS & '.'.")
     # -- pruning
@@ -346,7 +346,7 @@ def init(phase):
                           help="augment outputs with n samples, 0 as turned off. (default: %(default)s)")
     extras.add_argument('--raml_tau', type=float, default=0.85, metavar='FLOAT',
                           help="temperature for sharpness of exponentiated payoff distribution (default: %(default)s)")
-    extras.add_argument('--raml_reward', type=str, default='hd', metavar='STR',  choices=["hd", "ed"],
+    extras.add_argument('--raml_reward', type=str, default='ed', metavar='STR',  choices=["hd", "ed"],
                           help="reward for sampling from exponentiated payoff distribution (default: %(default)s)")
     # scheduled-sampling
     extras.add_argument('--ss_mode', type=str, default="none", choices=["none", "linear", "exp", "isigm"])

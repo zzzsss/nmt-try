@@ -68,22 +68,22 @@ class RAML(object):
                     for e in range(edits):
                         if numpy.random.choice(["insertion", "substitution"]) == "insertion":
                             if y_len > 1:
-                                #insert before last period/question mark
-                                position = numpy.random.choice(range(y_len))
-                            else:
-                                #insert before or after single word
-                                position = numpy.random.choice([0, 1])
-                            tmp_one.idxes[1].insert(position, numpy.random.choice(vocab))
-                        else:
-                            if y_len > 1:
+                                # insert before last period/question mark
                                 position = numpy.random.choice(range(y_len))
                             else:
                                 position = 0
-                            if position == y_len - 1:
-                                #using choice of last position to mean deletion of random word instead
-                                del tmp_one.idxes[1][numpy.random.choice(range(y_len - 1))]
-                            else:
-                                tmp_one.idxes[1][position] = numpy.random.choice(vocab)
+                            tmp_one.idxes[1].insert(position, numpy.random.choice(vocab))
+                            y_len = len(tmp_one.idxes[1])
+                        else:
+                            if y_len > 1:
+                                position = numpy.random.choice(range(y_len))
+                                # only substitute if >1
+                                if position == y_len - 1:
+                                    #using choice of last position to mean deletion of random word instead
+                                    del tmp_one.idxes[1][numpy.random.choice(range(y_len - 1))]
+                                    y_len = len(tmp_one.idxes[1])
+                                else:
+                                    tmp_one.idxes[1][position] = numpy.random.choice(vocab)
                 else:
                     raise NotImplementedError(raml_reward)
                 rets.append(tmp_one)
